@@ -317,8 +317,8 @@ function calcSatLike(shift,regHrs,otHrs,tr){
   return{eff,notes};
 }
 
-function calcWage(dateStr,regHrs,otHrs,wage){
-  const shift=shiftFor(dateStr);
+function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride){
+  const shift=shiftOverride||shiftFor(dateStr);
   const holDay=isHol(dateStr)&&!isSun(dateStr),sun=isSun(dateStr),sat=isSat(dateStr);
   const tr=TR[S.lang];
   let eff=0,notes=[];
@@ -376,7 +376,7 @@ function calcWage(dateStr,regHrs,otHrs,wage){
 let S={
   lang:ld('wt4_lang','en'),theme:ld('wt4_theme','dark'),
   tab:'calendar',calY:new Date().getFullYear(),calM:new Date().getMonth(),
-  modal:null,mReg:undefined,mOT:undefined,success:''
+  modal:null,mReg:undefined,mOT:undefined,mShift:undefined,success:''
 };
 function t(k,...a){const fn=TR[S.lang][k];return typeof fn==='function'?fn(...a):(fn||k);}
 function applyTheme(){document.documentElement.setAttribute('data-theme',S.theme);}
@@ -499,12 +499,12 @@ function buildLogs(){
   if(!sorted.length)return`<div class="card"><div class="empty-st">${t('logNone')}</div></div>`;
   const dn=t('dn');
   const items=sorted.map(([ds,l])=>{
-    const dw=dowOf(ds),hol=isHol(ds),sh=shiftFor(ds);
+    const dw=dowOf(ds),hol=isHol(ds),sh=l.shiftOverride||shiftFor(ds);
     const r=l.regHrs!==undefined?l.regHrs:8,o=l.otHrs!==undefined?l.otHrs:0;
     return`<div class="log-item">
       <div>
         <div class="log-d">${ds} (${dn[dw].slice(0,3)}) ${hol?`<span style="color:var(--danger);font-size:11px;">● ${holName(ds)}</span>`:''}</div>
-        <div class="log-sub">${sh==='day'?'☀':'☾'} ${sh==='day'?t('dayShift'):t('nightShift')} · ${r}h reg${o>0?' + '+o+'h OT':''} · ${l.eff}h eff</div>
+        <div class="log-sub">${sh==='day'?'☀':'☾'} ${sh==='day'?t('dayShift'):t('nightShift')}${l.shiftOverride?' ✎':''} · ${r}h reg${o>0?' + '+o+'h OT':''} · ${l.eff}h eff</div>
       </div>
       <div style="display:flex;align-items:center;">
         <div class="log-pay">₩${(l.net||0).toLocaleString()}</div>
@@ -552,13 +552,16 @@ function buildSettings(){
 // ── Modal ─────────────────────────────────────────────────────────────────────
 function buildModal(){
   const{date,existing}=S.modal;
-  const holDay=isHol(date)&&!isSun(date),sun=isSun(date),sat=isSat(date),shift=shiftFor(date);
+  const holDay=isHol(date)&&!isSun(date),sun=isSun(date),sat=isSat(date);
+  const weekShift=shiftFor(date);
+  // Per-day shift: use saved override if editing, or state override, or week default
+  const defShift=existing?.shiftOverride||weekShift;
+  const shift=S.mShift!==undefined?S.mShift:defShift;
   const wage=getWage(),dn=t('dn'),dw=dowOf(date);
   let badges='';
   if(holDay)badges+=`<span class="mbadge b-hol">● ${holName(date)}</span>`;
   if(sun)badges+=`<span class="mbadge b-sun">${dn[0]}</span>`;
   if(sat)badges+=`<span class="mbadge b-sat">${dn[6]}</span>`;
-  badges+=`<span class="mbadge ${shift==='day'?'b-day':'b-night'}">${shift==='day'?'☀ '+t('dayShift'):'☾ '+t('nightShift')}</span>`;
 
   const defReg = existing?.regHrs !== undefined
   ? existing.regHrs
@@ -568,8 +571,8 @@ function buildModal(){
   const ot=S.mOT!==undefined?S.mOT:defOT;
   const autoSunQual=sun&&allWeekdaysLogged(date);
 
-  function previewHTML(r,o){
-    const c=calcWage(date,r,o,wage),tax=c.gross-c.net;
+  function previewHTML(r,o,sh){
+    const c=calcWage(date,r,o,wage,sh),tax=c.gross-c.net;
     return`<div class="calc-box">
       ${c.notes.map(n=>`<div class="cr"><span>${n}</span></div>`).join('')}
       <div class="cr"><span>${t('gross')}</span><span>₩${c.gross.toLocaleString()}</span></div>
@@ -578,6 +581,17 @@ function buildModal(){
       <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">${t('eff')}: ${c.eff}h · ${t('rateLabel')}: ₩${wage.toLocaleString()}</div>
     </div>`;
   }
+
+  // Shift toggle HTML (shown in all day types)
+  const shiftToggleHTML=`
+    <div style="display:flex;gap:6px;margin-bottom:14px;">
+      <button id="m-shift-day" class="shift-tog ${shift==='day'?'shift-tog-on-day':''}">
+        ☀ ${t('dayShift')}
+      </button>
+      <button id="m-shift-night" class="shift-tog ${shift==='night'?'shift-tog-on-night':''}">
+        ☾ ${t('nightShift')}
+      </button>
+    </div>`;
 
   let bodyHTML='';
   if(sun){
@@ -588,41 +602,41 @@ function buildModal(){
     <div class="fg-row">
       <div class="fg">
         <label>${t('regHrs')}</label>
-        <input id="m-reg" type="number" value="${reg}" min="0" max="8" step="0.5">
+        <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
       </div>
       <div class="fg">
         <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
         <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
       </div>
     </div>
-    <div id="m-preview">${previewHTML(reg,ot)}</div>`;
+    <div id="m-preview">${previewHTML(reg,ot,shift)}</div>`;
   }else if(holDay){
     // Holiday: 8h auto-credited; worked hours use sat-like calc
     bodyHTML=`<div class="info-box warn">${t('holInfo')}</div>
     <div class="fg-row">
       <div class="fg">
         <label>${t('regHrs')}</label>
-        <input id="m-reg" type="number" value="${reg}" min="0" max="8" step="0.5">
+        <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
       </div>
       <div class="fg">
         <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
         <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
       </div>
     </div>
-    <div id="m-preview">${previewHTML(reg,ot)}</div>`;
+    <div id="m-preview">${previewHTML(reg,ot,shift)}</div>`;
   }else{
     // Normal/Saturday: two inputs
     bodyHTML=`<div class="fg-row">
       <div class="fg">
         <label>${t('regHrs')}</label>
-        <input id="m-reg" type="number" value="${reg}" min="0" max="8" step="0.5">
+        <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
       </div>
       <div class="fg">
         <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
         <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
       </div>
     </div>
-    <div id="m-preview">${previewHTML(reg,ot)}</div>`;
+    <div id="m-preview">${previewHTML(reg,ot,shift)}</div>`;
   }
 
   const ov=document.createElement('div');
@@ -631,6 +645,7 @@ function buildModal(){
     <h3>${date}</h3>
     <div class="modal-sub">${dn[dw]}</div>
     <div style="margin-bottom:12px;">${badges}</div>
+    ${shiftToggleHTML}
     ${bodyHTML}
     <div class="m-actions">
       <button class="btn-sec" id="m-cancel">${t('cancel')}</button>
@@ -646,30 +661,48 @@ function buildModal(){
   if(delBtn)delBtn.addEventListener('click',()=>{const l=getLogs();delete l[date];saveLogs(l);closeModal();});
 
   const regIn=document.getElementById('m-reg'),otIn=document.getElementById('m-ot');
+  function curShift(){return S.mShift!==undefined?S.mShift:shift;}
   function upd(){
     const r=regIn?Math.min(parseFloat(regIn.value)||0,8):0;
     const o=otIn?parseFloat(otIn.value)||0:0;
     S.mReg=r;S.mOT=o;
     const prev=document.getElementById('m-preview');
-    if(prev)prev.innerHTML=previewHTML(r,o);
+    if(prev)prev.innerHTML=previewHTML(r,o,curShift());
   }
   if(regIn)regIn.addEventListener('input',upd);
   if(otIn)otIn.addEventListener('input',upd);
+
+  function applyShiftToggle(newShift){
+    S.mShift=newShift;
+    // Update button styles
+    const dBtn=document.getElementById('m-shift-day');
+    const nBtn=document.getElementById('m-shift-night');
+    if(dBtn){dBtn.className='shift-tog'+(newShift==='day'?' shift-tog-on-day':'');}
+    if(nBtn){nBtn.className='shift-tog'+(newShift==='night'?' shift-tog-on-night':'');}
+    upd();
+  }
+  const sdBtn=document.getElementById('m-shift-day');
+  const snBtn=document.getElementById('m-shift-night');
+  if(sdBtn)sdBtn.addEventListener('click',()=>applyShiftToggle('day'));
+  if(snBtn)snBtn.addEventListener('click',()=>applyShiftToggle('night'));
 
   const saveBtn=document.getElementById('m-save');
   if(saveBtn)saveBtn.addEventListener('click',()=>{
     const r=regIn?Math.min(parseFloat(regIn.value)||0,8):0;
     const o=otIn?parseFloat(otIn.value)||0:0;
-    const c=calcWage(date,r,o,wage);
+    const sh=curShift();
+    const c=calcWage(date,r,o,wage,sh);
     const logs=getLogs();
-    logs[date]={regHrs:r,otHrs:o,hrs:r+o,gross:c.gross,net:c.net,eff:c.eff};
+    // Store shiftOverride only when it differs from the week default
+    const override=sh!==weekShift?sh:undefined;
+    logs[date]={regHrs:r,otHrs:o,hrs:r+o,gross:c.gross,net:c.net,eff:c.eff,shiftOverride:override};
     saveLogs(logs);closeModal();
   });
 }
 
 function closeModal(){
   const ov=document.getElementById('modal-ov');if(ov)ov.remove();
-  S.modal=null;S.mReg=undefined;S.mOT=undefined;render();
+  S.modal=null;S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;render();
 }
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
@@ -693,11 +726,11 @@ function attachListeners(){
   document.querySelectorAll('.dc[data-date]').forEach(el=>el.addEventListener('click',()=>{
     const s=el.dataset.date;if(s>today())return;
     const logs=getLogs();
-    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;render();
+    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;render();
   }));
   document.querySelectorAll('.log-edit[data-date]').forEach(el=>el.addEventListener('click',()=>{
     const s=el.dataset.date,logs=getLogs();
-    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;render();
+    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;render();
   }));
   const sw=document.getElementById('save-wage');
   if(sw)sw.addEventListener('click',()=>{

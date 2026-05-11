@@ -568,3 +568,31 @@ body{
   .fg-row{grid-template-columns:1fr}
   .app{padding:12px}
 }
+/* ── Per-day shift toggle (inside modal) ── */
+.shift-tog{
+  flex:1;
+  padding:9px 12px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:var(--bg-card2);
+  color:var(--text-muted);
+  font-family:'Inter',system-ui,sans-serif;
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
+  transition:all 0.18s;
+  letter-spacing:0.02em;
+}
+.shift-tog:hover{border-color:var(--border-strong);color:var(--text)}
+.shift-tog-on-day{
+  background:var(--day-bg);
+  border-color:var(--day-border);
+  color:var(--day-text);
+  box-shadow:0 2px 10px var(--day-bg);
+}
+.shift-tog-on-night{
+  background:var(--night-bg);
+  border-color:var(--night-border);
+  color:var(--night-text);
+  box-shadow:0 2px 10px var(--night-bg);
+}

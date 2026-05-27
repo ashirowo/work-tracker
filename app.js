@@ -47,8 +47,9 @@ function applyFixedHolidays(years){
 }
 
 async function fetchHolidaysForYear(year){
-  const cacheKeyEn = 'wt4_hol_'+year;
-  const cacheKeyKo = 'wt4_hol_ko_'+year;
+  const HOLIDAY_CACHE_VERSION = 'v2';
+  const cacheKeyEn = `wt4_${HOLIDAY_CACHE_VERSION}_hol_${year}`;
+  const cacheKeyKo = `wt4_${HOLIDAY_CACHE_VERSION}_hol_ko_${year}`;
   const cachedEn = localStorage.getItem(cacheKeyEn);
   const cachedKo = localStorage.getItem(cacheKeyKo);
   if(cachedEn && cachedKo){

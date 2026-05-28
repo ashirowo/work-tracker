@@ -186,6 +186,14 @@ en:{
   nSatDayOT:x=>`Overtime: ${x}h × 1.5 = ${+(x*1.5).toFixed(2)}h`,
   nSatNight:r=>`Saturday (night): ${r}h → ${satNightEff(r).toFixed(2)}h effective`,
   nSatNightOT:x=>`Overtime: ${x}h × 2 = ${+(x*2).toFixed(2)}h`,
+  nHolDay:r=>`Holiday worked (day): ${r}h → ${+(r/8*12).toFixed(2)}h effective`,
+  nHolNight:r=>`Holiday worked (night): ${r}h → ${satNightEff(r).toFixed(2)}h effective`,
+  nHolDayOT:x=>`Overtime: ${x}h × 1.5 = ${+(x*1.5).toFixed(2)}h`,
+  nHolNightOT:x=>`Overtime: ${x}h × 2 = ${+(x*2).toFixed(2)}h`,
+  nSunDay:r=>`Sunday worked (day): ${r}h → ${+(r/8*12).toFixed(2)}h effective`,
+  nSunNight:r=>`Sunday worked (night): ${r}h → ${satNightEff(r).toFixed(2)}h effective`,
+  nSunDayOT:x=>`Overtime: ${x}h × 1.5 = ${+(x*1.5).toFixed(2)}h`,
+  nSunNightOT:x=>`Overtime: ${x}h × 2 = ${+(x*2).toFixed(2)}h`,
   nHolBase:"Holiday base: 8h auto-credited",
   nHolOTday:x=>`Holiday OT (day): ${x}h × 1.5 = ${+(x*1.5).toFixed(2)}h`,
   nHolOTnight:x=>`Holiday OT (night): ${x}h × 2 = ${+(x*2).toFixed(2)}h`,
@@ -230,6 +238,14 @@ ko:{
   nSatDayOT:x=>`초과: ${x}h × 1.5 = ${+(x*1.5).toFixed(2)}h`,
   nSatNight:r=>`토요일 (야간): ${r}h → ${satNightEff(r).toFixed(2)}h 환산`,
   nSatNightOT:x=>`초과: ${x}h × 2 = ${+(x*2).toFixed(2)}h`,
+  nHolDay:r=>`공휴일 근무 (주간): ${r}h → ${+(r/8*12).toFixed(2)}h 환산`,
+  nHolNight:r=>`공휴일 근무 (야간): ${r}h → ${satNightEff(r).toFixed(2)}h 환산`,
+  nHolDayOT:x=>`초과: ${x}h × 1.5 = ${+(x*1.5).toFixed(2)}h`,
+  nHolNightOT:x=>`초과: ${x}h × 2 = ${+(x*2).toFixed(2)}h`,
+  nSunDay:r=>`일요일 근무 (주간): ${r}h → ${+(r/8*12).toFixed(2)}h 환산`,
+  nSunNight:r=>`일요일 근무 (야간): ${r}h → ${satNightEff(r).toFixed(2)}h 환산`,
+  nSunDayOT:x=>`초과: ${x}h × 1.5 = ${+(x*1.5).toFixed(2)}h`,
+  nSunNightOT:x=>`초과: ${x}h × 2 = ${+(x*2).toFixed(2)}h`,
   nHolBase:"공휴일 기본: 8시간 자동 인정",
   nHolOTday:x=>`공휴일 초과 (주간): ${x}h × 1.5 = ${+(x*1.5).toFixed(2)}h`,
   nHolOTnight:x=>`공휴일 초과 (야간): ${x}h × 2 = ${+(x*2).toFixed(2)}h`,
@@ -274,6 +290,14 @@ id:{
   nSatDayOT:x=>`Lembur: ${x}j × 1,5 = ${+(x*1.5).toFixed(2)}j`,
   nSatNight:r=>`Sabtu (malam): ${r}j → ${satNightEff(r).toFixed(2)}j efektif`,
   nSatNightOT:x=>`Lembur: ${x}j × 2 = ${+(x*2).toFixed(2)}j`,
+  nHolDay:r=>`Libur bekerja (siang): ${r}j → ${+(r/8*12).toFixed(2)}j efektif`,
+  nHolNight:r=>`Libur bekerja (malam): ${r}j → ${satNightEff(r).toFixed(2)}j efektif`,
+  nHolDayOT:x=>`Lembur: ${x}j × 1,5 = ${+(x*1.5).toFixed(2)}j`,
+  nHolNightOT:x=>`Lembur: ${x}j × 2 = ${+(x*2).toFixed(2)}j`,
+  nSunDay:r=>`Minggu bekerja (siang): ${r}j → ${+(r/8*12).toFixed(2)}j efektif`,
+  nSunNight:r=>`Minggu bekerja (malam): ${r}j → ${satNightEff(r).toFixed(2)}j efektif`,
+  nSunDayOT:x=>`Lembur: ${x}j × 1,5 = ${+(x*1.5).toFixed(2)}j`,
+  nSunNightOT:x=>`Lembur: ${x}j × 2 = ${+(x*2).toFixed(2)}j`,
   nHolBase:"Dasar libur: 8j otomatis",
   nHolOTday:x=>`Lembur libur (siang): ${x}j × 1,5 = ${+(x*1.5).toFixed(2)}j`,
   nHolOTnight:x=>`Lembur libur (malam): ${x}j × 2 = ${+(x*2).toFixed(2)}j`,
@@ -387,22 +411,30 @@ function satNightEff(h){
 // Sat day: linear scale 8h→12h
 function satDayEff(h){ return +(h/8*12).toFixed(2); }
 
-// calcSatLike: used for Saturday, Holidays (worked), and Sundays (worked)
-function calcSatLike(shift,regHrs,otHrs,tr){
+// calcSatLike: used for Saturday, Holidays (worked), and Sundays (worked).
+// mode: 'saturday' | 'holiday' | 'sunday' — controls display labels only, not formulas.
+function calcSatLike(shift,regHrs,otHrs,tr,mode){
   let eff=0,notes=[];
+  // Pick label functions based on mode — formulas are identical regardless
+  const labelBase = mode==='holiday' ? (shift==='day'?tr.nHolDay:tr.nHolNight)
+                  : mode==='sunday'  ? (shift==='day'?tr.nSunDay:tr.nSunNight)
+                  :                    (shift==='day'?tr.nSatDay:tr.nSatNight);
+  const labelOT   = mode==='holiday' ? (shift==='day'?tr.nHolDayOT:tr.nHolNightOT)
+                  : mode==='sunday'  ? (shift==='day'?tr.nSunDayOT:tr.nSunNightOT)
+                  :                    (shift==='day'?tr.nSatDayOT:tr.nSatNightOT);
   if(shift==='day'){
-    eff=satDayEff(regHrs);notes.push(tr.nSatDay(regHrs));
-    if(otHrs>0){const e=+(otHrs*1.5).toFixed(2);eff=+(eff+e).toFixed(2);notes.push(tr.nSatDayOT(otHrs));}
+    eff=satDayEff(regHrs);notes.push(labelBase(regHrs));
+    if(otHrs>0){const e=+(otHrs*1.5).toFixed(2);eff=+(eff+e).toFixed(2);notes.push(labelOT(otHrs));}
   }else{
-    eff=satNightEff(regHrs);notes.push(tr.nSatNight(regHrs));
-    if(otHrs>0){const e=+(otHrs*2).toFixed(2);eff=+(eff+e).toFixed(2);notes.push(tr.nSatNightOT(otHrs));}
+    eff=satNightEff(regHrs);notes.push(labelBase(regHrs));
+    if(otHrs>0){const e=+(otHrs*2).toFixed(2);eff=+(eff+e).toFixed(2);notes.push(labelOT(otHrs));}
   }
   return{eff,notes};
 }
 
 function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride){
   const shift=shiftOverride||shiftFor(dateStr);
-  const holDay=isHol(dateStr)&&!isSun(dateStr),sun=isSun(dateStr),sat=isSat(dateStr);
+  const holDay=isHol(dateStr),sun=isSun(dateStr)&&!isHol(dateStr),sat=isSat(dateStr)&&!isHol(dateStr);
   const tr=TR[S.lang];
   let eff=0,notes=[];
 
@@ -413,7 +445,7 @@ function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride){
       // 8h auto-base + worked hours calculated like Saturday
       notes.push(tr.nHolBase);// reuse "8h auto-credited" note
       eff=8;
-      const worked=calcSatLike(shift,regHrs,otHrs,tr);
+      const worked=calcSatLike(shift,regHrs,otHrs,tr,'sunday');
       // Sunday worked: the worked portion is on top of the 8h base
       eff=+(8+worked.eff).toFixed(2);
       notes.push(...worked.notes);
@@ -429,7 +461,7 @@ function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride){
     notes.push(tr.nHolBase);
     eff=8;
     if(regHrs>0||otHrs>0){
-      const worked=calcSatLike(shift,regHrs,otHrs,tr);
+      const worked=calcSatLike(shift,regHrs,otHrs,tr,'holiday');
       eff=+(8+worked.eff).toFixed(2);
       notes.push(...worked.notes);
     }
@@ -438,7 +470,7 @@ function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride){
 
   // Saturday
   if(sat){
-    const r=calcSatLike(shift,regHrs,otHrs,tr);
+    const r=calcSatLike(shift,regHrs,otHrs,tr,'saturday');
     eff=r.eff;notes=r.notes;
     const g=Math.round(eff*wage);return{gross:g,net:applyTax(g),eff,notes};
   }
@@ -468,15 +500,15 @@ function applyTheme(){document.documentElement.setAttribute('data-theme',S.theme
 function autoGross(ds,wage){
   const logs=getLogs();
   if(logs[ds])return logs[ds].gross||0;
-  if(isSun(ds)&&!isHol(ds)&&ds<=today()&&allWeekdaysLogged(ds))return Math.round(8*wage);
-  if(isHol(ds)&&!isSun(ds)&&!logs[ds]&&ds<=today())return Math.round(8*wage);
+  if(isHol(ds)&&!logs[ds]&&ds<=today())return Math.round(8*wage); // holiday (incl. holiday Sundays)
+  if(isSun(ds)&&!isHol(ds)&&ds<=today()&&allWeekdaysLogged(ds))return Math.round(8*wage); // plain Sunday
   return 0;
 }
 function autoEff(ds){
   const logs=getLogs();
   if(logs[ds])return logs[ds].eff||0;
-  if(isSun(ds)&&!isHol(ds)&&ds<=today()&&allWeekdaysLogged(ds))return 8;
-  if(isHol(ds)&&!isSun(ds)&&!logs[ds]&&ds<=today())return 8;
+  if(isHol(ds)&&!logs[ds]&&ds<=today())return 8; // holiday (incl. holiday Sundays)
+  if(isSun(ds)&&!isHol(ds)&&ds<=today()&&allWeekdaysLogged(ds))return 8; // plain Sunday
   return 0;
 }
 
@@ -548,7 +580,7 @@ function buildCal(){
     const s=mkds(y,m,d),dw=new Date(y,m,d).getDay();
     const future=s>todayStr,logged=!!logs[s],hol=isHol(s),tod=s===todayStr;
     const sun=dw===0,autoSun=sun&&!hol&&!logged&&!future&&allWeekdaysLogged(s);
-    const autoHol=hol&&!sun&&!logged&&!future;
+    const autoHol=hol&&!logged&&!future; // includes holiday Sundays
     let cls='dc';
     if(future)cls+=' future';if(dw===0)cls+=' csun';if(dw===6)cls+=' csat';
     if(hol)cls+=' hol';
@@ -635,7 +667,7 @@ function buildSettings(){
 // ── Modal ─────────────────────────────────────────────────────────────────────
 function buildModal(){
   const{date,existing}=S.modal;
-  const holDay=isHol(date)&&!isSun(date),sun=isSun(date),sat=isSat(date);
+  const holDay=isHol(date),sun=isSun(date)&&!isHol(date),sat=isSat(date)&&!isHol(date);
   const weekShift=shiftFor(date);
   // Per-day shift: use saved override if editing, or state override, or week default
   const defShift=existing?.shiftOverride||weekShift;
@@ -643,12 +675,12 @@ function buildModal(){
   const wage=getWage(),dn=t('dn'),dw=dowOf(date);
   let badges='';
   if(holDay)badges+=`<span class="mbadge b-hol">● ${holName(date)}</span>`;
-  if(sun)badges+=`<span class="mbadge b-sun">${dn[0]}</span>`;
+  if(isSun(date))badges+=`<span class="mbadge b-sun">${dn[0]}</span>`; // always show Sunday badge
   if(sat)badges+=`<span class="mbadge b-sat">${dn[6]}</span>`;
 
   const defReg = existing?.regHrs !== undefined
   ? existing.regHrs
-  : ((sun || holDay) ? 0 : 8);
+  : ((holDay || sun) ? 0 : 8); // holDay already covers holiday Sundays
   const defOT=existing?.otHrs!==undefined?existing.otHrs:0;
   const reg=S.mReg!==undefined?S.mReg:defReg;
   const ot=S.mOT!==undefined?S.mOT:defOT;

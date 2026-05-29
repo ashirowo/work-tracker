@@ -36,12 +36,13 @@
 // Replace these values with your own Firebase project config.
 // Get them from: Firebase Console → Project Settings → Your apps → Web app
 const FIREBASE_CONFIG = {
-  apiKey:            "REPLACE_WITH_YOUR_API_KEY",
-  authDomain:        "REPLACE_WITH_YOUR_AUTH_DOMAIN",
-  projectId:         "REPLACE_WITH_YOUR_PROJECT_ID",
-  storageBucket:     "REPLACE_WITH_YOUR_STORAGE_BUCKET",
-  messagingSenderId: "REPLACE_WITH_YOUR_MESSAGING_SENDER_ID",
-  appId:             "REPLACE_WITH_YOUR_APP_ID",
+  apiKey:            "AIzaSyCRz4dSLxb3QKz6zDEOzW__cF-JgaIrAhA",
+  authDomain:        "chugan-yagan.firebaseapp.com",
+  projectId:         "chugan-yagan",
+  storageBucket:     "chugan-yagan.firebasestorage.app",
+  messagingSenderId: "216270497081",
+  appId:             "1:216270497081:web:fc30f466986fce2cc2b4e8",
+  measurementId: "G-EEMRJWTJKZ"
 };
 
 // ── Imports from Firebase CDN (ESM) ──────────────────────────────────────────

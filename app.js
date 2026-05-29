@@ -22,6 +22,9 @@ function updateSyncUI(){
   badge.dataset.status=status;
   badge.className='sync-badge sync-badge--'+status;
 }
+// Expose to window so firebase.js (a separate ES module) can call these.
+// ES modules have isolated scopes — window is the only shared global.
+window._appBridge = { setCURRENT_USER, updateSyncUI, get render(){ return render; } };
 
 // ── Dynamic Korean Public Holidays ───────────────────────────────────────────
 // Source: data.go.kr — Ministry of the Interior and Safety official holiday API.
@@ -554,31 +557,16 @@ function buildApp(){
   const syncHTML=CURRENT_USER
     ?`<span id="sync-badge" class="sync-badge sync-badge--${ss}" title="${ssTip}">${ssIcon}</span>`
     :'';
-  // Account menu — avatar if photo available, else initial letter
+  // Account trigger — avatar or initial; dropdown is a body-level portal (see attachListeners)
   const accountHTML=CURRENT_USER
-    ?`<div class="hdr-menu-wrap">
-        <button class="hdr-icon-btn" id="account-btn" title="${CURRENT_USER.displayName||CURRENT_USER.email}">
-          ${CURRENT_USER.photoURL
-            ?`<img src="${CURRENT_USER.photoURL}" class="avatar" alt="">`
-            :`<span class="avatar-initials">${(CURRENT_USER.displayName||CURRENT_USER.email||'?')[0].toUpperCase()}</span>`}
-        </button>
-        <div class="hdr-dropdown" id="account-menu">
-          <div class="hdr-dropdown-user">
-            <div class="hdr-dropdown-name">${CURRENT_USER.displayName||''}</div>
-            <div class="hdr-dropdown-email">${CURRENT_USER.email||''}</div>
-          </div>
-          <div class="hdr-dropdown-divider"></div>
-          <button class="hdr-dropdown-item hdr-dropdown-item--danger" id="auth-logout">Sign out</button>
-        </div>
-      </div>`
+    ?`<button class="hdr-icon-btn" id="account-btn" title="${CURRENT_USER.displayName||CURRENT_USER.email}">
+        ${CURRENT_USER.photoURL
+          ?`<img src="${CURRENT_USER.photoURL}" class="avatar" alt="">`
+          :`<span class="avatar-initials">${(CURRENT_USER.displayName||CURRENT_USER.email||'?')[0].toUpperCase()}</span>`}
+      </button>`
     :`<button id="auth-login" class="auth-btn auth-btn-in">Sign in</button>`;
-  // Language dropdown
-  const langHTML=`<div class="hdr-menu-wrap">
-    <button class="hdr-icon-btn" id="lang-btn" title="Language">🌐</button>
-    <div class="hdr-dropdown hdr-dropdown--lang" id="lang-menu">
-      ${['en','ko','id'].map(l=>`<button class="hdr-dropdown-item${S.lang===l?' hdr-dropdown-item--active':''}" data-lang="${l}">${l==='en'?'🇺🇸 English':l==='ko'?'🇰🇷 한국어':'🇮🇩 Indonesia'}</button>`).join('')}
-    </div>
-  </div>`;
+  // Language trigger only — dropdown is a body-level portal (see attachListeners)
+  const langHTML=`<button class="hdr-icon-btn" id="lang-btn" title="Language">🌐</button>`;
   return`<div class="hdr">
     <div>
       <div class="hdr-title">${t('appTitle')}</div>
@@ -884,9 +872,7 @@ function attachListeners(){
   document.getElementById('theme-toggle').addEventListener('click',()=>{
     S.theme=S.theme==='dark'?'light':'dark';sv('wt4_theme',S.theme);scheduleSync();render();
   });
-  document.querySelectorAll('[data-lang]').forEach(b=>b.addEventListener('click',()=>{
-    S.lang=b.dataset.lang;sv('wt4_lang',S.lang);scheduleSync();render();
-  }));
+  // lang buttons are wired inside the portal (see portal dropdown system above)
   document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{
     S.tab=b.dataset.tab;S.success='';render();
   }));
@@ -912,34 +898,78 @@ function attachListeners(){
   const logoutBtn=document.getElementById('auth-logout');
   if(logoutBtn)logoutBtn.addEventListener('click',()=>signOutUser());
 
-  // ── Account dropdown ─────────────────────────────────────────────────────────
-  const accountBtn=document.getElementById('account-btn');
-  const accountMenu=document.getElementById('account-menu');
-  if(accountBtn&&accountMenu){
-    accountBtn.addEventListener('click',e=>{
-      e.stopPropagation();
-      const wasOpen=accountMenu.classList.contains('open');
-      document.querySelectorAll('.hdr-dropdown').forEach(m=>m.classList.remove('open'));
-      if(!wasOpen)accountMenu.classList.add('open');
-    });
+  // ── Portal dropdown system ────────────────────────────────────────────────────
+  // Dropdowns are appended directly to <body> so they are never clipped by
+  // backdrop-filter or overflow:hidden on ancestor elements (like .hdr, .card).
+  // Each render() removes old portals and re-creates fresh ones.
+  document.querySelectorAll('.portal-dropdown').forEach(el=>el.remove());
+
+  function createPortalDropdown(id, html){
+    const el=document.createElement('div');
+    el.id=id;
+    el.className='hdr-dropdown portal-dropdown';
+    el.innerHTML=html;
+    document.body.appendChild(el);
+    return el;
   }
 
-  // ── Language dropdown ────────────────────────────────────────────────────────
+  function positionDropdown(menu, trigger){
+    const r=trigger.getBoundingClientRect();
+    menu.style.position='fixed';
+    menu.style.top=(r.bottom+6)+'px';
+    // Align right edge of menu to right edge of trigger
+    const menuW=menu.offsetWidth||200;
+    let left=r.right-menuW;
+    if(left<8)left=8; // don't go off-screen left
+    menu.style.left=left+'px';
+    menu.style.right='auto';
+  }
+
+  function closeAllPortals(){
+    document.querySelectorAll('.portal-dropdown').forEach(m=>m.classList.remove('open'));
+  }
+
+  // ── Language portal ──────────────────────────────────────────────────────────
   const langBtn=document.getElementById('lang-btn');
-  const langMenu=document.getElementById('lang-menu');
-  if(langBtn&&langMenu){
+  if(langBtn){
+    const langPortal=createPortalDropdown('lang-menu',
+      ['en','ko','id'].map(l=>`<button class="hdr-dropdown-item${S.lang===l?' hdr-dropdown-item--active':''}" data-lang="${l}">${l==='en'?'🇺🇸 English':l==='ko'?'🇰🇷 한국어':'🇮🇩 Indonesia'}</button>`).join(''));
+    // Wire language buttons inside portal
+    langPortal.querySelectorAll('[data-lang]').forEach(b=>b.addEventListener('click',e=>{
+      e.stopPropagation();
+      S.lang=b.dataset.lang;sv('wt4_lang',S.lang);scheduleSync();
+      closeAllPortals();
+      render();
+    }));
     langBtn.addEventListener('click',e=>{
       e.stopPropagation();
-      const wasOpen=langMenu.classList.contains('open');
-      document.querySelectorAll('.hdr-dropdown').forEach(m=>m.classList.remove('open'));
-      if(!wasOpen)langMenu.classList.add('open');
+      const wasOpen=langPortal.classList.contains('open');
+      closeAllPortals();
+      if(!wasOpen){langPortal.classList.add('open');positionDropdown(langPortal,langBtn);}
     });
   }
 
-  // Close all dropdowns on outside click (persists between renders)
-  document.addEventListener('click',()=>{
-    document.querySelectorAll('.hdr-dropdown').forEach(m=>m.classList.remove('open'));
-  });
+  // ── Account portal ───────────────────────────────────────────────────────────
+  const accountBtn=document.getElementById('account-btn');
+  if(accountBtn&&CURRENT_USER){
+    const accountPortal=createPortalDropdown('account-menu',
+      `<div class="hdr-dropdown-user">
+        <div class="hdr-dropdown-name">${CURRENT_USER.displayName||''}</div>
+        <div class="hdr-dropdown-email">${CURRENT_USER.email||''}</div>
+       </div>
+       <div class="hdr-dropdown-divider"></div>
+       <button class="hdr-dropdown-item hdr-dropdown-item--danger" id="auth-logout-portal">Sign out</button>`);
+    accountPortal.querySelector('#auth-logout-portal')?.addEventListener('click',()=>signOutUser());
+    accountBtn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const wasOpen=accountPortal.classList.contains('open');
+      closeAllPortals();
+      if(!wasOpen){accountPortal.classList.add('open');positionDropdown(accountPortal,accountBtn);}
+    });
+  }
+
+  // Close portals on outside click
+  document.addEventListener('click',closeAllPortals);
 
   const sw=document.getElementById('save-wage');
   if(sw)sw.addEventListener('click',()=>{

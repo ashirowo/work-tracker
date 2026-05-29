@@ -677,26 +677,25 @@ body{
   line-height:1;
 }
 
-/* ── Dropdown wrapper ── */
+/* ── Portal dropdowns ── */
+/* Rendered as direct children of <body> so backdrop-filter on ancestors
+   never creates a trapping stacking context. Position is set via JS. */
 .hdr-menu-wrap{
-  position:relative;
   display:flex;
   align-items:center;
 }
 .hdr-dropdown{
-  position:absolute;
-  top:calc(100% + 8px);
-  right:0;
+  /* position:fixed is set inline by JS positionDropdown() */
   min-width:180px;
   background:var(--bg-card);
   border:1px solid var(--border-strong);
+  border-top-color:rgba(255,255,255,0.12);
   border-radius:14px;
-  box-shadow:var(--shadow),0 8px 32px rgba(0,0,0,0.3);
+  box-shadow:0 8px 32px rgba(0,0,0,0.4),0 2px 8px rgba(0,0,0,0.2);
   padding:6px;
-  display:none; /* shown via .open */
-  z-index:200;
-  backdrop-filter:blur(20px);
-  -webkit-backdrop-filter:blur(20px);
+  display:none; /* toggled to block via .open */
+  z-index:9999; /* above everything — no stacking context parent */
+  overflow:visible;
 }
 .hdr-dropdown.open{display:block;animation:dropIn 0.15s ease;}
 @keyframes dropIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}

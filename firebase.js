@@ -128,8 +128,9 @@ async function pullFromCloud(uid) {
       await pushToCloud(uid);
     }
 
-    // Re-render app with newly merged data
-    if (typeof render === 'function') render();
+    // Re-render app with newly merged data — go through setCURRENT_USER
+    // so CURRENT_USER stays in sync; render() will be called inside it.
+    window._appBridge?.render?.();
 
   } catch(e) {
     // Offline or Firestore error — silently continue with localStorage
@@ -213,7 +214,7 @@ function _setSyncStatus(status) {
   _syncStatus = status;
   // Re-render header in-place without rebuilding the whole app
   // app.js exports updateSyncUI() for this lightweight update
-  if (typeof updateSyncUI === 'function') updateSyncUI();
+  window._appBridge?.updateSyncUI?.();
 }
 
 // ── Auth state observer ───────────────────────────────────────────────────────
@@ -224,7 +225,7 @@ onAuthStateChanged(auth, async (user) => {
   _currentUser = user;
 
   // Tell app.js about the new auth state — it reads CURRENT_USER on every render
-  if (typeof setCURRENT_USER === 'function') setCURRENT_USER(user);
+  window._appBridge?.setCURRENT_USER?.(user);
 
   if (user) {
     console.log('[firebase] Signed in as:', user.email);
@@ -234,7 +235,7 @@ onAuthStateChanged(auth, async (user) => {
   } else {
     console.log('[firebase] Signed out.');
     // Re-render so header switches back to Sign In button
-    if (typeof render === 'function') render();
+    window._appBridge?.setCURRENT_USER?.(null);
   }
 });
 

@@ -630,7 +630,6 @@ let S={
   lang:ld('wt4_lang','en'),theme:ld('wt4_theme','dark'),
   tab:'calendar',calY:new Date().getFullYear(),calM:new Date().getMonth(),
   modal:null,mReg:undefined,mOT:undefined,mShift:undefined,success:''
-}
 };
 function t(k,...a){const fn=TR[S.lang][k];return typeof fn==='function'?fn(...a):(fn||k);}
 function applyTheme(){document.documentElement.setAttribute('data-theme',S.theme);}

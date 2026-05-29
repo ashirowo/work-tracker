@@ -184,6 +184,17 @@ function prefetchHolidays(){
   ensureHolidays([y-1, y, y+1, y+2]);
 }
 
+// Night weekday formula: H<=5.68 → H as-is; H>5.68 → 5.68+(H-5.68)*1.5
+function nightWeekdayEff(h){
+  return h<=5.68 ? h : +(5.68+(h-5.68)*1.5).toFixed(2);
+}
+// Sat night formula: H<=5.68 → H*1.5; H>5.68 → 5.68*1.5+(H-5.68)*2
+function satNightEff(h){
+  return h<=5.68 ? +(h*1.5).toFixed(2) : +(5.68*1.5+(h-5.68)*2).toFixed(2);
+}
+// Sat day: linear scale 8h→12h
+function satDayEff(h){ return +(h/8*12).toFixed(2); }
+
 const TR={
 en:{
   signIn:"Sign in",signOut:"Sign out",
@@ -538,17 +549,6 @@ function allWeekdaysLogged(s){
 }
 
 // ── Wage calculation ──────────────────────────────────────────────────────────
-// Night weekday formula: H<=5.68 → H as-is; H>5.68 → 5.68+(H-5.68)*1.5
-function nightWeekdayEff(h){
-  return h<=5.68 ? h : +(5.68+(h-5.68)*1.5).toFixed(2);
-}
-// Sat night formula: H<=5.68 → H*1.5; H>5.68 → 5.68*1.5+(H-5.68)*2
-function satNightEff(h){
-  return h<=5.68 ? +(h*1.5).toFixed(2) : +(5.68*1.5+(h-5.68)*2).toFixed(2);
-}
-// Sat day: linear scale 8h→12h
-function satDayEff(h){ return +(h/8*12).toFixed(2); }
-
 // calcSatLike: used for Saturday, Holidays (worked), and Sundays (worked).
 // mode: 'saturday' | 'holiday' | 'sunday' — controls display labels only, not formulas.
 function calcSatLike(shift,regHrs,otHrs,tr,mode){

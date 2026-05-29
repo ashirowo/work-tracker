@@ -36,13 +36,12 @@
 // Replace these values with your own Firebase project config.
 // Get them from: Firebase Console → Project Settings → Your apps → Web app
 const FIREBASE_CONFIG = {
-  apiKey:            "AIzaSyCRz4dSLxb3QKz6zDEOzW__cF-JgaIrAhA",
-  authDomain:        "chugan-yagan.firebaseapp.com",
-  projectId:         "chugan-yagan",
-  storageBucket:     "chugan-yagan.firebasestorage.app",
-  messagingSenderId: "216270497081",
-  appId:             "1:216270497081:web:fc30f466986fce2cc2b4e8",
-  measurementId: "G-EEMRJWTJKZ"
+  apiKey:            "REPLACE_WITH_YOUR_API_KEY",
+  authDomain:        "REPLACE_WITH_YOUR_AUTH_DOMAIN",
+  projectId:         "REPLACE_WITH_YOUR_PROJECT_ID",
+  storageBucket:     "REPLACE_WITH_YOUR_STORAGE_BUCKET",
+  messagingSenderId: "REPLACE_WITH_YOUR_MESSAGING_SENDER_ID",
+  appId:             "REPLACE_WITH_YOUR_APP_ID",
 };
 
 // ── Imports from Firebase CDN (ESM) ──────────────────────────────────────────
@@ -157,12 +156,11 @@ async function pushToCloud(uid) {
     await setDoc(userDoc(targetUid), payload, { merge: true });
     lsSet('wt4_syncedAt', Date.now());
     console.log('[firebase] Pushed to cloud.');
-    // Update sync status indicator if present
-    _updateSyncBadge('synced');
+    _setSyncStatus('synced');
   } catch(e) {
     // Offline — Firestore SDK will retry automatically when back online
     console.warn('[firebase] Push failed (queued for retry):', e.message);
-    _updateSyncBadge('pending');
+    _setSyncStatus('pending');
   }
 }
 
@@ -172,7 +170,7 @@ async function pushToCloud(uid) {
 function scheduleSync() {
   if (!_currentUser) return; // not signed in — nothing to sync
   _syncPending = true;
-  _updateSyncBadge('pending');
+  _setSyncStatus('pending');
   clearTimeout(_syncTimer);
   _syncTimer = setTimeout(() => {
     pushToCloud(_currentUser.uid);
@@ -205,55 +203,37 @@ async function signOutUser() {
   // _currentUser is cleared by onAuthStateChanged
 }
 
-// ── Sync badge UI ─────────────────────────────────────────────────────────────
-// Updates the small sync status icon in the header (if it exists in the DOM)
-function _updateSyncBadge(status) {
-  const badge = document.getElementById('sync-badge');
-  if (!badge) return;
-  const icons = { synced: '☁', pending: '⏳', offline: '⚡' };
-  const titles = { synced: 'Synced to cloud', pending: 'Syncing...', offline: 'Offline — changes saved locally' };
-  badge.textContent = icons[status] || '☁';
-  badge.title = titles[status] || '';
-  badge.dataset.status = status;
+// ── Sync status ───────────────────────────────────────────────────────────────
+// Stored as a simple string so app.js can read it during render.
+// 'idle' | 'pending' | 'synced' | 'offline'
+let _syncStatus = 'idle';
+
+function _setSyncStatus(status) {
+  _syncStatus = status;
+  // Re-render header in-place without rebuilding the whole app
+  // app.js exports updateSyncUI() for this lightweight update
+  if (typeof updateSyncUI === 'function') updateSyncUI();
 }
 
 // ── Auth state observer ───────────────────────────────────────────────────────
-// This is the single entry point for all auth state changes.
-// Firebase calls this on page load (restoring session) and after sign-in/out.
+// SINGLE SOURCE OF TRUTH for auth state.
+// Stores the user globally, then calls render() so the header always
+// derives its UI from CURRENT_USER — not from transient DOM state.
 onAuthStateChanged(auth, async (user) => {
   _currentUser = user;
 
-  const loginBtn  = document.getElementById('auth-login');
-  const logoutBtn = document.getElementById('auth-logout');
-  const userLabel = document.getElementById('auth-user');
-  const syncBadge = document.getElementById('sync-badge');
+  // Tell app.js about the new auth state — it reads CURRENT_USER on every render
+  if (typeof setCURRENT_USER === 'function') setCURRENT_USER(user);
 
   if (user) {
-    // ── Signed in ──────────────────────────────────────────────────────────
     console.log('[firebase] Signed in as:', user.email);
-
-    if (loginBtn)  loginBtn.style.display  = 'none';
-    if (logoutBtn) logoutBtn.style.display = '';
-    if (userLabel) {
-      userLabel.textContent = user.displayName || user.email;
-      userLabel.style.display = '';
-    }
-    if (syncBadge) syncBadge.style.display = '';
-
-    _updateSyncBadge('pending');
-
-    // Pull cloud data and merge into localStorage
+    _setSyncStatus('pending');
+    // Pull cloud data; render() is called inside pullFromCloud after merge
     await pullFromCloud(user.uid);
-
   } else {
-    // ── Signed out ─────────────────────────────────────────────────────────
     console.log('[firebase] Signed out.');
-    _currentUser = null;
-
-    if (loginBtn)  loginBtn.style.display  = '';
-    if (logoutBtn) logoutBtn.style.display = 'none';
-    if (userLabel) userLabel.style.display = 'none';
-    if (syncBadge) syncBadge.style.display = 'none';
+    // Re-render so header switches back to Sign In button
+    if (typeof render === 'function') render();
   }
 });
 
@@ -263,15 +243,19 @@ window.addEventListener('online', () => {
   if (_currentUser) pushToCloud(_currentUser.uid);
 });
 window.addEventListener('offline', () => {
-  _updateSyncBadge('offline');
+  _setSyncStatus('offline');
   console.log('[firebase] Offline — changes will sync when connection restores.');
 });
 
 // ── Public API ────────────────────────────────────────────────────────────────
 // Exported so app.js can call these without knowing Firebase internals.
+// getSyncStatus() — read by app.js during render to show sync badge
+function getSyncStatus() { return _syncStatus; }
+
 export {
   signInWithGoogle,
   signOutUser,
   scheduleSync,      // call after any data mutation
   pushToCloud,       // call for immediate push (e.g. before page unload)
+  getSyncStatus,     // read current sync status for header badge
 };

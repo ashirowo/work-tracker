@@ -2,7 +2,26 @@
 // scheduleSync() is called after every data mutation so changes automatically
 // propagate to Firestore when the user is signed in. If not signed in or offline,
 // the call is a no-op and localStorage continues working as usual.
-import { signInWithGoogle, signOutUser, scheduleSync } from './firebase.js';
+import { signInWithGoogle, signOutUser, scheduleSync, getSyncStatus } from './firebase.js';
+
+// ── Auth state (global, set by firebase.js) ─────────────────────────────────
+// CURRENT_USER is the single source of truth for auth in the render layer.
+// firebase.js calls setCURRENT_USER when onAuthStateChanged fires,
+// which triggers render() so every part of the UI derives from this value.
+let CURRENT_USER = null;
+function setCURRENT_USER(user){ CURRENT_USER = user; render(); }
+// updateSyncUI: lightweight badge refresh without full re-render
+function updateSyncUI(){
+  const badge=document.getElementById('sync-badge');
+  if(!badge)return;
+  const status=getSyncStatus();
+  const icons={synced:'☁',pending:'⏳',offline:'⚡',idle:''};
+  const tips={synced:'Synced',pending:'Syncing...',offline:'Offline — saved locally',idle:''};
+  badge.textContent=icons[status]||'☁';
+  badge.title=tips[status]||'';
+  badge.dataset.status=status;
+  badge.className='sync-badge sync-badge--'+status;
+}
 
 // ── Dynamic Korean Public Holidays ───────────────────────────────────────────
 // Source: data.go.kr — Ministry of the Interior and Safety official holiday API.
@@ -528,18 +547,48 @@ function render(){
 
 function buildApp(){
   const shift=shiftFor(today());
+  // Sync badge — only shown when signed in; status from firebase.js
+  const ss=getSyncStatus();
+  const ssIcon={synced:'☁',pending:'⏳',offline:'⚡',idle:''}[ss]||'';
+  const ssTip={synced:'Synced',pending:'Syncing...',offline:'Offline — saved locally',idle:''}[ss]||'';
+  const syncHTML=CURRENT_USER
+    ?`<span id="sync-badge" class="sync-badge sync-badge--${ss}" title="${ssTip}">${ssIcon}</span>`
+    :'';
+  // Account menu — avatar if photo available, else initial letter
+  const accountHTML=CURRENT_USER
+    ?`<div class="hdr-menu-wrap">
+        <button class="hdr-icon-btn" id="account-btn" title="${CURRENT_USER.displayName||CURRENT_USER.email}">
+          ${CURRENT_USER.photoURL
+            ?`<img src="${CURRENT_USER.photoURL}" class="avatar" alt="">`
+            :`<span class="avatar-initials">${(CURRENT_USER.displayName||CURRENT_USER.email||'?')[0].toUpperCase()}</span>`}
+        </button>
+        <div class="hdr-dropdown" id="account-menu">
+          <div class="hdr-dropdown-user">
+            <div class="hdr-dropdown-name">${CURRENT_USER.displayName||''}</div>
+            <div class="hdr-dropdown-email">${CURRENT_USER.email||''}</div>
+          </div>
+          <div class="hdr-dropdown-divider"></div>
+          <button class="hdr-dropdown-item hdr-dropdown-item--danger" id="auth-logout">Sign out</button>
+        </div>
+      </div>`
+    :`<button id="auth-login" class="auth-btn auth-btn-in">Sign in</button>`;
+  // Language dropdown
+  const langHTML=`<div class="hdr-menu-wrap">
+    <button class="hdr-icon-btn" id="lang-btn" title="Language">🌐</button>
+    <div class="hdr-dropdown hdr-dropdown--lang" id="lang-menu">
+      ${['en','ko','id'].map(l=>`<button class="hdr-dropdown-item${S.lang===l?' hdr-dropdown-item--active':''}" data-lang="${l}">${l==='en'?'🇺🇸 English':l==='ko'?'🇰🇷 한국어':'🇮🇩 Indonesia'}</button>`).join('')}
+    </div>
+  </div>`;
   return`<div class="hdr">
     <div>
       <div class="hdr-title">${t('appTitle')}</div>
       <div class="hdr-sub">${t('thisWeek')}: ${shift==='day'?'☀ '+t('dayShift'):'☾ '+t('nightShift')}</div>
     </div>
     <div class="hdr-right">
-      <div class="lang-group">${['en','ko','id'].map(l=>`<button class="lang-btn${S.lang===l?' on':''}" data-lang="${l}">${l==='en'?'EN':l==='ko'?'한국':'ID'}</button>`).join('')}</div>
-      <button class="theme-btn" id="theme-toggle">${S.theme==='dark'?'☀':'🌙'}</button>
-      <span id="sync-badge" class="sync-badge" style="display:none;" title="Sync status">☁</span>
-      <span id="auth-user" class="auth-user" style="display:none;"></span>
-      <button id="auth-login"  class="auth-btn auth-btn-in">Sign in</button>
-      <button id="auth-logout" class="auth-btn auth-btn-out" style="display:none;">Sign out</button>
+      ${syncHTML}
+      <button class="hdr-icon-btn" id="theme-toggle" title="Toggle theme">${S.theme==='dark'?'☀':'🌙'}</button>
+      ${langHTML}
+      ${accountHTML}
     </div>
   </div>
   ${buildStats()}
@@ -857,11 +906,40 @@ function attachListeners(){
     const s=el.dataset.date,logs=getLogs();
     S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;render();
   }));
-  // Auth buttons — delegated here so they re-bind after every render
+  // ── Auth ────────────────────────────────────────────────────────────────────
   const loginBtn=document.getElementById('auth-login');
   if(loginBtn)loginBtn.addEventListener('click',()=>signInWithGoogle());
   const logoutBtn=document.getElementById('auth-logout');
   if(logoutBtn)logoutBtn.addEventListener('click',()=>signOutUser());
+
+  // ── Account dropdown ─────────────────────────────────────────────────────────
+  const accountBtn=document.getElementById('account-btn');
+  const accountMenu=document.getElementById('account-menu');
+  if(accountBtn&&accountMenu){
+    accountBtn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const wasOpen=accountMenu.classList.contains('open');
+      document.querySelectorAll('.hdr-dropdown').forEach(m=>m.classList.remove('open'));
+      if(!wasOpen)accountMenu.classList.add('open');
+    });
+  }
+
+  // ── Language dropdown ────────────────────────────────────────────────────────
+  const langBtn=document.getElementById('lang-btn');
+  const langMenu=document.getElementById('lang-menu');
+  if(langBtn&&langMenu){
+    langBtn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const wasOpen=langMenu.classList.contains('open');
+      document.querySelectorAll('.hdr-dropdown').forEach(m=>m.classList.remove('open'));
+      if(!wasOpen)langMenu.classList.add('open');
+    });
+  }
+
+  // Close all dropdowns on outside click (persists between renders)
+  document.addEventListener('click',()=>{
+    document.querySelectorAll('.hdr-dropdown').forEach(m=>m.classList.remove('open'));
+  });
 
   const sw=document.getElementById('save-wage');
   if(sw)sw.addEventListener('click',()=>{

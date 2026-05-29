@@ -643,3 +643,104 @@ body{
 .sync-badge[data-status="synced"]{opacity:0.5}
 .sync-badge[data-status="offline"]{opacity:1;color:var(--warning)}
 @keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
+
+/* ── Header icon buttons (theme, lang, account) ── */
+.hdr-icon-btn{
+  width:34px;height:34px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:transparent;
+  color:var(--text-muted);
+  cursor:pointer;
+  font-size:16px;
+  display:flex;align-items:center;justify-content:center;
+  transition:all 0.18s;
+  flex-shrink:0;
+}
+.hdr-icon-btn:hover{background:var(--bg-hover);border-color:var(--border-strong);color:var(--text)}
+
+/* ── Avatar ── */
+.avatar{
+  width:26px;height:26px;
+  border-radius:50%;
+  object-fit:cover;
+  display:block;
+}
+.avatar-initials{
+  width:26px;height:26px;
+  border-radius:50%;
+  background:var(--primary);
+  color:#fff;
+  font-size:12px;
+  font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+  line-height:1;
+}
+
+/* ── Dropdown wrapper ── */
+.hdr-menu-wrap{
+  position:relative;
+  display:flex;
+  align-items:center;
+}
+.hdr-dropdown{
+  position:absolute;
+  top:calc(100% + 8px);
+  right:0;
+  min-width:180px;
+  background:var(--bg-card);
+  border:1px solid var(--border-strong);
+  border-radius:14px;
+  box-shadow:var(--shadow),0 8px 32px rgba(0,0,0,0.3);
+  padding:6px;
+  display:none; /* shown via .open */
+  z-index:200;
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+}
+.hdr-dropdown.open{display:block;animation:dropIn 0.15s ease;}
+@keyframes dropIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+
+.hdr-dropdown--lang{min-width:160px;}
+
+/* ── Dropdown items ── */
+.hdr-dropdown-item{
+  display:block;width:100%;
+  padding:9px 12px;
+  border:none;border-radius:9px;
+  background:transparent;
+  color:var(--text);
+  font-family:'Inter',system-ui,sans-serif;
+  font-size:13px;font-weight:500;
+  text-align:left;cursor:pointer;
+  transition:background 0.12s;
+  letter-spacing:0.01em;
+}
+.hdr-dropdown-item:hover{background:var(--bg-hover)}
+.hdr-dropdown-item--active{
+  background:var(--primary-bg);
+  color:var(--primary);
+  font-weight:600;
+}
+.hdr-dropdown-item--danger{color:var(--danger)}
+.hdr-dropdown-item--danger:hover{background:var(--danger-bg)}
+
+/* ── User info block in account dropdown ── */
+.hdr-dropdown-user{padding:10px 12px 8px;}
+.hdr-dropdown-name{font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px}
+.hdr-dropdown-email{font-size:11px;color:var(--text-muted);word-break:break-all}
+.hdr-dropdown-divider{height:1px;background:var(--border);margin:4px 0;}
+
+/* ── Sync badge (inline in header-right) ── */
+.sync-badge{
+  font-size:14px;cursor:default;
+  flex-shrink:0;
+  transition:opacity 0.2s;
+}
+.sync-badge--pending{animation:pulse 1.2s infinite;}
+.sync-badge--synced{opacity:0.45;}
+.sync-badge--offline{color:var(--warning);}
+.sync-badge--idle{display:none;}
+
+/* ── Remove old lang-group styles that are superseded ── */
+/* .lang-group and .lang-btn are no longer rendered but keep rules harmless */

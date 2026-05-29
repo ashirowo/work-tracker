@@ -1,3 +1,9 @@
+// ── firebase.js integration ──────────────────────────────────────────────────
+// scheduleSync() is called after every data mutation so changes automatically
+// propagate to Firestore when the user is signed in. If not signed in or offline,
+// the call is a no-op and localStorage continues working as usual.
+import { signInWithGoogle, signOutUser, scheduleSync } from './firebase.js';
+
 // ── Dynamic Korean Public Holidays ───────────────────────────────────────────
 // Source: data.go.kr — Ministry of the Interior and Safety official holiday API.
 // Includes all public holidays AND substitute holidays (대체공휴일) correctly.
@@ -324,9 +330,9 @@ function pd(s){const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d);}
 function today(){const d=new Date();return mkds(d.getFullYear(),d.getMonth(),d.getDate());}
 function dowOf(s){return pd(s).getDay();}
 function getLogs(){return ld('wt4_logs',{});}
-function saveLogs(l){sv('wt4_logs',l);}
+function saveLogs(l){sv('wt4_logs',l);scheduleSync();}
 function getShifts(){return ld('wt4_shifts',{});}
-function saveShifts(s){sv('wt4_shifts',s);}
+function saveShifts(s){sv('wt4_shifts',s);scheduleSync();}
 function getWage(){return ld('wt4_wage',DEFAULT_WAGE);}
 function isHol(s){return!!HOLIDAYS[s];}
 // The API returns the Korean local name directly (localName field).
@@ -530,6 +536,10 @@ function buildApp(){
     <div class="hdr-right">
       <div class="lang-group">${['en','ko','id'].map(l=>`<button class="lang-btn${S.lang===l?' on':''}" data-lang="${l}">${l==='en'?'EN':l==='ko'?'한국':'ID'}</button>`).join('')}</div>
       <button class="theme-btn" id="theme-toggle">${S.theme==='dark'?'☀':'🌙'}</button>
+      <span id="sync-badge" class="sync-badge" style="display:none;" title="Sync status">☁</span>
+      <span id="auth-user" class="auth-user" style="display:none;"></span>
+      <button id="auth-login"  class="auth-btn auth-btn-in">Sign in</button>
+      <button id="auth-logout" class="auth-btn auth-btn-out" style="display:none;">Sign out</button>
     </div>
   </div>
   ${buildStats()}
@@ -823,10 +833,10 @@ function closeModal(){
 // ── Listeners ─────────────────────────────────────────────────────────────────
 function attachListeners(){
   document.getElementById('theme-toggle').addEventListener('click',()=>{
-    S.theme=S.theme==='dark'?'light':'dark';sv('wt4_theme',S.theme);render();
+    S.theme=S.theme==='dark'?'light':'dark';sv('wt4_theme',S.theme);scheduleSync();render();
   });
   document.querySelectorAll('[data-lang]').forEach(b=>b.addEventListener('click',()=>{
-    S.lang=b.dataset.lang;sv('wt4_lang',S.lang);render();
+    S.lang=b.dataset.lang;sv('wt4_lang',S.lang);scheduleSync();render();
   }));
   document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{
     S.tab=b.dataset.tab;S.success='';render();
@@ -847,6 +857,12 @@ function attachListeners(){
     const s=el.dataset.date,logs=getLogs();
     S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;render();
   }));
+  // Auth buttons — delegated here so they re-bind after every render
+  const loginBtn=document.getElementById('auth-login');
+  if(loginBtn)loginBtn.addEventListener('click',()=>signInWithGoogle());
+  const logoutBtn=document.getElementById('auth-logout');
+  if(logoutBtn)logoutBtn.addEventListener('click',()=>signOutUser());
+
   const sw=document.getElementById('save-wage');
   if(sw)sw.addEventListener('click',()=>{
     const w=parseInt(document.getElementById('wage-in').value);
@@ -858,7 +874,7 @@ function attachListeners(){
       const c=calcWage(s,r,o,w);
       logs[s]={...l,gross:c.gross,net:c.net,eff:c.eff};
     });
-    saveLogs(logs);S.success=t('wageSaved');render();
+    saveLogs(logs);scheduleSync();S.success=t('wageSaved');render();
   });
 }
 

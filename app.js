@@ -464,7 +464,7 @@ ru:{
 },
 ne:{
   signIn:"साइन इन",signOut:"साइन आउट",
-  appTitle:"काम घण्टा ट्र्याकर",thisWeek:"यो हप्ता",dayShift:"दिन",nightShift:"रात",
+  appTitle:"कामको घण्टा ट्र्याकर",thisWeek:"यो हप्ता",dayShift:"दिन",nightShift:"रात",
   tabCal:"क्यालेन्डर",tabLogs:"अभिलेख",tabSet:"सेटिङ",
   statDays:"दिन",statHours:"घण्टा",statNet:"खुद तलब (३.३% कटौती पछि)",
   calHint:"घण्टा लग गर्न कुनै मिति थिच्नुहोस्।",

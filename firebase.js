@@ -155,7 +155,7 @@ async function pushToCloud(uid) {
   };
 
   try {
-    await setDoc(userDoc(targetUid), payload, { merge: true });
+    await setDoc(userDoc(targetUid), payload);
     lsSet('wt4_syncedAt', Date.now());
     console.log('[firebase] Pushed to cloud.');
     _setSyncStatus('synced');

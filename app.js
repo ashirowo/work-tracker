@@ -199,8 +199,11 @@ const TR={
 en:{
   signIn:"Sign in",signOut:"Sign out",
   appTitle:"Work Hour Tracker",thisWeek:"This week",dayShift:"Day",nightShift:"Night",
-  tabCal:"Calendar",tabLogs:"Records",tabSet:"Settings",
+  tabCal:"Calendar",tabOverview:"Overview",tabSet:"Settings",
   statDays:"Days",statHours:"Hours",statNet:"Net Pay (after 3.3% tax)",
+  ovEstTotal:"Estimated total",ovOvertimeDesc:"Extra from overtime",
+  ovBestMonth:"Best month",ovDaysWorked:"Days worked",ovHighestDay:"Best single day",
+  ovNoData:"Log some days to see your overview.",ovBaseEarnings:"Base earnings",
   calHint:"Built by Ashiro at 3AM. 💻",
   shiftHint:"Click a week button to toggle ☀ Day / ☾ Night. All following weeks auto-alternate.",
   logTitle:"Work Records",logNone:"No records yet.",logTotal:"Total (net)",logEdit:"Edit",
@@ -252,8 +255,11 @@ en:{
 ko:{
   signIn:"로그인",signOut:"로그아웃",
   appTitle:"근무 시간 관리",thisWeek:"이번 주",dayShift:"주간",nightShift:"야간",
-  tabCal:"캘린더",tabLogs:"기록",tabSet:"설정",
+  tabCal:"캘린더",tabOverview:"개요",tabSet:"설정",
   statDays:"근무일",statHours:"총 시간",statNet:"실수령액 (3.3% 공제)",
+  ovEstTotal:"예상 총액",ovOvertimeDesc:"초과 근무 추가 수익",
+  ovBestMonth:"최고의 달",ovDaysWorked:"근무일수",ovHighestDay:"최고 하루 수익",
+  ovNoData:"날짜를 기록하면 개요가 표시됩니다.",ovBaseEarnings:"기본 수익",
   calHint:"아시로가 새벽 3시에 제작함. 💻",
   shiftHint:"주 버튼 클릭으로 ☀ 주간 / ☾ 야간 전환. 이후 모든 주 자동 교체.",
   logTitle:"근무 기록",logNone:"기록된 근무가 없습니다.",logTotal:"합계 (실수령)",logEdit:"수정",
@@ -305,8 +311,11 @@ ko:{
 id:{
   signIn:"Masuk",signOut:"Keluar",
   appTitle:"Pelacak Jam Kerja",thisWeek:"Minggu ini",dayShift:"Siang",nightShift:"Malam",
-  tabCal:"Kalender",tabLogs:"Riwayat",tabSet:"Pengaturan",
+  tabCal:"Kalender",tabOverview:"Ringkasan",tabSet:"Pengaturan",
   statDays:"Hari Kerja",statHours:"Total Jam",statNet:"Gaji Bersih (pajak 3,3%)",
+  ovEstTotal:"Total estimasi",ovOvertimeDesc:"Tambahan dari lembur",
+  ovBestMonth:"Bulan terbaik",ovDaysWorked:"Hari kerja",ovHighestDay:"Hari terbaik",
+  ovNoData:"Catat beberapa hari untuk melihat ringkasan.",ovBaseEarnings:"Penghasilan dasar",
   calHint:"Dibuat oleh Ashref jam 3 pagi. 💻",
   shiftHint:"Klik tombol minggu untuk beralih ☀ Siang / ☾ Malam. Minggu berikutnya otomatis bergantian.",
   logTitle:"Riwayat Kerja",logNone:"Belum ada catatan.",logTotal:"Total (bersih)",logEdit:"Edit",
@@ -359,8 +368,11 @@ id:{
 th:{
   signIn:"เข้าสู่ระบบ",signOut:"ออกจากระบบ",
   appTitle:"ติดตามชั่วโมงทำงาน",thisWeek:"สัปดาห์นี้",dayShift:"กลางวัน",nightShift:"กลางคืน",
-  tabCal:"ปฏิทิน",tabLogs:"บันทึก",tabSet:"ตั้งค่า",
+  tabCal:"ปฏิทิน",tabOverview:"ภาพรวม",tabSet:"ตั้งค่า",
   statDays:"วันทำงาน",statHours:"ชั่วโมงรวม",statNet:"เงินสุทธิ (หักภาษี 3.3%)",
+  ovEstTotal:"ยอดรวมโดยประมาณ",ovOvertimeDesc:"รายได้พิเศษจากโอที",
+  ovBestMonth:"เดือนที่ดีที่สุด",ovDaysWorked:"วันทำงาน",ovHighestDay:"วันที่ดีที่สุด",
+  ovNoData:"บันทึกวันทำงานเพื่อดูภาพรวม",ovBaseEarnings:"รายได้พื้นฐาน",
   calHint:"สร้างโดย Ashiro ตี 3 💻",
   shiftHint:"กดปุ่มสัปดาห์เพื่อสลับ ☀ กลางวัน / ☾ กลางคืน สัปดาห์ถัดไปสลับอัตโนมัติ",
   logTitle:"บันทึกการทำงาน",logNone:"ยังไม่มีบันทึก",logTotal:"รวม (สุทธิ)",logEdit:"แก้ไข",
@@ -412,8 +424,11 @@ th:{
 ru:{
   signIn:"Войти",signOut:"Выйти",
   appTitle:"Учёт рабочих часов",thisWeek:"Эта неделя",dayShift:"День",nightShift:"Ночь",
-  tabCal:"Календарь",tabLogs:"Записи",tabSet:"Настройки",
+  tabCal:"Календарь",tabOverview:"Обзор",tabSet:"Настройки",
   statDays:"Дней",statHours:"Часов",statNet:"Чистая зарплата (за вычетом 3.3%)",
+  ovEstTotal:"Прогноз итого",ovOvertimeDesc:"Дополнительно от сверхурочных",
+  ovBestMonth:"Лучший месяц",ovDaysWorked:"Рабочих дней",ovHighestDay:"Лучший день",
+  ovNoData:"Внесите записи, чтобы увидеть обзор.",ovBaseEarnings:"Базовый заработок",
   calHint:"Сделано Ashiro в 3 ночи 💻",
   shiftHint:"Нажмите кнопку недели для переключения ☀ День / ☾ Ночь. Следующие недели чередуются автоматически.",
   logTitle:"Журнал работы",logNone:"Записей пока нет.",logTotal:"Итого (чистыми)",logEdit:"Изменить",
@@ -465,8 +480,11 @@ ru:{
 ne:{
   signIn:"साइन इन",signOut:"साइन आउट",
   appTitle:"कामको घण्टा ट्र्याकर",thisWeek:"यो हप्ता",dayShift:"दिन",nightShift:"रात",
-  tabCal:"क्यालेन्डर",tabLogs:"अभिलेख",tabSet:"सेटिङ",
+  tabCal:"क्यालेन्डर",tabOverview:"सारांश",tabSet:"सेटिङ",
   statDays:"दिन",statHours:"घण्टा",statNet:"खुद तलब (३.३% कटौती पछि)",
+  ovEstTotal:"अनुमानित जम्मा",ovOvertimeDesc:"ओभरटाइमबाट थप कमाइ",
+  ovBestMonth:"सर्वोत्तम महिना",ovDaysWorked:"काम गरेका दिन",ovHighestDay:"सर्वोत्तम दिन",
+  ovNoData:"सारांश हेर्न केही दिन लग गर्नुहोस्।",ovBaseEarnings:"आधार आम्दानी",
   calHint:"घण्टा लग गर्न कुनै मिति थिच्नुहोस्।",
   shiftHint:"हप्ता बटन थिचेर ☀ दिन / ☾ रात बदल्नुहोस्। अर्को हप्ता स्वतः फेरिन्छ।",
   logTitle:"काम अभिलेख",logNone:"अहिलेसम्म कुनै अभिलेख छैन।",logTotal:"जम्मा (खुद)",logEdit:"सम्पादन",
@@ -745,10 +763,10 @@ function buildApp(){
   ${buildStats()}
   <div class="tab-row">
     <button class="tab${S.tab==='calendar'?' on':''}" data-tab="calendar">${t('tabCal')}</button>
-    <button class="tab${S.tab==='logs'?' on':''}" data-tab="logs">${t('tabLogs')}</button>
+    <button class="tab${S.tab==='overview'?' on':''}" data-tab="overview">${t('tabOverview')}</button>
     <button class="tab${S.tab==='settings'?' on':''}" data-tab="settings">${t('tabSet')}</button>
   </div>
-  ${S.tab==='calendar'?buildCal():S.tab==='logs'?buildLogs():buildSettings()}`;
+  ${S.tab==='calendar'?buildCal():S.tab==='overview'?buildOverview():buildSettings()}`;
 }
 
 function buildStats(){
@@ -819,33 +837,352 @@ function buildCal(){
   <div style="font-size:11px;color:var(--text-hint);text-align:center;margin-top:-6px;">${t('calHint')}</div>`;
 }
 
-function buildLogs(){
-  const logs=getLogs(),sorted=Object.entries(logs).sort((a,b)=>b[0].localeCompare(a[0]));
-  if(!sorted.length)return`<div class="card"><div class="empty-st">${t('logNone')}</div></div>`;
-  const dn=t('dn');
-  const items=sorted.map(([ds,l])=>{
-    const dw=dowOf(ds),hol=isHol(ds),sh=l.shiftOverride||shiftFor(ds);
-    const r=l.regHrs!==undefined?l.regHrs:8,o=l.otHrs!==undefined?l.otHrs:0;
-    return`<div class="log-item">
-      <div>
-        <div class="log-d">${ds} (${dn[dw].slice(0,3)}) ${hol?`<span style="color:var(--danger);font-size:11px;">● ${holName(ds)}</span>`:''}</div>
-        <div class="log-sub">${sh==='day'?'☀':'☾'} ${sh==='day'?t('dayShift'):t('nightShift')}${l.shiftOverride?' ✎':''} · ${r}h reg${o>0?' + '+o+'h OT':''} · ${l.eff}h eff</div>
+function buildOverview(){
+  const logs=getLogs(),wage=getWage(),todayStr=today();
+  const allEntries=Object.entries(logs);
+  if(!allEntries.length) return`<div class="ov-empty">${t('ovNoData')}</div>`;
+
+  // ── Per-month aggregation ──────────────────────────────────────────────────
+  const monthData={};
+  function ensureMonth(ym){ if(!monthData[ym]) monthData[ym]={net:0,gross:0,days:0,overtimeNet:0,topDay:null}; }
+
+  allEntries.forEach(([ds,l])=>{
+    const ym=ds.slice(0,7);
+    ensureMonth(ym);
+    const m=monthData[ym];
+    const net=l.net||0;
+    m.net+=net; m.gross+=l.gross||0; m.days++;
+    // Overtime = what was earned beyond a plain 8h base day
+    const sh=l.shiftOverride||shiftFor(ds);
+    const baseEff=sh==='night'?9.16:8;
+    const basePay=applyTax(Math.round(Math.min(l.eff||0,baseEff)*wage));
+    m.overtimeNet+=Math.max(0,net-basePay);
+    if(!m.topDay||net>m.topDay.net) m.topDay={ds,net};
+  });
+
+  // Add auto-credited holidays + Sundays for current month
+  const now=new Date(),curY=now.getFullYear(),curMo=now.getMonth();
+  const curYM=`${curY}-${pad(curMo+1)}`;
+  const daysInCur=new Date(curY,curMo+1,0).getDate();
+  for(let d=1;d<=daysInCur;d++){
+    const ds=mkds(curY,curMo,d);
+    if(ds>todayStr) break;
+    if(!logs[ds]){
+      const g=autoGross(ds,wage);
+      if(g>0){
+        ensureMonth(curYM);
+        const n=applyTax(g);
+        monthData[curYM].net+=n;
+        monthData[curYM].gross+=g;
+        monthData[curYM].days++;
+        if(!monthData[curYM].topDay||n>monthData[curYM].topDay.net)
+          monthData[curYM].topDay={ds,net:n};
+      }
+    }
+  }
+
+  const months=Object.keys(monthData).sort();
+  const curData=monthData[curYM]||{net:0,gross:0,days:0,overtimeNet:0,topDay:null};
+  const curBaseNet=Math.max(0,curData.net-curData.overtimeNet);
+
+  // ── Pattern-based projection ───────────────────────────────────────────────
+  // Days are classified into three buckets:
+  //   'weekday'  — Mon–Fri that are NOT public holidays
+  //   'sat'      — Saturdays that are NOT public holidays
+  //   'sunhol'   — Sundays (plain or holiday) AND weekday/Saturday public holidays
+  // This matches how wages are actually calculated (holiday rules apply regardless of DOW).
+  function classifyDay(ds){
+    if(isHol(ds)) return 'sunhol';   // holiday overrides DOW (Mon holiday → sunhol rate)
+    if(isSun(ds)) return 'sunhol';
+    if(isSat(ds)) return 'sat';
+    return 'weekday';
+  }
+
+  // Weighted average: 70% recent half, 30% older half (entries sorted oldest→newest).
+  function weightedAvg(entries){
+    if(!entries.length) return 0;
+    if(entries.length===1) return entries[0].net;
+    const mid=Math.ceil(entries.length/2);
+    const recent=entries.slice(mid), older=entries.slice(0,mid);
+    const avg=arr=>arr.reduce((s,e)=>s+e.net,0)/arr.length;
+    return (recent.length && older.length)
+      ? avg(recent)*0.7 + avg(older)*0.3
+      : avg(entries);
+  }
+
+  // Build an earnings bucket for a given year-month string.
+  // Includes both manually logged entries AND auto-credited sun/hol days (8h × wage).
+  // Auto-credited days are what actually appear in the user's income — omitting them
+  // would make avgSunhol ≈ 0, projecting ₩0 for every future Sunday/holiday.
+  function buildMonthEntries(ym){
+    const [yStr,mStr]=ym.split('-');
+    const y=parseInt(yStr),mo=parseInt(mStr)-1;
+    const daysInMo=new Date(y,mo+1,0).getDate();
+    const isCurrent=ym===curYM;
+    const cutoff=isCurrent?todayStr:`${ym}-${pad(daysInMo)}`; // whole month for past months
+    const bucket={weekday:[],sat:[],sunhol:[]};
+
+    for(let d=1;d<=daysInMo;d++){
+      const ds=mkds(y,mo,d);
+      if(ds>cutoff) break;
+      const cls=classifyDay(ds);
+      if(logs[ds]){
+        bucket[cls].push({net:logs[ds].net||0, ds});
+      } else {
+        // Auto-credited day (holiday or qualifying Sunday) — treat as earned income
+        const g=autoGross(ds,wage);
+        if(g>0) bucket[cls].push({net:applyTax(g), ds});
+      }
+    }
+    // Sort oldest→newest within each bucket so the 70/30 weight is time-ordered
+    ['weekday','sat','sunhol'].forEach(k=>bucket[k].sort((a,b)=>a.ds.localeCompare(b.ds)));
+    return bucket;
+  }
+
+  const curEntries=buildMonthEntries(curYM);
+  const curWorkedTotal=curEntries.weekday.length+curEntries.sat.length+curEntries.sunhol.length;
+  const FALLBACK_THRESHOLD=5;
+
+  // Fall back to the most recent previous month with sufficient data (<5 days this month).
+  function getPrevMonthEntries(){
+    const prevMonths=months.filter(ym=>ym<curYM).sort().reverse(); // newest first
+    for(const ym of prevMonths){
+      const e=buildMonthEntries(ym);
+      const total=e.weekday.length+e.sat.length+e.sunhol.length;
+      if(total>=FALLBACK_THRESHOLD) return e;
+    }
+    return null;
+  }
+
+  let avgSrc=curEntries;
+  let usingFallback=false;
+  if(curWorkedTotal<FALLBACK_THRESHOLD){
+    const prev=getPrevMonthEntries();
+    if(prev){avgSrc=prev; usingFallback=true;}
+  }
+
+  const avgWeekday=weightedAvg(avgSrc.weekday);
+  const avgSat    =weightedAvg(avgSrc.sat);
+  // For sunhol: if current month has no logged sunhol data at all, blend with a
+  // plain 8h-day estimate so the projection doesn't collapse to ₩0.
+  const avgSunholRaw=weightedAvg(avgSrc.sunhol);
+  const avgSunhol=avgSunholRaw>0
+    ? avgSunholRaw
+    : applyTax(Math.round(8*wage));  // fallback: standard 8h auto-credit
+
+  // Count remaining days of each type after today (future logs already counted in curData).
+  let remWeekday=0,remSat=0,remSunhol=0;
+  for(let d=1;d<=daysInCur;d++){
+    const ds=mkds(curY,curMo,d);
+    if(ds<=todayStr) continue;      // past/today already in curData.net
+    if(logs[ds]) continue;          // manually logged future day already in curData.net
+    const cls=classifyDay(ds);
+    if(cls==='weekday') remWeekday++;
+    else if(cls==='sat') remSat++;
+    else remSunhol++;
+  }
+
+  // Projected = actual earned so far + remaining days × per-type weighted average
+  const projection=Math.round(
+    curData.net
+    + remWeekday * avgWeekday
+    + remSat     * avgSat
+    + remSunhol  * avgSunhol
+  );
+
+  // Best month (exclude current for the "past best" card)
+  let bestYM=null,bestNet=0;
+  months.forEach(ym=>{ if(monthData[ym].net>bestNet){bestNet=monthData[ym].net;bestYM=ym;} });
+  const pastBestYM = bestYM===curYM ? (months.length>1?months.slice(0,-1).reduce((a,b)=>monthData[a].net>monthData[b].net?a:b):null) : bestYM;
+
+  const mnames=t('mn');
+  function fmtYM(ym){ const[y,m]=ym.split('-'); return`${mnames[parseInt(m)-1]} ${y}`; }
+
+  // Chart data — up to 7 months, oldest→newest; current month uses projection
+  const chartMonths=months.slice(-7);
+  const chartLabels=chartMonths.map(ym=>{ const[,m]=ym.split('-'); return mnames[parseInt(m)-1]; });
+  const chartValues=chartMonths.map(ym=>ym===curYM?projection:monthData[ym].net);
+
+  return`<div class="ov-wrap">
+
+    <div class="ov-month-label">${fmtYM(curYM)}</div>
+
+    <!-- Hero: total estimate -->
+    <div class="ov-hero">
+      <div class="ov-hero-label">${t('ovEstTotal')}</div>
+      <div class="ov-hero-value">₩${projection.toLocaleString()}</div>
+      <div class="ov-hero-pills">
+        <span class="ov-pill ov-pill--base">⬜ ${t('ovBaseEarnings')} <strong>₩${curBaseNet.toLocaleString()}</strong></span>
+        <span class="ov-pill ov-pill--ot">✦ ${t('ovOvertimeDesc')} <strong>₩${curData.overtimeNet.toLocaleString()}</strong></span>
       </div>
-      <div style="display:flex;align-items:center;">
-        <div class="log-pay">₩${(l.net||0).toLocaleString()}</div>
-        <span class="log-edit" data-date="${ds}">${t('logEdit')}</span>
-      </div>
-    </div>`;
-  }).join('');
-  const totalNet=sorted.reduce((a,[,l])=>a+(l.net||0),0);
-  return`<div class="card">
-    <div class="card-title">${t('logTitle')}</div>
-    ${items}
-    <div style="display:flex;justify-content:space-between;align-items:center;padding-top:12px;border-top:0.5px solid var(--border);margin-top:4px;">
-      <span style="font-weight:600;">${t('logTotal')}</span>
-      <span style="font-size:18px;font-weight:700;color:var(--success);">₩${totalNet.toLocaleString()}</span>
     </div>
+
+    <!-- Best Month + Highest Day — side by side premium cards -->
+    <div class="ov-pair-row">
+      ${pastBestYM?`
+      <div class="ov-pair-card">
+        <div class="ov-pair-icon">🏆</div>
+        <div class="ov-pair-label">${t('ovBestMonth')}</div>
+        <div class="ov-pair-sub">${fmtYM(pastBestYM)}</div>
+        <div class="ov-pair-val ov-pair-val--gold">₩${monthData[pastBestYM].net.toLocaleString()}</div>
+      </div>`:`<div class="ov-pair-card ov-pair-card--empty"><div class="ov-pair-icon">🏆</div><div class="ov-pair-label">${t('ovBestMonth')}</div><div class="ov-pair-val">—</div></div>`}
+      <div class="ov-pair-card">
+        <div class="ov-pair-icon">💎</div>
+        <div class="ov-pair-label">${t('ovHighestDay')}</div>
+        <div class="ov-pair-sub">${curData.topDay?curData.topDay.ds:'—'}</div>
+        <div class="ov-pair-val ov-pair-val--blue">${curData.topDay?'₩'+curData.topDay.net.toLocaleString():'—'}</div>
+      </div>
+    </div>
+
+    <!-- Earnings trend line chart -->
+    ${chartMonths.length>1?`
+    <div class="ov-chart-card">
+      <div class="ov-chart-header">
+        <span class="ov-chart-title">Earnings Trend</span>
+        <span class="ov-chart-cur-badge">● ${fmtYM(curYM)}</span>
+      </div>
+      <div class="ov-chart-wrap">
+        <canvas id="ov-trend-chart" height="160"></canvas>
+      </div>
+    </div>`:''}
+
   </div>`;
+  // Chart is rendered after the DOM is injected — see renderTrendChart() called from attachListeners
+}
+
+// ── Trend chart (Chart.js, lazy-loaded) ──────────────────────────────────────
+// A single module-level ref so we can destroy before re-creating on each render.
+let _trendChart = null;
+
+async function renderTrendChart(){
+  const canvas = document.getElementById('ov-trend-chart');
+  if(!canvas) return;
+
+  // Lazy-load Chart.js from CDN — cached after first load
+  if(!window.Chart){
+    try{
+      await import('https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js');
+    }catch(e){
+      console.warn('[chart] Chart.js load failed:', e);
+      return;
+    }
+  }
+
+  // Destroy previous instance to prevent memory leaks on re-render
+  if(_trendChart){ _trendChart.destroy(); _trendChart=null; }
+
+  // Re-compute chart data inline (mirrors buildOverview logic)
+  const logs=getLogs(), wage=getWage(), todayStr=today();
+  const now=new Date(), curY=now.getFullYear(), curMo=now.getMonth();
+  const curYM=`${curY}-${pad(curMo+1)}`;
+
+  // Build per-month net totals (reuse same logic as overview)
+  const monthTotals={};
+  function ensureM(ym){ if(!monthTotals[ym]) monthTotals[ym]=0; }
+  Object.entries(logs).forEach(([ds,l])=>{ const ym=ds.slice(0,7); ensureM(ym); monthTotals[ym]+=(l.net||0); });
+  // Add auto-credits for current month
+  const daysInCur=new Date(curY,curMo+1,0).getDate();
+  for(let d=1;d<=daysInCur;d++){
+    const ds=mkds(curY,curMo,d);
+    if(ds>todayStr) break;
+    if(!logs[ds]){ const g=autoGross(ds,wage); if(g>0){ ensureM(curYM); monthTotals[curYM]+=applyTax(g); } }
+  }
+
+  // Compute projection for current month (simple: scale by days elapsed)
+  const daysElapsed=parseInt(todayStr.slice(8),10);
+  const projectedCur = daysElapsed>0
+    ? Math.round((monthTotals[curYM]||0) * daysInCur / daysElapsed)
+    : (monthTotals[curYM]||0);
+
+  const months=Object.keys(monthTotals).sort().slice(-7);
+  if(months.length<2) return; // canvas hidden via JS for <2 months
+
+  const mnames=t('mn');
+  const labels=months.map(ym=>mnames[parseInt(ym.slice(5))-1]);
+  const values=months.map(ym=>ym===curYM?projectedCur:monthTotals[ym]);
+
+  // Theme-aware colours
+  const isDark=S.theme==='dark';
+  const lineColor  = isDark ? 'rgba(108,142,255,1)'    : 'rgba(58,95,255,1)';
+  const glowColor  = isDark ? 'rgba(108,142,255,0.18)' : 'rgba(58,95,255,0.1)';
+  const dotColor   = isDark ? '#6c8eff'                : '#3a5fff';
+  const lastColor  = isDark ? '#34d47a'                : '#18a958';
+  const labelColor = isDark ? 'rgba(107,117,153,0.9)'  : 'rgba(99,112,160,0.9)';
+  const gridColor  = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(99,115,177,0.06)';
+
+  // Point colors: last point is green (current/projected), rest are primary
+  const pointBg  = values.map((_,i)=>i===values.length-1?lastColor:dotColor);
+  const pointBdr = values.map((_,i)=>i===values.length-1?lastColor:dotColor);
+  const pointR   = values.map((_,i)=>i===values.length-1?6:4);
+  const pointHR  = values.map((_,i)=>i===values.length-1?8:6);
+
+  // Custom gradient fill
+  const ctx=canvas.getContext('2d');
+  const grad=ctx.createLinearGradient(0,0,0,canvas.offsetHeight||160);
+  if(isDark){
+    grad.addColorStop(0,'rgba(108,142,255,0.22)');
+    grad.addColorStop(1,'rgba(108,142,255,0)');
+  }else{
+    grad.addColorStop(0,'rgba(58,95,255,0.12)');
+    grad.addColorStop(1,'rgba(58,95,255,0)');
+  }
+
+  _trendChart = new window.Chart(ctx,{
+    type:'line',
+    data:{
+      labels,
+      datasets:[{
+        data: values,
+        borderColor: lineColor,
+        borderWidth: 2,
+        pointBackgroundColor: pointBg,
+        pointBorderColor: pointBdr,
+        pointRadius: pointR,
+        pointHoverRadius: pointHR,
+        pointBorderWidth: 0,
+        tension: 0.42,
+        fill: true,
+        backgroundColor: grad,
+      }]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      animation:{ duration:700, easing:'easeInOutQuart' },
+      plugins:{
+        legend:{ display:false },
+        tooltip:{
+          backgroundColor: isDark?'rgba(16,20,34,0.95)':'rgba(255,255,255,0.97)',
+          borderColor: isDark?'rgba(255,255,255,0.1)':'rgba(99,115,177,0.15)',
+          borderWidth:1,
+          titleColor: isDark?'#f0f2ff':'#0d1033',
+          bodyColor: isDark?'#6b7599':'#6370a0',
+          titleFont:{ weight:'700', size:13 },
+          bodyFont:{ size:12 },
+          padding:12,
+          cornerRadius:10,
+          displayColors:false,
+          callbacks:{
+            label: ctx=>'₩'+ctx.parsed.y.toLocaleString(),
+          }
+        },
+      },
+      scales:{
+        x:{
+          grid:{ display:false },
+          border:{ display:false },
+          ticks:{ color:labelColor, font:{ size:11, weight:'600' }, maxRotation:0 },
+        },
+        y:{
+          display:false,
+          grid:{ color:gridColor, drawBorder:false },
+          ticks:{ display:false },
+          beginAtZero:false,
+        }
+      },
+      interaction:{ intersect:false, mode:'index' },
+    }
+  });
 }
 
 function buildSettings(){
@@ -1032,6 +1369,9 @@ function closeModal(){
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
 function attachListeners(){
+  // Render chart if overview tab is active (async, non-blocking)
+  if(S.tab==='overview') renderTrendChart();
+
   document.getElementById('theme-toggle').addEventListener('click',()=>{
     S.theme=S.theme==='dark'?'light':'dark';sv('wt4_theme',S.theme);scheduleSync();render();
   });

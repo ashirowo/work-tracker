@@ -743,3 +743,178 @@ body{
 
 /* ── Remove old lang-group styles that are superseded ── */
 /* .lang-group and .lang-btn are no longer rendered but keep rules harmless */
+
+/* ── Overview tab ─────────────────────────────────────────────────────────── */
+.ov-wrap{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  padding-bottom:24px;
+}
+.ov-empty{
+  text-align:center;
+  padding:60px 20px;
+  color:var(--text-muted);
+  font-size:14px;
+  font-weight:500;
+}
+.ov-month-label{
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  color:var(--text-muted);
+  padding:0 2px;
+}
+
+/* Hero card */
+.ov-hero{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-top-color:var(--card-border-top);
+  border-radius:20px;
+  padding:22px 20px 18px;
+  box-shadow:var(--shadow);
+  backdrop-filter:blur(12px);
+}
+.ov-hero-label{
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:0.06em;
+  text-transform:uppercase;
+  color:var(--text-muted);
+  margin-bottom:6px;
+}
+.ov-hero-value{
+  font-size:36px;
+  font-weight:700;
+  letter-spacing:-0.04em;
+  color:var(--success);
+  line-height:1;
+  margin-bottom:14px;
+}
+.ov-hero-pills{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.ov-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:5px 11px;
+  border-radius:20px;
+  font-size:12px;
+  font-weight:500;
+  line-height:1.3;
+}
+.ov-pill--base{
+  background:var(--bg-card2);
+  color:var(--text-muted);
+  border:1px solid var(--border);
+}
+.ov-pill--ot{
+  background:var(--primary-bg);
+  color:var(--primary);
+  border:1px solid rgba(108,142,255,0.2);
+}
+
+/* Best Month + Highest Day — equal premium side-by-side cards */
+.ov-pair-row{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+.ov-pair-card{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-top-color:var(--card-border-top);
+  border-radius:18px;
+  padding:18px 16px 16px;
+  box-shadow:var(--shadow-sm);
+  backdrop-filter:blur(12px);
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  transition:transform 0.15s,box-shadow 0.15s;
+  position:relative;
+  overflow:hidden;
+}
+.ov-pair-card::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background:linear-gradient(135deg,var(--bg-glass),transparent 60%);
+  pointer-events:none;
+}
+.ov-pair-card--empty{
+  opacity:0.5;
+}
+.ov-pair-icon{
+  font-size:22px;
+  line-height:1;
+  margin-bottom:6px;
+}
+.ov-pair-label{
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:0.07em;
+  text-transform:uppercase;
+  color:var(--text-muted);
+}
+.ov-pair-sub{
+  font-size:12px;
+  font-weight:500;
+  color:var(--text-muted);
+  margin-top:1px;
+}
+.ov-pair-val{
+  font-size:19px;
+  font-weight:700;
+  letter-spacing:-0.03em;
+  margin-top:6px;
+  color:var(--text);
+}
+.ov-pair-val--gold{ color:var(--warning); }
+.ov-pair-val--blue{ color:var(--primary); }
+
+/* Earnings trend chart card */
+.ov-chart-card{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-top-color:var(--card-border-top);
+  border-radius:20px;
+  padding:18px 20px 16px;
+  box-shadow:var(--shadow-sm);
+  backdrop-filter:blur(12px);
+}
+.ov-chart-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:16px;
+}
+.ov-chart-title{
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:0.07em;
+  text-transform:uppercase;
+  color:var(--text-muted);
+}
+.ov-chart-cur-badge{
+  font-size:10px;
+  font-weight:600;
+  color:var(--success);
+  letter-spacing:0.02em;
+}
+.ov-chart-wrap{
+  position:relative;
+  height:140px;
+  width:100%;
+}
+.ov-chart-wrap canvas{
+  display:block;
+  width:100%!important;
+  height:100%!important;
+}
+

@@ -198,7 +198,40 @@ function getLogs(){return ld('wt4_logs',{});}
 function saveLogs(l){sv('wt4_logs',l);scheduleSync();}
 function getShifts(){return ld('wt4_shifts',{});}
 function saveShifts(s){sv('wt4_shifts',s);scheduleSync();}
-function getWage(){return ld('wt4_wage',DEFAULT_WAGE);}
+// ── Wage history ──────────────────────────────────────────────────────────────
+// Stored as wt4_wages: [{date:'YYYY-MM-DD', amount:number}, ...] sorted by date.
+// wageFor(dateStr) returns the wage active on that date (most recent entry ≤ date).
+// Migration: if the old scalar wt4_wage key is present, import it as the
+// initial entry dated '2000-01-01' so all historical logs keep their value.
+function getWages(){
+  const wages = ld('wt4_wages', null);
+  if(wages){
+    // Migrate: replace the placeholder 2000-01-01 origin date with the real minimum wage effective date
+    let dirty = false;
+    wages.forEach(e=>{ if(e.date==='2000-01-01'){e.date='2026-01-01';dirty=true;} });
+    if(dirty) sv('wt4_wages', wages);
+    return wages;
+  }
+  // Migrate from legacy scalar key
+  const legacy = ld('wt4_wage', null);
+  const initial = [{date:'2026-01-01', amount: legacy !== null ? legacy : DEFAULT_WAGE}];
+  sv('wt4_wages', initial);
+  localStorage.removeItem('wt4_wage');
+  return initial;
+}
+function saveWages(wages){ sv('wt4_wages', wages); scheduleSync(); }
+function wageFor(dateStr){
+  const wages = getWages();
+  // wages is sorted ascending by date; find the last entry whose date ≤ dateStr
+  let active = DEFAULT_WAGE;
+  for(const {date, amount} of wages){
+    if(date <= dateStr) active = amount;
+    else break;
+  }
+  return active;
+}
+// Current wage (for display in settings / modal default)
+function getWage(){ return wageFor(today()); }
 function isHol(s){return!!HOLIDAYS[s];}
 // The API returns the Korean local name directly (localName field).
 // We use that for all languages since it's already in Korean from the government API.
@@ -356,19 +389,45 @@ let S={
 function t(k,...a){const fn=TR[S.lang][k];return typeof fn==='function'?fn(...a):(fn||k);}
 function applyTheme(){document.documentElement.setAttribute('data-theme',S.theme);}
 
-// Gross for a date including auto-credits (for stats)
-function autoGross(ds,wage){
-  const logs=getLogs();
-  if(logs[ds])return logs[ds].gross||0;
-  if(isHol(ds)&&!logs[ds]&&ds<=today())return Math.round(8*wage); // holiday (incl. holiday Sundays)
-  if(isSun(ds)&&!isHol(ds)&&ds<=today()&&allWeekdaysLogged(ds))return Math.round(8*wage); // plain Sunday
+// ── Single source of truth for earnings on a given date ────────────────────────────
+// liveGross(ds, logs?) always recomputes gross from stored hours × wageFor(ds).
+// This ensures wage history changes are reflected everywhere immediately —
+// no stale gross/net values baked into log entries are ever used for display.
+//
+// For logged days:  recompute via calcWage using stored regHrs/otHrs/shiftOverride.
+// For auto-credits: 8h × wageFor(ds) (holidays and qualifying Sundays).
+// For everything else: 0.
+//
+// Pass a pre-fetched logs object to avoid repeated localStorage reads in loops.
+function liveGross(ds, logsArg){
+  const logs = logsArg !== undefined ? logsArg : getLogs();
+  const w = wageFor(ds);
+  if(logs[ds]){
+    const l = logs[ds];
+    // Recompute from the raw inputs saved with the entry.
+    // regHrs/otHrs are present in all entries saved after the wage-history feature.
+    // Older entries used a single 'hrs' field — fall back gracefully.
+    const reg = l.regHrs !== undefined ? l.regHrs : (l.hrs || 0);
+    const ot  = l.otHrs  !== undefined ? l.otHrs  : 0;
+    return calcWage(ds, reg, ot, w, l.shiftOverride).gross;
+  }
+  const todayStr = today();
+  if(isHol(ds) && ds <= todayStr) return Math.round(8 * w);
+  if(isSun(ds) && !isHol(ds) && ds <= todayStr && allWeekdaysLogged(ds)) return Math.round(8 * w);
   return 0;
 }
-function autoEff(ds){
-  const logs=getLogs();
-  if(logs[ds])return logs[ds].eff||0;
-  if(isHol(ds)&&!logs[ds]&&ds<=today())return 8; // holiday (incl. holiday Sundays)
-  if(isSun(ds)&&!isHol(ds)&&ds<=today()&&allWeekdaysLogged(ds))return 8; // plain Sunday
+
+// autoGross / autoEff: wrappers used throughout the render layer.
+// autoGross delegates entirely to liveGross — one definition, no divergence.
+function autoGross(ds, logsArg){
+  return liveGross(ds, logsArg);
+}
+function autoEff(ds, logsArg){
+  const logs = logsArg !== undefined ? logsArg : getLogs();
+  if(logs[ds]) return logs[ds].eff || 0;
+  const todayStr = today();
+  if(isHol(ds) && ds <= todayStr) return 8;
+  if(isSun(ds) && !isHol(ds) && ds <= todayStr && allWeekdaysLogged(ds)) return 8;
   return 0;
 }
 
@@ -421,13 +480,14 @@ function buildApp(){
 }
 
 function buildStats(){
-  const wage=getWage(),daysInM=new Date(S.calY,S.calM+1,0).getDate();
+  const daysInM=new Date(S.calY,S.calM+1,0).getDate();
   let days=0,hrs=0,gross=0;
   const logs=getLogs();
   for(let d=1;d<=daysInM;d++){
     const ds=mkds(S.calY,S.calM,d);
-    const g=autoGross(ds,wage),e=autoEff(ds);
-    if(g>0||(logs[ds]&&logs[ds].gross===0)){days++;gross+=g;hrs+=e;}
+    const g=autoGross(ds,logs),e=autoEff(ds,logs);
+    // Count a day if it earned anything, OR if it was explicitly logged with 0 hours
+    if(g>0||(logs[ds]&&(logs[ds].regHrs===0&&logs[ds].otHrs===0))){days++;gross+=g;hrs+=e;}
   }
   const net=applyTax(gross);
   return`<div class="stats-row">
@@ -489,7 +549,7 @@ function buildCal(){
 }
 
 function buildOverview(){
-  const logs=getLogs(),wage=getWage(),todayStr=today();
+  const logs=getLogs(),todayStr=today();
   const allEntries=Object.entries(logs);
   if(!allEntries.length) return`<div class="ov-empty">${t('ovNoData')}</div>`;
 
@@ -514,9 +574,11 @@ function buildOverview(){
     for(let d=1;d<=daysInMo;d++){
       const ds=mkds(y,mo,d);
       if(ds>todayStr) break;
-      const g=autoGross(ds,wage);
-      const e=autoEff(ds);
-      if(g>0||(logs[ds]&&logs[ds].gross===0)){
+      const g=autoGross(ds,logs);  // liveGross: always recomputed from hours × wageFor(ds)
+      const e=autoEff(ds,logs);
+      const isLogged=!!logs[ds];
+      const isZeroDay=isLogged&&(logs[ds].regHrs===0&&logs[ds].otHrs===0);
+      if(g>0||isZeroDay){
         ensureMonth(ym);
         const m=monthData[ym];
         const net=applyTax(g);
@@ -524,8 +586,8 @@ function buildOverview(){
         // Overtime = earnings beyond the plain base for that day type
         const l=logs[ds];
         const sh=(l&&l.shiftOverride)||shiftFor(ds);
-        const baseEff=sh==='night'?9.16:8;
-        const basePay=applyTax(Math.round(Math.min(e,baseEff)*wage));
+        const baseEff=sh==='night'?nightWeekdayEff(8):8;  // 9.16 derived, not hardcoded
+        const basePay=applyTax(Math.round(Math.min(e,baseEff)*wageFor(ds)));
         m.overtimeNet+=Math.max(0,net-basePay);
         if(!m.topDay||net>m.topDay.net) m.topDay={ds,net};
       }
@@ -579,13 +641,9 @@ function buildOverview(){
       const ds=mkds(y,mo,d);
       if(ds>cutoff) break;
       const cls=classifyDay(ds);
-      if(logs[ds]){
-        bucket[cls].push({net:logs[ds].net||0, ds});
-      } else {
-        // Auto-credited day (holiday or qualifying Sunday) — treat as earned income
-        const g=autoGross(ds,wage);
-        if(g>0) bucket[cls].push({net:applyTax(g), ds});
-      }
+      // Always use liveGross so projection averages reflect current wage history
+      const g=autoGross(ds,logs);
+      if(g>0) bucket[cls].push({net:applyTax(g), ds});
     }
     // Sort oldest→newest within each bucket so the 70/30 weight is time-ordered
     ['weekday','sat','sunhol'].forEach(k=>bucket[k].sort((a,b)=>a.ds.localeCompare(b.ds)));
@@ -619,9 +677,11 @@ function buildOverview(){
   // For sunhol: if current month has no logged sunhol data at all, blend with a
   // plain 8h-day estimate so the projection doesn't collapse to ₩0.
   const avgSunholRaw=weightedAvg(avgSrc.sunhol);
+  // Fallback: use the wage active at end-of-month rather than today,
+  // so a mid-month wage change is reflected in the projection.
   const avgSunhol=avgSunholRaw>0
     ? avgSunholRaw
-    : applyTax(Math.round(8*wage));  // fallback: standard 8h auto-credit
+    : applyTax(Math.round(8*wageFor(`${curYM}-${pad(daysInCur)}`)));
 
   // Count remaining days of each type after today (future logs already counted in curData).
   let remWeekday=0,remSat=0,remSunhol=0;
@@ -706,7 +766,8 @@ function buildOverview(){
       </div>
     </div>`:''}
 
-  </div>`;
+  </div>
+  <div style="font-size:11px;color:var(--text-hint);text-align:center;margin-top:-6px;">${t('calHint')}</div>`;
   // Chart is rendered after the DOM is injected — see renderTrendChart() called from attachListeners
 }
 
@@ -824,21 +885,44 @@ async function renderTrendChart(){
 }
 
 function buildSettings(){
-  const wage=getWage(),rules=t('rules');
+  const wages=getWages(),rules=t('rules');
+  const historyRows=wages.slice().reverse().map((w,i)=>{
+    const idx=wages.length-1-i; // actual index in forward array
+    const isFirst=idx===0;
+    return`<tr>
+      <td style="font-size:13px;color:var(--text-muted);">${w.date}</td>
+      <td style="font-size:13px;font-weight:600;">₩${w.amount.toLocaleString()}</td>
+      <td style="text-align:right;">${!isFirst?`<button class="btn-del-sm" data-wage-del="${idx}">${t('del')}</button>`:''}</td>
+    </tr>`;
+  }).join('');
   return`<div class="card">
     <div class="card-title">${t('setTitle')}</div>
     ${S.success?`<div class="success-banner">${S.success}</div>`:''}
-    <div class="wage-row">
-      <div>
-        <div style="font-size:14px;font-weight:600;">${t('wageLabel')}</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${t('wageDefault')}</div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:10px;">${t('wageLabel')}</div>
+    <table class="rules-table" style="margin-bottom:16px;">
+      <thead><tr>
+        <th>${t('wageEffFrom')}</th>
+        <th>${t('wageAmount')}</th>
+        <th></th>
+      </tr></thead>
+      <tbody>${historyRows}</tbody>
+    </table>
+    <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;letter-spacing:0.04em;text-transform:uppercase;">${t('wageAddNew')}</div>
+    <div class="wage-row" style="align-items:flex-end;gap:8px;">
+      <div class="fg" style="flex:1.2;">
+        <label style="font-size:11px;">${t('wageEffFrom')}</label>
+        <input class="wage-inp" id="wage-date-in" type="date" value="${today()}">
       </div>
-      <div style="display:flex;align-items:center;gap:7px;">
-        <input class="wage-inp" id="wage-in" type="number" value="${wage}" min="0" step="100">
-        <span style="font-size:13px;color:var(--text-muted);">₩</span>
+      <div class="fg" style="flex:1;">
+        <label style="font-size:11px;">${t('wageAmount')}</label>
+        <div style="display:flex;align-items:center;gap:5px;">
+          <input class="wage-inp" id="wage-in" type="number" value="${getWage()}" min="0" step="100">
+          <span style="font-size:13px;color:var(--text-muted);">₩</span>
+        </div>
       </div>
     </div>
-    <button class="btn-pri" id="save-wage" style="width:100%;margin-top:14px;">${t('savWage')}</button>
+    <button class="btn-pri" id="save-wage" style="width:100%;margin-top:12px;">${t('savWage')}</button>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">${t('wageHistoryHint')}</div>
   </div>
   <div class="card">
     <div class="card-title">${t('rulesTitle')}</div>
@@ -846,7 +930,8 @@ function buildSettings(){
       <thead><tr><th style="width:40%">Type</th><th>Rule</th></tr></thead>
       <tbody>${rules.map(([type,rule])=>`<tr><td><strong>${type}</strong></td><td>${rule}</td></tr>`).join('')}</tbody>
     </table>
-  </div>`;
+  </div>
+  <div style="font-size:11px;color:var(--text-hint);text-align:center;margin-top:-6px;">${t('calHint')}</div>`;
 }
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
@@ -857,7 +942,7 @@ function buildModal(){
   // Per-day shift: use saved override if editing, or state override, or week default
   const defShift=existing?.shiftOverride||weekShift;
   const shift=S.mShift!==undefined?S.mShift:defShift;
-  const wage=getWage(),dn=t('dn'),dw=dowOf(date);
+  const wage=wageFor(date),dn=t('dn'),dw=dowOf(date);
   let badges='';
   if(holDay)badges+=`<span class="mbadge b-hol">● ${holName(date)}</span>`;
   if(isSun(date))badges+=`<span class="mbadge b-sun">${dn[0]}</span>`; // always show Sunday badge
@@ -1118,15 +1203,27 @@ function attachListeners(){
   const sw=document.getElementById('save-wage');
   if(sw)sw.addEventListener('click',()=>{
     const w=parseInt(document.getElementById('wage-in').value);
-    if(isNaN(w)||w<0)return;
-    sv('wt4_wage',w);
-    const logs=getLogs();
-    Object.entries(logs).forEach(([s,l])=>{
-      const r=l.regHrs!==undefined?l.regHrs:8,o=l.otHrs!==undefined?l.otHrs:0;
-      const c=calcWage(s,r,o,w);
-      logs[s]={...l,gross:c.gross,net:c.net,eff:c.eff};
+    const dateIn=document.getElementById('wage-date-in');
+    const effDate=dateIn?dateIn.value:today();
+    if(isNaN(w)||w<0||!effDate)return;
+    const wages=getWages();
+    // Remove any existing entry for the exact same date, then insert sorted
+    const filtered=wages.filter(e=>e.date!==effDate);
+    filtered.push({date:effDate,amount:w});
+    filtered.sort((a,b)=>a.date.localeCompare(b.date));
+    saveWages(filtered);
+    S.success=t('wageSaved');render();
+  });
+
+  // Wage history delete buttons
+  document.querySelectorAll('[data-wage-del]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const idx=parseInt(btn.dataset.wageDel);
+      const wages=getWages();
+      if(wages.length<=1)return; // always keep at least one entry
+      wages.splice(idx,1);
+      saveWages(wages);render();
     });
-    saveLogs(logs);scheduleSync();S.success=t('wageSaved');render();
   });
 }
 

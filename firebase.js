@@ -14,7 +14,7 @@
 //       ▼                                    ▼
 // ┌─────────────────────────────────────────────────────┐
 // │               localStorage (primary cache)           │
-// │  wt4_logs | wt4_shifts | wt4_wage | wt4_lang | ...  │
+// │  wt4_logs | wt4_shifts | wt4_wages | wt4_lang | ...  │
 // └─────────────────────────────────────────────────────┘
 //
 // SYNC FLOW:
@@ -68,7 +68,7 @@ let _syncPending  = false;  // true if a push is queued
 const SYNC_KEYS = {
   logs:   'wt4_logs',
   shifts: 'wt4_shifts',
-  wage:   'wt4_wage',
+  wages:  'wt4_wages',
   lang:   'wt4_lang',
   theme:  'wt4_theme',
 };
@@ -118,7 +118,7 @@ async function pullFromCloud(uid) {
       console.log('[firebase] Cloud data is newer — loading from cloud.');
       if (cloud.logs   !== undefined) lsSet(SYNC_KEYS.logs,   cloud.logs);
       if (cloud.shifts !== undefined) lsSet(SYNC_KEYS.shifts, cloud.shifts);
-      if (cloud.wage   !== undefined) lsSet(SYNC_KEYS.wage,   cloud.wage);
+      if (cloud.wages  !== undefined) lsSet(SYNC_KEYS.wages,  cloud.wages);
       if (cloud.lang   !== undefined) lsSet(SYNC_KEYS.lang,   cloud.lang);
       if (cloud.theme  !== undefined) lsSet(SYNC_KEYS.theme,  cloud.theme);
       lsSet('wt4_syncedAt', cloudTs);
@@ -148,7 +148,7 @@ async function pushToCloud(uid) {
   const payload = {
     logs:      lsGet(SYNC_KEYS.logs,   {}),
     shifts:    lsGet(SYNC_KEYS.shifts, {}),
-    wage:      lsGet(SYNC_KEYS.wage,   10320),
+    wages:     lsGet(SYNC_KEYS.wages,  [{date:'2000-01-01',amount:10320}]),
     lang:      lsGet(SYNC_KEYS.lang,   'en'),
     theme:     lsGet(SYNC_KEYS.theme,  'dark'),
     updatedAt: serverTimestamp(),

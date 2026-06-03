@@ -1216,8 +1216,8 @@ function attachListeners(){
   const langBtn=document.getElementById('lang-btn');
   if(langBtn){
     const langPortal=createPortalDropdown('lang-menu',
-      ['en','ko','id','th','ru','ne'].map(l=>{
-        const labels={en:'🇺🇸 English',ko:'🇰🇷 한국어',id:'🇮🇩 Indonesia',th:'🇹🇭 ภาษาไทย',ru:'🇷🇺 Русский',ne:'🇳🇵 नेपाली'};
+      ['en','ko','id','th','ru','zh','fr','ne'].map(l=>{
+        const labels={en:'🇺🇸 English',ko:'🇰🇷 한국어',id:'🇮🇩 Indonesia',th:'🇹🇭 ภาษาไทย',ru:'🇷🇺 Русский',zh:'🇨🇳 中文',fr:'🇫🇷 Français',ne:'🇳🇵 नेपाली'};
         return `<button class="hdr-dropdown-item${S.lang===l?' hdr-dropdown-item--active':''}" data-lang="${l}">${labels[l]}</button>`;
       }).join(''));
     // Wire language buttons inside portal
@@ -1366,6 +1366,8 @@ applyTheme();
         {code:'id',flag:'🇮🇩',label:'Indonesia'},
         {code:'th',flag:'🇹🇭',label:'ภาษาไทย'},
         {code:'ru',flag:'🇷🇺',label:'Русский'},
+        {code:'zh',flag:'🇨🇳',label:'中文'},
+        {code:'fr',flag:'🇫🇷',label:'Français'},
         {code:'ne',flag:'🇳🇵',label:'नेपाली'},
       ];
       inner=`
@@ -1538,13 +1540,10 @@ applyTheme();
         OB.lang = btn.dataset.lang;
         S.lang  = OB.lang;
         saveOBState();
-        // Update active highlight without a full step transition
-        body.querySelectorAll('[data-lang]').forEach(b=>{
-          b.classList.toggle('ob-lang-btn--active', b.dataset.lang===OB.lang);
-        });
-        // Enable the Next button
-        const nx=body.querySelector('.ob-next');
-        if(nx) nx.disabled=false;
+        // Rebuild the full step body so title, labels, and Next button
+        // all reflect the newly selected language immediately.
+        body.innerHTML = buildStepHTML();
+        wireStepEvents();
       });
     });
 

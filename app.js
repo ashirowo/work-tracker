@@ -331,6 +331,30 @@ function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride){
   const tr=TR[S.lang];
   let eff=0,notes=[];
 
+  // ── Double shift ────────────────────────────────────────────────────────────
+  // Fixed formula regardless of day type — no regHrs/otHrs inputs.
+  // Weekday : 8 day  + nightWeekdayEff(8) night = 8 + 9.16 = 17.16... wait,
+  // per spec: weekday=21.16, sat=25.16, sun/hol=33.16
+  // 21.16 = 8 (day weekday) + 13.16 (sat night eff of 8) = correct
+  // 25.16 = 12 (sat day eff of 8) + 13.16 = correct
+  // 33.16 = 8 (auto) + 12 + 13.16 = correct
+  if(shift==='double'){
+    const nightEff=+(satNightEff(8)).toFixed(2); // 13.16
+    const dayWeekdayEff=8;
+    const daySatEff=+(8/8*12).toFixed(2);        // 12
+    if(sun||holDay){
+      eff=+(8+daySatEff+nightEff).toFixed(2);    // 8+12+13.16=33.16
+      notes.push(tr.nDoubleHolSun);
+    }else if(sat){
+      eff=+(daySatEff+nightEff).toFixed(2);      // 12+13.16=25.16
+      notes.push(tr.nDoubleSat);
+    }else{
+      eff=+(dayWeekdayEff+nightEff).toFixed(2);  // 8+13.16=21.16
+      notes.push(tr.nDoubleWeekday);
+    }
+    const g=Math.round(eff*wage);return{gross:g,net:applyTax(g),eff,notes};
+  }
+
   // Sunday: auto 8h base always; if worked (regHrs>0 or otHrs>0), calc like Saturday
   if(sun){
     const hasWork=(regHrs>0||otHrs>0);
@@ -586,7 +610,9 @@ function buildOverview(){
         // Overtime = earnings beyond the plain base for that day type
         const l=logs[ds];
         const sh=(l&&l.shiftOverride)||shiftFor(ds);
-        const baseEff=sh==='night'?nightWeekdayEff(8):8;  // 9.16 derived, not hardcoded
+        const baseEff=sh==='double'
+          ? ((isSun(ds)||isHol(ds)) ? 33.16 : isSat(ds) ? 25.16 : 21.16)
+          : sh==='night'?nightWeekdayEff(8):8;  // 9.16 derived, not hardcoded
         const basePay=applyTax(Math.round(Math.min(e,baseEff)*wageFor(ds)));
         m.overtimeNet+=Math.max(0,net-basePay);
         if(!m.topDay||net>m.topDay.net) m.topDay={ds,net};
@@ -643,7 +669,9 @@ function buildOverview(){
       const cls=classifyDay(ds);
       // Always use liveGross so projection averages reflect current wage history
       const g=autoGross(ds,logs);
-      if(g>0) bucket[cls].push({net:applyTax(g), ds});
+      // Exclude double-shift days from the average — they're outliers that would
+      // inflate projections. They still count toward actual earned totals via curData.
+      if(g>0 && logs[ds]?.shiftOverride!=='double') bucket[cls].push({net:applyTax(g), ds});
     }
     // Sort oldest→newest within each bucket so the 70/30 weight is time-ordered
     ['weekday','sat','sunhol'].forEach(k=>bucket[k].sort((a,b)=>a.ds.localeCompare(b.ds)));
@@ -976,6 +1004,9 @@ function buildModal(){
       <button id="m-shift-night" class="shift-tog ${shift==='night'?'shift-tog-on-night':''}">
         ☾ ${t('nightShift')}
       </button>
+      <button id="m-shift-double" class="shift-tog ${shift==='double'?'shift-tog-on-double':''}">
+        🌀 ${t('doubleShift')}
+      </button>
     </div>`;
 
   let bodyHTML='';
@@ -984,7 +1015,7 @@ function buildModal(){
     const sunInfoCls=autoSunQual?'info-box':' info-box';
     bodyHTML=`<div class="info-box">${autoSunQual?t('sunAuto'):t('sunNotYet')}</div>
     <div class="info-box warn" style="margin-top:0;">${t('sunWorkedInfo')}</div>
-    <div class="fg-row">
+    <div class="fg-row" ${shift==='double'?'style="display:none"':''}>
       <div class="fg">
         <label>${t('regHrs')}</label>
         <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
@@ -998,7 +1029,7 @@ function buildModal(){
   }else if(holDay){
     // Holiday: 8h auto-credited; worked hours use sat-like calc
     bodyHTML=`<div class="info-box warn">${t('holInfo')}</div>
-    <div class="fg-row">
+    <div class="fg-row" ${shift==='double'?'style="display:none"':''}>
       <div class="fg">
         <label>${t('regHrs')}</label>
         <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
@@ -1011,7 +1042,7 @@ function buildModal(){
     <div id="m-preview">${previewHTML(reg,ot,shift)}</div>`;
   }else{
     // Normal/Saturday: two inputs
-    bodyHTML=`<div class="fg-row">
+    bodyHTML=`<div class="fg-row" ${shift==='double'?'style="display:none"':''}>
       <div class="fg">
         <label>${t('regHrs')}</label>
         <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
@@ -1048,11 +1079,12 @@ function buildModal(){
   const regIn=document.getElementById('m-reg'),otIn=document.getElementById('m-ot');
   function curShift(){return S.mShift!==undefined?S.mShift:shift;}
   function upd(){
-    const r=regIn?Math.min(parseFloat(regIn.value)||0,8):0;
-    const o=otIn?parseFloat(otIn.value)||0:0;
+    const sh=curShift();
+    const r=sh==='double'?0:(regIn?Math.min(parseFloat(regIn.value)||0,8):0);
+    const o=sh==='double'?0:(otIn?parseFloat(otIn.value)||0:0);
     S.mReg=r;S.mOT=o;
     const prev=document.getElementById('m-preview');
-    if(prev)prev.innerHTML=previewHTML(r,o,curShift());
+    if(prev)prev.innerHTML=previewHTML(r,o,sh);
   }
   if(regIn)regIn.addEventListener('input',upd);
   if(otIn)otIn.addEventListener('input',upd);
@@ -1062,20 +1094,27 @@ function buildModal(){
     // Update button styles
     const dBtn=document.getElementById('m-shift-day');
     const nBtn=document.getElementById('m-shift-night');
+    const xBtn=document.getElementById('m-shift-double');
     if(dBtn){dBtn.className='shift-tog'+(newShift==='day'?' shift-tog-on-day':'');}
     if(nBtn){nBtn.className='shift-tog'+(newShift==='night'?' shift-tog-on-night':'');}
+    if(xBtn){xBtn.className='shift-tog'+(newShift==='double'?' shift-tog-on-double':'');}
+    // Show/hide the hour inputs row
+    const fgRow=document.querySelector('#modal-ov .fg-row');
+    if(fgRow){fgRow.style.display=newShift==='double'?'none':'grid';}
     upd();
   }
   const sdBtn=document.getElementById('m-shift-day');
   const snBtn=document.getElementById('m-shift-night');
+  const sxBtn=document.getElementById('m-shift-double');
   if(sdBtn)sdBtn.addEventListener('click',()=>applyShiftToggle('day'));
   if(snBtn)snBtn.addEventListener('click',()=>applyShiftToggle('night'));
+  if(sxBtn)sxBtn.addEventListener('click',()=>applyShiftToggle('double'));
 
   const saveBtn=document.getElementById('m-save');
   if(saveBtn)saveBtn.addEventListener('click',()=>{
-    const r=regIn?Math.min(parseFloat(regIn.value)||0,8):0;
-    const o=otIn?parseFloat(otIn.value)||0:0;
     const sh=curShift();
+    const r=sh==='double'?0:(regIn?Math.min(parseFloat(regIn.value)||0,8):0);
+    const o=sh==='double'?0:(otIn?parseFloat(otIn.value)||0:0);
     const c=calcWage(date,r,o,wage,sh);
     const logs=getLogs();
     // Store shiftOverride only when it differs from the week default

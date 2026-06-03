@@ -596,6 +596,12 @@ body{
   color:var(--night-text);
   box-shadow:0 2px 10px var(--night-bg);
 }
+.shift-tog-on-double{
+  background:rgba(0,210,190,0.12);
+  border-color:rgba(0,210,190,0.45);
+  color:#00d2be;
+  box-shadow:0 2px 10px rgba(0,210,190,0.15);
+}
 
 /* ── Auth UI ── */
 .auth-btn{

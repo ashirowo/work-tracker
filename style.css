@@ -984,3 +984,292 @@ body{
 .wage-inp[type="date"]:focus::-webkit-calendar-picker-indicator{
   opacity:0.65;
 }
+
+/* ── Onboarding overlay ─────────────────────────────────────────────────────── */
+.ob-overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.75);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:200;
+  padding:16px;
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  animation:obFadeIn 0.25s ease;
+}
+@keyframes obFadeIn{from{opacity:0}to{opacity:1}}
+
+.ob-card{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-top-color:var(--card-border-top);
+  border-radius:28px;
+  width:100%;
+  max-width:420px;
+  max-height:90vh;
+  overflow-y:auto;
+  box-shadow:var(--shadow),0 0 0 1px rgba(255,255,255,0.03);
+  animation:obSlideUp 0.28s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes obSlideUp{from{transform:translateY(24px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+/* Progress dots */
+.ob-progress{
+  display:flex;
+  gap:6px;
+  justify-content:center;
+  padding:22px 24px 0;
+}
+.ob-dot{
+  width:6px;height:6px;
+  border-radius:50%;
+  background:var(--border-strong);
+  transition:all 0.2s;
+}
+.ob-dot-done{
+  background:var(--primary);
+  opacity:0.4;
+}
+.ob-dot-active{
+  width:20px;
+  border-radius:3px;
+  background:var(--primary);
+  opacity:1;
+}
+
+/* Body */
+.ob-body{
+  padding:24px 28px 28px;
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+}
+
+.ob-icon{
+  font-size:38px;
+  line-height:1;
+  text-align:center;
+}
+.ob-done-icon{
+  font-size:56px;
+  line-height:1;
+  text-align:center;
+  animation:obBounce 0.5s cubic-bezier(0.34,1.56,0.64,1) 0.1s both;
+}
+@keyframes obBounce{from{transform:scale(0.5);opacity:0}to{transform:scale(1);opacity:1}}
+
+.ob-title{
+  font-size:20px;
+  font-weight:700;
+  letter-spacing:-0.03em;
+  text-align:center;
+  line-height:1.25;
+  margin:0;
+}
+.ob-sub{
+  font-size:13px;
+  color:var(--text-muted);
+  text-align:center;
+  line-height:1.6;
+  margin:0;
+  font-weight:500;
+}
+
+/* Language grid */
+.ob-lang-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+.ob-lang-btn{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:12px 14px;
+  border-radius:14px;
+  border:1px solid var(--border);
+  background:var(--bg-card2);
+  cursor:pointer;
+  transition:all 0.15s;
+  font-family:'Inter',system-ui,sans-serif;
+  text-align:left;
+}
+.ob-lang-btn:hover{border-color:var(--border-strong);background:var(--bg-hover)}
+.ob-lang-btn--active{
+  border-color:var(--primary);
+  background:var(--primary-bg);
+  box-shadow:0 0 0 3px var(--primary-glow);
+}
+.ob-lang-flag{font-size:20px;line-height:1;flex-shrink:0;}
+.ob-lang-label{font-size:13px;font-weight:600;color:var(--text);}
+
+/* Option list (shift pattern, current shift) */
+.ob-option-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.ob-option{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:14px 16px;
+  border-radius:16px;
+  border:1px solid var(--border);
+  background:var(--bg-card2);
+  cursor:pointer;
+  transition:all 0.15s;
+  font-family:'Inter',system-ui,sans-serif;
+  text-align:left;
+  width:100%;
+}
+.ob-option:hover{border-color:var(--border-strong);background:var(--bg-hover)}
+.ob-option--active{
+  border-color:var(--primary);
+  background:var(--primary-bg);
+  box-shadow:0 0 0 3px var(--primary-glow);
+}
+.ob-option-icon{font-size:22px;line-height:1;flex-shrink:0;width:28px;text-align:center;}
+.ob-option-text{display:flex;flex-direction:column;gap:2px;}
+.ob-option-title{font-size:14px;font-weight:600;color:var(--text);}
+.ob-option-sub{font-size:11px;color:var(--text-muted);font-weight:500;}
+
+/* Wage input */
+.ob-wage-wrap{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  background:var(--input-bg);
+  border:1px solid var(--border-strong);
+  border-radius:16px;
+  padding:4px 16px 4px 20px;
+  transition:all 0.18s;
+}
+.ob-wage-wrap:focus-within{
+  border-color:var(--primary);
+  box-shadow:0 0 0 3px var(--primary-glow);
+}
+.ob-wage-currency{
+  font-size:18px;
+  font-weight:700;
+  color:var(--text-muted);
+  flex-shrink:0;
+}
+.ob-wage-input{
+  flex:1;
+  border:none;
+  background:transparent;
+  font-size:24px;
+  font-weight:700;
+  font-family:'Inter',system-ui,sans-serif;
+  color:var(--text);
+  padding:10px 0;
+  outline:none;
+  letter-spacing:-0.03em;
+  min-width:0;
+}
+
+/* Buttons */
+.ob-btn-pri{
+  flex:1;
+  padding:13px;
+  background:var(--primary);
+  color:#fff;
+  border:none;
+  border-radius:14px;
+  font-size:14px;
+  font-family:'Inter',system-ui,sans-serif;
+  font-weight:700;
+  cursor:pointer;
+  transition:all 0.18s;
+  box-shadow:0 4px 16px var(--primary-glow);
+  letter-spacing:0.01em;
+}
+.ob-btn-pri:hover{transform:translateY(-1px);box-shadow:0 6px 20px var(--primary-glow);filter:brightness(1.1)}
+.ob-btn-pri:active{transform:translateY(0)}
+.ob-btn-pri:disabled{opacity:0.4;cursor:not-allowed;transform:none;filter:none}
+
+.ob-btn-sec{
+  padding:13px 18px;
+  background:var(--bg-card2);
+  border:1px solid var(--border);
+  border-radius:14px;
+  font-size:14px;
+  font-family:'Inter',system-ui,sans-serif;
+  font-weight:600;
+  cursor:pointer;
+  color:var(--text-muted);
+  transition:all 0.18s;
+}
+.ob-btn-sec:hover{border-color:var(--border-strong);color:var(--text)}
+
+.ob-btn-google{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  width:100%;
+  padding:13px;
+  background:var(--bg-card2);
+  border:1px solid var(--border-strong);
+  border-radius:14px;
+  font-size:14px;
+  font-family:'Inter',system-ui,sans-serif;
+  font-weight:600;
+  cursor:pointer;
+  color:var(--text);
+  transition:all 0.18s;
+}
+.ob-btn-google:hover{border-color:var(--primary);background:var(--primary-bg)}
+.ob-btn-google:disabled{opacity:0.5;cursor:not-allowed}
+
+.ob-signed-in{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:12px 16px;
+  background:var(--success-bg);
+  border:1px solid rgba(52,212,122,0.25);
+  border-radius:14px;
+  font-size:13px;
+  color:var(--success);
+  font-weight:500;
+}
+
+.ob-row{
+  display:flex;
+  gap:8px;
+  margin-top:4px;
+}
+.ob-row--cloud{margin-top:0;}
+
+@media(max-width:480px){
+  .ob-card{border-radius:20px;}
+  .ob-body{padding:20px 20px 24px;}
+  .ob-lang-grid{grid-template-columns:1fr 1fr;}
+  .ob-title{font-size:18px;}
+}
+
+/* ── Onboarding step slide transitions ── */
+@keyframes obSlideOutLeft{
+  from{opacity:1;transform:translateX(0)}
+  to{opacity:0;transform:translateX(-28px)}
+}
+@keyframes obSlideOutRight{
+  from{opacity:1;transform:translateX(0)}
+  to{opacity:0;transform:translateX(28px)}
+}
+@keyframes obSlideInRight{
+  from{opacity:0;transform:translateX(28px)}
+  to{opacity:1;transform:translateX(0)}
+}
+@keyframes obSlideInLeft{
+  from{opacity:0;transform:translateX(-28px)}
+  to{opacity:1;transform:translateX(0)}
+}
+.ob-slide-out-left{animation:obSlideOutLeft 0.18s ease forwards}
+.ob-slide-out-right{animation:obSlideOutRight 0.18s ease forwards}
+.ob-slide-in-right{animation:obSlideInRight 0.2s cubic-bezier(0.22,1,0.36,1) forwards}
+.ob-slide-in-left{animation:obSlideInLeft 0.2s cubic-bezier(0.22,1,0.36,1) forwards}

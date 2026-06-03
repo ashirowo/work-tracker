@@ -38,6 +38,7 @@ const GOV_API_BASE = 'https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoS
 let HOLIDAYS = {};    // "YYYY-MM-DD" → English name
 let HOL_KO_DYN = {};  // "YYYY-MM-DD" → Korean name (dateName from API)
 let HOL_LOADING = false;
+const HOL_FETCHING = new Set(); // years currently in-flight — prevents duplicate concurrent fetches
 
 // May 1st — Labour Day (근로자의 날) is under a separate act, not in the gov API.
 // Always inject it manually for every year we load.
@@ -104,6 +105,8 @@ function translateHolidayName(ko){
 
 // Fetch all 12 months of a year from the gov API (one request per month, run in parallel)
 async function fetchHolidaysForYear(year){
+  // Skip if already in-flight for this year
+  if(HOL_FETCHING.has(year)) return;
   const cacheKey = 'wt4_gov_' + year;
   const cached = localStorage.getItem(cacheKey);
   if(cached){
@@ -114,28 +117,39 @@ async function fetchHolidaysForYear(year){
       return;
     }catch(e){}
   }
+  HOL_FETCHING.add(year);
   try{
-    // Fetch all 12 months in parallel
+    // Fetch months sequentially in small batches to avoid 429s.
+    // 3 at a time with a small gap is well within typical rate limits.
     const months = Array.from({length:12}, (_,i) => String(i+1).padStart(2,'0'));
-    const results = await Promise.all(months.map(async mm => {
-      const url = `${GOV_API_BASE}?serviceKey=${GOV_API_KEY}&solYear=${year}&solMonth=${mm}&numOfRows=20&_type=xml`;
-      const res = await fetch(url);
-      if(!res.ok) return {enObj:{}, koObj:{}};
-      const xml = await res.text();
-      return parseGovXML(xml);
-    }));
     const enObj = {}, koObj = {};
-    results.forEach(({enObj:e, koObj:k}) => {
-      Object.assign(enObj, e);
-      Object.assign(koObj, k);
-    });
+    for(let i = 0; i < months.length; i += 3){
+      const batch = months.slice(i, i+3);
+      const results = await Promise.all(batch.map(async mm => {
+        const url = `${GOV_API_BASE}?serviceKey=${GOV_API_KEY}&solYear=${year}&solMonth=${mm}&numOfRows=20&_type=xml`;
+        const res = await fetch(url);
+        if(!res.ok){
+          if(res.status === 429) console.warn('[holidays] Rate limited for', year, mm, '— will retry on next load');
+          return {enObj:{}, koObj:{}};
+        }
+        const xml = await res.text();
+        return parseGovXML(xml);
+      }));
+      results.forEach(({enObj:e, koObj:k}) => { Object.assign(enObj, e); Object.assign(koObj, k); });
+      // Small gap between batches to stay under rate limit
+      if(i + 3 < months.length) await new Promise(r => setTimeout(r, 120));
+    }
     Object.assign(HOLIDAYS, enObj);
     Object.assign(HOL_KO_DYN, koObj);
-    // Cache the full year — also store timestamp so we can refresh annually
-    localStorage.setItem(cacheKey, JSON.stringify({en:enObj, ko:koObj, fetchedAt: Date.now()}));
+    // Only cache if we got actual data (partial 429 responses shouldn't overwrite a good cache)
+    if(Object.keys(enObj).length > 0 || Object.keys(koObj).length > 0){
+      localStorage.setItem(cacheKey, JSON.stringify({en:enObj, ko:koObj, fetchedAt: Date.now()}));
+    }
     applyFixedHolidays([year]);
   }catch(e){
     console.warn('Gov holiday fetch failed for', year, e.message);
+  }finally{
+    HOL_FETCHING.delete(year);
   }
 }
 
@@ -162,8 +176,9 @@ async function fetchHolidaysForYear(year){
 // Ensures holidays for the years we need are loaded; fetches missing years async.
 async function ensureHolidays(years){
   applyFixedHolidays(years);
-  // A year needs refresh if: not cached, or cached data is over 30 days old
+  // A year needs fetch if: not cached, or cached data is over 30 days old, AND not already in-flight
   const missing = years.filter(y => {
+    if(HOL_FETCHING.has(y)) return false; // already being fetched — skip
     const raw = localStorage.getItem('wt4_gov_'+y);
     if(!raw) return true;
     try{
@@ -259,6 +274,9 @@ function shiftFor(s){
   if(!keys.length)return'day';
   const anchor=keys[keys.length-1];
   const anchorShift=sh[anchor];
+  // Fixed-shift detection: if the two most recent anchors at or before this week
+  // share the same value, the user is on a fixed pattern — skip the alternating formula.
+  if(keys.length>=2 && sh[keys[keys.length-2]]===anchorShift) return anchorShift;
   const msPerWeek=7*24*3600*1000;
   const weeks=Math.round((pd(ws)-pd(anchor))/msPerWeek);
   return weeks%2===0?anchorShift:(anchorShift==='day'?'night':'day');
@@ -1269,5 +1287,417 @@ function attachListeners(){
 applyTheme();
 // Seed cache into HOLIDAYS synchronously (already done above), then render.
 // prefetchHolidays runs in the background and re-renders if new data arrives.
+
+// ── Onboarding ────────────────────────────────────────────────────────────────
+// Shown only to genuinely new users. Existing users (any saved data) are
+// auto-flagged as onboarded so they never see this flow.
+(function initOnboarding(){
+  // Backward-compat: if user already has data BUT onboarding was never explicitly
+  // completed, mark them as onboarded silently — they pre-date this flow.
+  // IMPORTANT: we only do this when there is NO active in-progress onboarding session
+  // (wt4_ob_state). Otherwise a mid-session refresh would wrongly skip onboarding.
+  const hasActiveSession = localStorage.getItem('wt4_ob_state') !== null;
+  if(!hasActiveSession){
+    const hasData = (
+      Object.keys(ld('wt4_logs',{})).length > 0 ||
+      Object.keys(ld('wt4_shifts',{})).length > 0 ||
+      ld('wt4_wages', null) !== null ||
+      ld('wt4_wage', null) !== null
+    );
+    if(hasData && localStorage.getItem('wt4_onboarding') === null){
+      localStorage.setItem('wt4_onboarding','done');
+    }
+  }
+  if(localStorage.getItem('wt4_onboarding') === 'done') return;
+
+  // ── Onboarding state ────────────────────────────────────────────────────────
+  // Restored from localStorage on refresh so the user resumes at their step.
+  // We never persist lang/theme to their normal keys until completeOnboarding().
+  function loadOBState(){
+    try{
+      const raw=localStorage.getItem('wt4_ob_state');
+      if(raw) return JSON.parse(raw);
+    }catch(e){}
+    return null;
+  }
+  function saveOBState(){
+    try{
+      localStorage.setItem('wt4_ob_state', JSON.stringify({
+        step: OB.step,
+        lang: OB.lang,
+        pattern: OB.pattern,
+        currentShift: OB.currentShift,
+        wage: OB.wage,
+      }));
+    }catch(e){}
+  }
+
+  const saved = loadOBState();
+  const OB = {
+    step:         saved?.step         ?? 1,
+    lang:         saved?.lang         ?? S.lang,
+    pattern:      saved?.pattern      ?? null,
+    currentShift: saved?.currentShift ?? null,
+    wage:         saved?.wage         ?? DEFAULT_WAGE,
+    signingIn: false,   // transient — never persisted
+  };
+
+  // Sync app language to whatever OB has (so ot() works correctly on resume)
+  S.lang = OB.lang;
+
+  // Total steps: rotation → 6 steps (1,2,3,4,5,6), others → 5 steps (1,2,4,5,6)
+  function totalSteps(){ return OB.pattern==='rotation' ? 6 : 5; }
+  // Displayed progress position (1-based, skips step 3 if not rotation)
+  function stepPos(){
+    if(OB.pattern!=='rotation' && OB.step>=3) return OB.step-1;
+    return OB.step;
+  }
+
+  function ot(k){ const fn=TR[OB.lang][k]; return typeof fn==='function'?fn():(fn||k); }
+
+  // ── Build step body HTML only (not the full overlay) ────────────────────────
+  function buildStepHTML(){
+    let inner='';
+
+    if(OB.step===1){
+      const langs=[
+        {code:'en',flag:'🇺🇸',label:'English'},
+        {code:'ko',flag:'🇰🇷',label:'한국어'},
+        {code:'id',flag:'🇮🇩',label:'Indonesia'},
+        {code:'th',flag:'🇹🇭',label:'ภาษาไทย'},
+        {code:'ru',flag:'🇷🇺',label:'Русский'},
+        {code:'ne',flag:'🇳🇵',label:'नेपाली'},
+      ];
+      inner=`
+        <div class="ob-icon">🌐</div>
+        <h2 class="ob-title">${ot('obStep1Title')}</h2>
+        <div class="ob-lang-grid">
+          ${langs.map(l=>`
+            <button class="ob-lang-btn${OB.lang===l.code?' ob-lang-btn--active':''}" data-lang="${l.code}">
+              <span class="ob-lang-flag">${l.flag}</span>
+              <span class="ob-lang-label">${l.label}</span>
+            </button>
+          `).join('')}
+        </div>
+        <button class="ob-btn-pri ob-next" ${OB.lang?'':'disabled'}>${ot('obNext')} →</button>`;
+
+    }else if(OB.step===2){
+      const opts=[
+        {val:'rotation',icon:'🌀',title:ot('obStep2Rotation'),sub:ot('obStep2RotationSub')},
+        {val:'day',icon:'🌞',title:ot('obStep2DayOnly'),sub:ot('obStep2DayOnlySub')},
+        {val:'night',icon:'🌙',title:ot('obStep2NightOnly'),sub:ot('obStep2NightOnlySub')},
+      ];
+      inner=`
+        <div class="ob-icon">📅</div>
+        <h2 class="ob-title">${ot('obStep2Title')}</h2>
+        <div class="ob-option-list">
+          ${opts.map(o=>`
+            <button class="ob-option${OB.pattern===o.val?' ob-option--active':''}" data-pattern="${o.val}">
+              <span class="ob-option-icon">${o.icon}</span>
+              <span class="ob-option-text">
+                <span class="ob-option-title">${o.title}</span>
+                <span class="ob-option-sub">${o.sub}</span>
+              </span>
+            </button>
+          `).join('')}
+        </div>
+        <div class="ob-row">
+          <button class="ob-btn-sec ob-back">${ot('obBack')}</button>
+          <button class="ob-btn-pri ob-next" ${OB.pattern?'':'disabled'}>${ot('obNext')} →</button>
+        </div>`;
+
+    }else if(OB.step===3){
+      const opts=[
+        {val:'day',icon:'🌞',title:ot('obStep3Day')},
+        {val:'night',icon:'🌙',title:ot('obStep3Night')},
+      ];
+      inner=`
+        <div class="ob-icon">🌀</div>
+        <h2 class="ob-title">${ot('obStep3Title')}</h2>
+        <div class="ob-option-list">
+          ${opts.map(o=>`
+            <button class="ob-option${OB.currentShift===o.val?' ob-option--active':''}" data-curshift="${o.val}">
+              <span class="ob-option-icon">${o.icon}</span>
+              <span class="ob-option-text">
+                <span class="ob-option-title">${o.title}</span>
+              </span>
+            </button>
+          `).join('')}
+        </div>
+        <div class="ob-row">
+          <button class="ob-btn-sec ob-back">${ot('obBack')}</button>
+          <button class="ob-btn-pri ob-next" ${OB.currentShift?'':'disabled'}>${ot('obNext')} →</button>
+        </div>`;
+
+    }else if(OB.step===4){
+      inner=`
+        <div class="ob-icon">💰</div>
+        <h2 class="ob-title">${ot('obStep4Title')}</h2>
+        <p class="ob-sub">${ot('obStep4Sub')}</p>
+        <div class="ob-wage-wrap">
+          <span class="ob-wage-currency">₩</span>
+          <input class="ob-wage-input" id="ob-wage-in" type="number" value="${OB.wage}" min="0" step="100">
+        </div>
+        <div class="ob-row">
+          <button class="ob-btn-sec ob-back">${ot('obBack')}</button>
+          <button class="ob-btn-pri ob-next">${ot('obNext')} →</button>
+        </div>`;
+
+    }else if(OB.step===5){
+      inner=`
+        <div class="ob-icon">☁</div>
+        <h2 class="ob-title">${ot('obStep5Title')}</h2>
+        <p class="ob-sub">${ot('obStep5Sub')}</p>
+        ${CURRENT_USER
+          ?`<div class="ob-signed-in">
+              ${CURRENT_USER.photoURL?`<img src="${CURRENT_USER.photoURL}" class="avatar" alt="">`:
+                `<span class="avatar-initials">${(CURRENT_USER.displayName||CURRENT_USER.email||'?')[0].toUpperCase()}</span>`}
+              <span>${ot('obStep5Done')} <strong>${CURRENT_USER.displayName||CURRENT_USER.email}</strong></span>
+            </div>`
+          :`<button class="ob-btn-google ob-google-signin" ${OB.signingIn?'disabled':''}>
+              <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+              ${OB.signingIn?'…':ot('obStep5Signin')}
+            </button>`
+        }
+        <div class="ob-row ob-row--cloud">
+          <button class="ob-btn-sec ob-back">${ot('obBack')}</button>
+          <button class="ob-btn-pri ob-next">${CURRENT_USER?ot('obNext')+' →':ot('obStep5Skip')}</button>
+        </div>`;
+
+    }else if(OB.step===6){
+      inner=`
+        <div class="ob-done-icon">🎉</div>
+        <h2 class="ob-title">${ot('obDoneTitle')}</h2>
+        <p class="ob-sub">${ot('obDoneSub')}</p>
+        <button class="ob-btn-pri ob-finish" style="width:100%;margin-top:8px;">${ot('obDoneBtn')}</button>`;
+    }
+
+    return inner;
+  }
+
+  // ── Initial mount: insert overlay once, never remove/recreate it ─────────────
+  function mountOB(){
+    const pos=stepPos(), total=totalSteps();
+    const dots=Array.from({length:total},(_,i)=>
+      `<div class="ob-dot${i<pos?' ob-dot-done':i===pos-1?' ob-dot-active':''}"></div>`
+    ).join('');
+
+    const ov=document.createElement('div');
+    ov.className='ob-overlay';
+    ov.id='ob-overlay';
+    ov.innerHTML=`<div class="ob-card">
+      <div class="ob-progress" id="ob-progress">${dots}</div>
+      <div class="ob-body" id="ob-body">${buildStepHTML()}</div>
+    </div>`;
+    document.body.appendChild(ov);
+    wireOB();
+  }
+
+  // ── Transition to a new step: update only progress dots + body content ───────
+  function transitionTo(newStep, direction){
+    // direction: 1 = forward, -1 = backward
+    const body = document.getElementById('ob-body');
+    const progress = document.getElementById('ob-progress');
+    if(!body) { mountOB(); return; }
+
+    // Update OB step and persist
+    OB.step = newStep;
+    saveOBState();
+
+    // Rebuild progress dots
+    const pos=stepPos(), total=totalSteps();
+    progress.innerHTML=Array.from({length:total},(_,i)=>
+      `<div class="ob-dot${i<pos?' ob-dot-done':i===pos-1?' ob-dot-active':''}"></div>`
+    ).join('');
+
+    // Animate body: slide out old, slide in new
+    const outClass = direction >= 0 ? 'ob-slide-out-left' : 'ob-slide-out-right';
+    const inClass  = direction >= 0 ? 'ob-slide-in-right' : 'ob-slide-in-left';
+
+    body.classList.add(outClass);
+    body.addEventListener('animationend', function handler(){
+      body.removeEventListener('animationend', handler);
+      body.classList.remove(outClass);
+      body.innerHTML = buildStepHTML();
+      wireStepEvents();
+      body.classList.add(inClass);
+      body.addEventListener('animationend', function h2(){
+        body.removeEventListener('animationend', h2);
+        body.classList.remove(inClass);
+      }, {once:true});
+    }, {once:true});
+  }
+
+  // ── Wire step-level events (called after every body swap) ────────────────────
+  function wireStepEvents(){
+    const body = document.getElementById('ob-body');
+
+    // Step 1: language buttons — update selection highlight in-place (no transition)
+    body.querySelectorAll('[data-lang]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        OB.lang = btn.dataset.lang;
+        S.lang  = OB.lang;
+        saveOBState();
+        // Update active highlight without a full step transition
+        body.querySelectorAll('[data-lang]').forEach(b=>{
+          b.classList.toggle('ob-lang-btn--active', b.dataset.lang===OB.lang);
+        });
+        // Enable the Next button
+        const nx=body.querySelector('.ob-next');
+        if(nx) nx.disabled=false;
+      });
+    });
+
+    // Step 2: pattern buttons — update highlight in-place
+    body.querySelectorAll('[data-pattern]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        OB.pattern = btn.dataset.pattern;
+        if(OB.pattern!=='rotation') OB.currentShift=null;
+        saveOBState();
+        body.querySelectorAll('[data-pattern]').forEach(b=>{
+          b.classList.toggle('ob-option--active', b.dataset.pattern===OB.pattern);
+        });
+        const nx=body.querySelector('.ob-next');
+        if(nx) nx.disabled=false;
+      });
+    });
+
+    // Step 3: current shift buttons — update highlight in-place
+    body.querySelectorAll('[data-curshift]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        OB.currentShift = btn.dataset.curshift;
+        saveOBState();
+        body.querySelectorAll('[data-curshift]').forEach(b=>{
+          b.classList.toggle('ob-option--active', b.dataset.curshift===OB.currentShift);
+        });
+        const nx=body.querySelector('.ob-next');
+        if(nx) nx.disabled=false;
+      });
+    });
+
+    // Wage input — live-sync to OB state
+    const wageIn=document.getElementById('ob-wage-in');
+    if(wageIn){
+      wageIn.addEventListener('input',()=>{
+        const v=parseInt(wageIn.value);
+        if(!isNaN(v)&&v>=0){ OB.wage=v; saveOBState(); }
+      });
+    }
+
+    // Google sign-in button
+    body.querySelector('.ob-google-signin')?.addEventListener('click',async()=>{
+      OB.signingIn=true;
+      const btn=body.querySelector('.ob-google-signin');
+      if(btn){btn.disabled=true;btn.textContent='…';}
+      await signInWithGoogle();
+      OB.signingIn=false;
+      // Refresh step 5 body in-place to show signed-in state
+      body.innerHTML=buildStepHTML();
+      wireStepEvents();
+    });
+
+    // Back button
+    body.querySelector('.ob-back')?.addEventListener('click',()=>{
+      const prev = (OB.step===4 && OB.pattern!=='rotation') ? 2 : OB.step-1;
+      transitionTo(prev, -1);
+    });
+
+    // Next / skip button
+    body.querySelector('.ob-next')?.addEventListener('click',()=>{
+      if(OB.step===4){
+        const wIn=document.getElementById('ob-wage-in');
+        if(wIn){ const v=parseInt(wIn.value); if(!isNaN(v)&&v>=0) OB.wage=v; }
+      }
+      const next = (OB.step===2 && OB.pattern!=='rotation') ? 4 : OB.step+1;
+      transitionTo(next, 1);
+    });
+
+    // Finish button
+    body.querySelector('.ob-finish')?.addEventListener('click',()=>{
+      completeOnboarding();
+    });
+  }
+
+  // ── Wire overlay-level events (once, on initial mount) ───────────────────────
+  function wireOB(){
+    wireStepEvents();
+    // No overlay-click-to-dismiss — onboarding is required
+  }
+
+  // ── Apply onboarding choices and finish ─────────────────────────────────────
+  function completeOnboarding(){
+    // 1. Save language
+    sv('wt4_lang', OB.lang);
+    S.lang = OB.lang;
+
+    // 2. Initialize shift pattern — write directly to wt4_shifts.
+    //    Anchors must cover ALL historical weeks (not just current/future),
+    //    otherwise shiftFor() defaults to 'day' for any week before the anchor.
+    const ws = getMonday(today());
+    const sh = {};
+
+    if(OB.pattern==='rotation'){
+      // Write a single far-past anchor (2000-01-03 is a Monday) whose shift value
+      // is chosen so that week-parity from that anchor correctly yields OB.currentShift
+      // for this week — and alternates correctly for every past and future week.
+      // We do NOT write a second anchor for the current week: two anchors with the
+      // same value would falsely trigger fixed-mode detection in shiftFor().
+      const EPOCH = '2000-01-03'; // a known Monday
+      const msPerWeek = 7*24*3600*1000;
+      const weeksFromEpoch = Math.round((pd(ws) - pd(EPOCH)) / msPerWeek);
+      // If distance is even → epoch shift = currentShift (0 alternations = same)
+      // If distance is odd  → epoch shift = opposite    (1 alternation = flipped)
+      const epochShift = weeksFromEpoch % 2 === 0
+        ? OB.currentShift
+        : (OB.currentShift === 'day' ? 'night' : 'day');
+      sh[EPOCH] = epochShift;
+
+    }else{
+      // Fixed day or night: write two consecutive-week anchors with the same shift.
+      // shiftFor() detects two adjacent same-value anchors → fixed mode (no alternation).
+      // Place them far in the past so every historical week is covered.
+      const fixedShift = OB.pattern === 'day' ? 'day' : 'night';
+      const EPOCH  = '2000-01-03'; // Monday
+      const EPOCH2 = '2000-01-10'; // Monday, 1 week later
+      sh[EPOCH]  = fixedShift;
+      sh[EPOCH2] = fixedShift;
+    }
+
+    sv('wt4_shifts', sh);
+
+    // 3. Save wage
+    const wages = [{date:'2026-01-01', amount:OB.wage}];
+    sv('wt4_wages', wages);
+
+    // 4. Mark onboarding complete — ONLY here, never earlier
+    localStorage.setItem('wt4_onboarding', 'done');
+    // Clean up in-progress session key
+    localStorage.removeItem('wt4_ob_state');
+
+    // 5. Dismiss overlay and render the full app
+    document.getElementById('ob-overlay')?.remove();
+    render();
+    prefetchHolidays();
+    if(CURRENT_USER) scheduleSync();
+  }
+
+  // ── Show onboarding ─────────────────────────────────────────────────────────
+  // Seed wt4_ob_state NOW (before render() is called) so that on any subsequent
+  // page load — even before the user has clicked anything — hasActiveSession is
+  // true and the backward-compat hasData check is skipped. Without this, render()
+  // calls getWages() which writes wt4_wages as a side-effect, making hasData=true
+  // on the next load and wrongly auto-completing onboarding.
+  saveOBState();
+  // Render a minimal shell behind the overlay. Do NOT call prefetchHolidays() here —
+  // that would fire 48 concurrent API requests (12 months × 4 years) immediately on
+  // first visit, causing 429 rate-limit errors. Holidays are fetched in
+  // completeOnboarding() after the user has finished the flow.
+  render();
+  mountOB();
+  // Return early — normal startup render() below must not fire again.
+  return;
+})();
+
+// Normal startup (only reached if onboarding is already done)
 render();
 prefetchHolidays();

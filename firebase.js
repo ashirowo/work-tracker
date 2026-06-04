@@ -66,11 +66,12 @@ let _syncPending  = false;  // true if a push is queued
 // Keys we sync between localStorage and Firestore
 // These must match the localStorage keys used in app.js
 const SYNC_KEYS = {
-  logs:   'wt4_logs',
-  shifts: 'wt4_shifts',
-  wages:  'wt4_wages',
-  lang:   'wt4_lang',
-  theme:  'wt4_theme',
+  logs:     'wt4_logs',
+  shifts:   'wt4_shifts',
+  wages:    'wt4_wages',
+  lang:     'wt4_lang',
+  theme:    'wt4_theme',
+  holAuto:  'wt4_hol_auto',
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -116,11 +117,12 @@ async function pullFromCloud(uid) {
     if (cloudTs > localTs) {
       // Cloud is newer — overwrite local data
       console.log('[firebase] Cloud data is newer — loading from cloud.');
-      if (cloud.logs   !== undefined) lsSet(SYNC_KEYS.logs,   cloud.logs);
-      if (cloud.shifts !== undefined) lsSet(SYNC_KEYS.shifts, cloud.shifts);
-      if (cloud.wages  !== undefined) lsSet(SYNC_KEYS.wages,  cloud.wages);
-      if (cloud.lang   !== undefined) lsSet(SYNC_KEYS.lang,   cloud.lang);
-      if (cloud.theme  !== undefined) lsSet(SYNC_KEYS.theme,  cloud.theme);
+      if (cloud.logs    !== undefined) lsSet(SYNC_KEYS.logs,    cloud.logs);
+      if (cloud.shifts  !== undefined) lsSet(SYNC_KEYS.shifts,  cloud.shifts);
+      if (cloud.wages   !== undefined) lsSet(SYNC_KEYS.wages,   cloud.wages);
+      if (cloud.lang    !== undefined) lsSet(SYNC_KEYS.lang,    cloud.lang);
+      if (cloud.theme   !== undefined) lsSet(SYNC_KEYS.theme,   cloud.theme);
+      if (cloud.holAuto !== undefined) lsSet(SYNC_KEYS.holAuto, cloud.holAuto);
       lsSet('wt4_syncedAt', cloudTs);
     } else {
       // Local is same age or newer — push local up to cloud
@@ -146,11 +148,12 @@ async function pushToCloud(uid) {
   if (!targetUid) return; // not signed in
 
   const payload = {
-    logs:      lsGet(SYNC_KEYS.logs,   {}),
-    shifts:    lsGet(SYNC_KEYS.shifts, {}),
-    wages:     lsGet(SYNC_KEYS.wages,  [{date:'2000-01-01',amount:10320}]),
-    lang:      lsGet(SYNC_KEYS.lang,   'en'),
-    theme:     lsGet(SYNC_KEYS.theme,  'dark'),
+    logs:      lsGet(SYNC_KEYS.logs,    {}),
+    shifts:    lsGet(SYNC_KEYS.shifts,  {}),
+    wages:     lsGet(SYNC_KEYS.wages,   [{date:'2000-01-01',amount:10320}]),
+    lang:      lsGet(SYNC_KEYS.lang,    'en'),
+    theme:     lsGet(SYNC_KEYS.theme,   'dark'),
+    holAuto:   lsGet(SYNC_KEYS.holAuto, true),
     updatedAt: serverTimestamp(),
   };
 

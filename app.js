@@ -343,26 +343,39 @@ function calcSatLike(shift,regHrs,otHrs,tr,mode){
   return{eff,notes};
 }
 
-function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride){
+function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride,holCreditOverride){
   const shift=shiftOverride||shiftFor(dateStr);
   const holDay=isHol(dateStr),sun=isSun(dateStr)&&!isHol(dateStr),sat=isSat(dateStr)&&!isHol(dateStr);
   const tr=TR[S.lang];
   let eff=0,notes=[];
+  // Resolve whether this holiday gets the 8h auto-base:
+  // Priority: per-day override (holCreditOverride) > global setting (isHolAuto())
+  const holCredit = holCreditOverride !== undefined ? holCreditOverride : isHolAuto();
 
   // ── Double shift ────────────────────────────────────────────────────────────
   // Fixed formula regardless of day type — no regHrs/otHrs inputs.
   // Weekday : 8 day  + nightWeekdayEff(8) night = 8 + 9.16 = 17.16... wait,
-  // per spec: weekday=21.16, sat=25.16, sun/hol=33.16
+  // per spec: weekday=21.16, sat=25.16, sun/hol=33.16 (holAuto ON) or 25.16 (holAuto OFF)
   // 21.16 = 8 (day weekday) + 13.16 (sat night eff of 8) = correct
   // 25.16 = 12 (sat day eff of 8) + 13.16 = correct
-  // 33.16 = 8 (auto) + 12 + 13.16 = correct
+  // 33.16 = 8 (auto) + 12 + 13.16 = correct (holAuto ON or Sunday)
+  // 25.16 on holiday with holAuto OFF = 12 + 13.16 (no auto base)
   if(shift==='double'){
     const nightEff=+(satNightEff(8)).toFixed(2); // 13.16
     const dayWeekdayEff=8;
     const daySatEff=+(8/8*12).toFixed(2);        // 12
     if(sun||holDay){
-      eff=+(8+daySatEff+nightEff).toFixed(2);    // 8+12+13.16=33.16
-      notes.push(tr.nDoubleHolSun);
+      // Sunday always gets 8h auto-credit (separate from holAuto setting).
+      // Holidays get 8h auto-credit only when holAuto is ON.
+      const hasAutoBase = sun || (holDay && holCredit);
+      if(hasAutoBase){
+        eff=+(8+daySatEff+nightEff).toFixed(2);  // 8+12+13.16=33.16
+        notes.push(tr.nDoubleHolSun);
+      }else{
+        // holAuto OFF on a holiday (not a plain sunday): no 8h auto base
+        eff=+(daySatEff+nightEff).toFixed(2);    // 12+13.16=25.16
+        notes.push(tr.nDoubleHolSunNoAuto||tr.nDoubleSat);
+      }
     }else if(sat){
       eff=+(daySatEff+nightEff).toFixed(2);      // 12+13.16=25.16
       notes.push(tr.nDoubleSat);
@@ -391,13 +404,15 @@ function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride){
     const g=Math.round(eff*wage);return{gross:g,net:applyTax(g),eff,notes};
   }
 
-  // Public Holiday: always 8h base; worked hours calc like Saturday (same shift multipliers)
+  // Public Holiday: auto 8h base only when holCredit is true; worked hours always calc like Saturday
   if(holDay){
-    notes.push(tr.nHolBase);
-    eff=8;
+    if(holCredit){
+      notes.push(tr.nHolBase);
+      eff=8;
+    }
     if(regHrs>0||otHrs>0){
       const worked=calcSatLike(shift,regHrs,otHrs,tr,'holiday');
-      eff=+(8+worked.eff).toFixed(2);
+      eff=+(eff+worked.eff).toFixed(2);
       notes.push(...worked.notes);
     }
     const g=Math.round(eff*wage);return{gross:g,net:applyTax(g),eff,notes};
@@ -424,11 +439,12 @@ function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride){
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let S={
-  lang:ld('wt4_lang','en'),theme:ld('wt4_theme','dark'),
+  lang:ld('wt4_lang','en'),theme:ld('wt4_theme','dark'),holAuto:ld('wt4_hol_auto',true),
   tab:'calendar',calY:new Date().getFullYear(),calM:new Date().getMonth(),
-  modal:null,mReg:undefined,mOT:undefined,mShift:undefined,success:''
+  modal:null,mReg:undefined,mOT:undefined,mShift:undefined,mHolCredit:undefined,success:''
 };
 function t(k,...a){const fn=TR[S.lang][k];return typeof fn==='function'?fn(...a):(fn||k);}
+function isHolAuto(){return S.holAuto!==false;}
 function applyTheme(){document.documentElement.setAttribute('data-theme',S.theme);}
 
 // ── Single source of truth for earnings on a given date ────────────────────────────
@@ -451,10 +467,14 @@ function liveGross(ds, logsArg){
     // Older entries used a single 'hrs' field — fall back gracefully.
     const reg = l.regHrs !== undefined ? l.regHrs : (l.hrs || 0);
     const ot  = l.otHrs  !== undefined ? l.otHrs  : 0;
-    return calcWage(ds, reg, ot, w, l.shiftOverride).gross;
+    return calcWage(ds, reg, ot, w, l.shiftOverride, l.holCreditOverride).gross;
   }
   const todayStr = today();
-  if(isHol(ds) && ds <= todayStr) return Math.round(8 * w);
+  if(isHol(ds) && ds <= todayStr){
+    const logEntry=logs[ds];
+    const credit = logEntry?.holCreditOverride !== undefined ? logEntry.holCreditOverride : isHolAuto();
+    if(credit && !logEntry) return Math.round(8 * w); // auto-credit, no manual log
+  }
   if(isSun(ds) && !isHol(ds) && ds <= todayStr && allWeekdaysLogged(ds)) return Math.round(8 * w);
   return 0;
 }
@@ -466,9 +486,18 @@ function autoGross(ds, logsArg){
 }
 function autoEff(ds, logsArg){
   const logs = logsArg !== undefined ? logsArg : getLogs();
-  if(logs[ds]) return logs[ds].eff || 0;
+  if(logs[ds]){
+    const l = logs[ds];
+    const reg = l.regHrs !== undefined ? l.regHrs : (l.hrs || 0);
+    const ot  = l.otHrs  !== undefined ? l.otHrs  : 0;
+    return calcWage(ds, reg, ot, wageFor(ds), l.shiftOverride, l.holCreditOverride).eff;
+  }
   const todayStr = today();
-  if(isHol(ds) && ds <= todayStr) return 8;
+  if(isHol(ds) && ds <= todayStr){
+    const logEntry=getLogs()[ds];
+    const credit = logEntry?.holCreditOverride !== undefined ? logEntry.holCreditOverride : isHolAuto();
+    if(credit && !logEntry) return 8;
+  }
   if(isSun(ds) && !isHol(ds) && ds <= todayStr && allWeekdaysLogged(ds)) return 8;
   return 0;
 }
@@ -561,7 +590,7 @@ function buildCal(){
     const s=mkds(y,m,d),dw=new Date(y,m,d).getDay();
     const future=s>todayStr,logged=!!logs[s],hol=isHol(s),tod=s===todayStr;
     const sun=dw===0,autoSun=sun&&!hol&&!logged&&!future&&allWeekdaysLogged(s);
-    const autoHol=hol&&!logged&&!future; // includes holiday Sundays
+    const autoHol=hol&&!logged&&!future&&isHolAuto(); // auto-credited only when holAuto ON
     let cls='dc';
     if(future)cls+=' future';if(dw===0)cls+=' csun';if(dw===6)cls+=' csat';
     if(hol)cls+=' hol';
@@ -629,7 +658,7 @@ function buildOverview(){
         const l=logs[ds];
         const sh=(l&&l.shiftOverride)||shiftFor(ds);
         const baseEff=sh==='double'
-          ? ((isSun(ds)||isHol(ds)) ? 33.16 : isSat(ds) ? 25.16 : 21.16)
+          ? ((isSun(ds)||isHol(ds)) ? (isHolAuto()||isSun(ds)?33.16:25.16) : isSat(ds) ? 25.16 : 21.16)
           : sh==='night'?nightWeekdayEff(8):8;  // 9.16 derived, not hardcoded
         const basePay=applyTax(Math.round(Math.min(e,baseEff)*wageFor(ds)));
         m.overtimeNet+=Math.max(0,net-basePay);
@@ -651,7 +680,9 @@ function buildOverview(){
   //   'sunhol'   — Sundays (plain or holiday) AND weekday/Saturday public holidays
   // This matches how wages are actually calculated (holiday rules apply regardless of DOW).
   function classifyDay(ds){
-    if(isHol(ds)) return 'sunhol';   // holiday overrides DOW (Mon holiday → sunhol rate)
+    // When holAuto is OFF, holidays are not auto-credited, so they behave like
+    // their real day-of-week for projection purposes (weekday/sat/sun).
+    if(isHol(ds) && isHolAuto()) return 'sunhol'; // auto-credited holiday → sunhol rate
     if(isSun(ds)) return 'sunhol';
     if(isSat(ds)) return 'sat';
     return 'weekday';
@@ -931,7 +962,10 @@ async function renderTrendChart(){
 }
 
 function buildSettings(){
-  const wages=getWages(),rules=t('rules');
+  const wages=getWages();
+  // rules is now a function that takes holAuto to conditionally show correct descriptions
+  const rules=typeof TR[S.lang].rules==='function'?TR[S.lang].rules(isHolAuto()):TR[S.lang].rules;
+  const holA=isHolAuto();
   const historyRows=wages.slice().reverse().map((w,i)=>{
     const idx=wages.length-1-i; // actual index in forward array
     const isFirst=idx===0;
@@ -943,7 +977,7 @@ function buildSettings(){
   }).join('');
   return`<div class="card">
     <div class="card-title">${t('setTitle')}</div>
-    ${S.success?`<div class="success-banner">${S.success}</div>`:''}
+    ${S.success&&S.success!=='holAuto'?`<div class="success-banner">${S.success}</div>`:''}
     <div style="font-size:13px;font-weight:600;margin-bottom:10px;">${t('wageLabel')}</div>
     <table class="rules-table" style="margin-bottom:16px;">
       <thead><tr>
@@ -971,6 +1005,19 @@ function buildSettings(){
     <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">${t('wageHistoryHint')}</div>
   </div>
   <div class="card">
+    <div class="card-title">${t('holAutoLabel')}</div>
+    ${S.success==='holAuto'?`<div class="success-banner">${t('holAutoSaved')}</div>`:''}
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">${t('holAutoSub')}</p>
+    <div style="display:flex;gap:8px;">
+      <button id="hol-auto-on" class="shift-tog${holA?' shift-tog-on-day':''}">
+        ✅ ${t('holAutoOn')}
+      </button>
+      <button id="hol-auto-off" class="shift-tog${!holA?' shift-tog-on-night':''}">
+        ⛔ ${t('holAutoOff')}
+      </button>
+    </div>
+  </div>
+  <div class="card">
     <div class="card-title">${t('rulesTitle')}</div>
     <table class="rules-table">
       <thead><tr><th style="width:40%">Type</th><th>Rule</th></tr></thead>
@@ -996,14 +1043,21 @@ function buildModal(){
 
   const defReg = existing?.regHrs !== undefined
   ? existing.regHrs
-  : ((holDay || sun) ? 0 : 8); // holDay already covers holiday Sundays
+  // When credit is ON (auto or per-day), default to 0 (input is for *extra* worked hours).
+  // When credit is OFF, default to 8h so the user sees a sensible starting point.
+  : (sun ? 0 : holDay ? ((existing?.holCreditOverride ?? isHolAuto()) ? 0 : 8) : 8);
   const defOT=existing?.otHrs!==undefined?existing.otHrs:0;
   const reg=S.mReg!==undefined?S.mReg:defReg;
   const ot=S.mOT!==undefined?S.mOT:defOT;
   const autoSunQual=sun&&allWeekdaysLogged(date);
 
+  // Per-day holiday credit: S.mHolCredit overrides existing log value, which overrides global setting
+  const effectiveHolCredit = holDay
+    ? (S.mHolCredit !== undefined ? S.mHolCredit : (existing?.holCreditOverride ?? isHolAuto()))
+    : undefined;
+
   function previewHTML(r,o,sh){
-    const c=calcWage(date,r,o,wage,sh),tax=c.gross-c.net;
+    const c=calcWage(date,r,o,wage,sh,effectiveHolCredit),tax=c.gross-c.net;
     return`<div class="calc-box">
       ${c.notes.map(n=>`<div class="cr"><span>${n}</span></div>`).join('')}
       <div class="cr"><span>${t('gross')}</span><span>₩${c.gross.toLocaleString()}</span></div>
@@ -1045,8 +1099,15 @@ function buildModal(){
     </div>
     <div id="m-preview">${previewHTML(reg,ot,shift)}</div>`;
   }else if(holDay){
-    // Holiday: 8h auto-credited; worked hours use sat-like calc
-    bodyHTML=`<div class="info-box warn">${t('holInfo')}</div>
+    // Holiday: auto-credit 8h only when holAuto ON (or per-day override); worked hours always calc like Saturday
+    const holInfoKey = effectiveHolCredit ? 'holInfo' : 'holInfoNoAuto';
+    // Show the per-day toggle only when global auto-credit is OFF
+    const perDayToggle = !isHolAuto() ? `
+    <button id="m-hol-credit" class="shift-tog${effectiveHolCredit?' shift-tog-on-day':''}" style="margin-bottom:12px;width:100%;">
+      ${effectiveHolCredit ? `✅ ${t('holCreditToggleOn')}` : `🕒 ${t('holCreditToggle')}`}
+    </button>` : '';
+    bodyHTML=`<div class="info-box warn">${t(holInfoKey)}</div>
+    ${perDayToggle}
     <div class="fg-row" ${shift==='double'?'style="display:none"':''}>
       <div class="fg">
         <label>${t('regHrs')}</label>
@@ -1098,7 +1159,7 @@ function buildModal(){
   function curShift(){return S.mShift!==undefined?S.mShift:shift;}
   function upd(){
     const sh=curShift();
-    const r=sh==='double'?0:(regIn?Math.min(parseFloat(regIn.value)||0,8):0);
+    const r=sh==='double'?0:(regIn?parseFloat(regIn.value)||0:0);
     const o=sh==='double'?0:(otIn?parseFloat(otIn.value)||0:0);
     S.mReg=r;S.mOT=o;
     const prev=document.getElementById('m-preview');
@@ -1128,23 +1189,43 @@ function buildModal(){
   if(snBtn)snBtn.addEventListener('click',()=>applyShiftToggle('night'));
   if(sxBtn)sxBtn.addEventListener('click',()=>applyShiftToggle('double'));
 
+  // Per-day holiday credit toggle (only rendered when global holAuto is OFF)
+  const holCreditBtn=document.getElementById('m-hol-credit');
+  if(holCreditBtn)holCreditBtn.addEventListener('click',()=>{
+    S.mHolCredit = !effectiveHolCredit;
+    // Re-render the modal body in-place to update the info box, button state, and preview
+    S.modal={date,existing};
+    // Preserve current input values across the re-render
+    const sh=curShift();
+    const r=sh==='double'?0:(regIn?parseFloat(regIn.value)||0:0);
+    const o=sh==='double'?0:(otIn?parseFloat(otIn.value)||0:0);
+    S.mReg=r;S.mOT=o;S.mShift=sh;
+    const ov=document.getElementById('modal-ov');
+    if(ov){ov.remove();}
+    render(); // re-renders full modal with updated effectiveHolCredit
+  });
+
   const saveBtn=document.getElementById('m-save');
   if(saveBtn)saveBtn.addEventListener('click',()=>{
     const sh=curShift();
-    const r=sh==='double'?0:(regIn?Math.min(parseFloat(regIn.value)||0,8):0);
+    const r=sh==='double'?0:(regIn?parseFloat(regIn.value)||0:0);
     const o=sh==='double'?0:(otIn?parseFloat(otIn.value)||0:0);
-    const c=calcWage(date,r,o,wage,sh);
+    const c=calcWage(date,r,o,wage,sh,effectiveHolCredit);
     const logs=getLogs();
     // Store shiftOverride only when it differs from the week default
     const override=sh!==weekShift?sh:undefined;
-    logs[date]={regHrs:r,otHrs:o,hrs:r+o,gross:c.gross,net:c.net,eff:c.eff,shiftOverride:override};
+    // Store holCreditOverride only when it differs from the global setting
+    const creditOverride=(holDay && S.mHolCredit!==undefined && S.mHolCredit!==isHolAuto())
+      ? S.mHolCredit : undefined;
+    logs[date]={regHrs:r,otHrs:o,hrs:r+o,gross:c.gross,net:c.net,eff:c.eff,
+      shiftOverride:override,...(creditOverride!==undefined&&{holCreditOverride:creditOverride})};
     saveLogs(logs);closeModal();
   });
 }
 
 function closeModal(){
   const ov=document.getElementById('modal-ov');if(ov)ov.remove();
-  S.modal=null;S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;render();
+  S.modal=null;S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;render();
 }
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
@@ -1169,11 +1250,11 @@ function attachListeners(){
   document.querySelectorAll('.dc[data-date]').forEach(el=>el.addEventListener('click',()=>{
     const s=el.dataset.date;if(s>today())return;
     const logs=getLogs();
-    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;render();
+    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;render();
   }));
   document.querySelectorAll('.log-edit[data-date]').forEach(el=>el.addEventListener('click',()=>{
     const s=el.dataset.date,logs=getLogs();
-    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;render();
+    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;render();
   }));
   // ── Auth ────────────────────────────────────────────────────────────────────
   const loginBtn=document.getElementById('auth-login');
@@ -1272,6 +1353,16 @@ function attachListeners(){
     S.success=t('wageSaved');render();
   });
 
+  // Holiday auto-credit toggle
+  const holOnBtn=document.getElementById('hol-auto-on');
+  const holOffBtn=document.getElementById('hol-auto-off');
+  if(holOnBtn)holOnBtn.addEventListener('click',()=>{
+    S.holAuto=true;sv('wt4_hol_auto',true);scheduleSync();S.success='holAuto';render();
+  });
+  if(holOffBtn)holOffBtn.addEventListener('click',()=>{
+    S.holAuto=false;sv('wt4_hol_auto',false);scheduleSync();S.success='holAuto';render();
+  });
+
   // Wage history delete buttons
   document.querySelectorAll('[data-wage-del]').forEach(btn=>{
     btn.addEventListener('click',()=>{
@@ -1328,6 +1419,7 @@ applyTheme();
         pattern: OB.pattern,
         currentShift: OB.currentShift,
         wage: OB.wage,
+        holAuto: OB.holAuto,
       }));
     }catch(e){}
   }
@@ -1339,14 +1431,17 @@ applyTheme();
     pattern:      saved?.pattern      ?? null,
     currentShift: saved?.currentShift ?? null,
     wage:         saved?.wage         ?? DEFAULT_WAGE,
+    holAuto:      saved?.holAuto !== undefined ? saved.holAuto : true, // default: auto-credit ON
     signingIn: false,   // transient — never persisted
   };
 
   // Sync app language to whatever OB has (so ot() works correctly on resume)
   S.lang = OB.lang;
 
-  // Total steps: rotation → 6 steps (1,2,3,4,5,6), others → 5 steps (1,2,4,5,6)
-  function totalSteps(){ return OB.pattern==='rotation' ? 6 : 5; }
+  // Steps:  1=lang  2=pattern  3=rotation-shift(rotation only)  4=wage  5=holAuto  6=cloud  7=done
+  // For non-rotation: steps 1,2,4,5,6,7 (skip 3) — 6 total displayed
+  // For rotation:     steps 1,2,3,4,5,6,7         — 7 total displayed
+  function totalSteps(){ return OB.pattern==='rotation' ? 7 : 6; }
   // Displayed progress position (1-based, skips step 3 if not rotation)
   function stepPos(){
     if(OB.pattern!=='rotation' && OB.step>=3) return OB.step-1;
@@ -1446,6 +1541,32 @@ applyTheme();
         </div>`;
 
     }else if(OB.step===5){
+      // NEW: Holiday auto-credit preference
+      const opts=[
+        {val:true, icon:'✅', title:ot('obStep5HolYes'), sub:ot('obStep5HolYesSub')},
+        {val:false,icon:'⛔', title:ot('obStep5HolNo'),  sub:ot('obStep5HolNoSub')},
+      ];
+      inner=`
+        <div class="ob-icon">📆</div>
+        <h2 class="ob-title">${ot('obStep5HolTitle')}</h2>
+        <p class="ob-sub">${ot('obStep5HolSub')}</p>
+        <div class="ob-option-list">
+          ${opts.map(o=>`
+            <button class="ob-option${OB.holAuto===o.val?' ob-option--active':''}" data-holAuto="${o.val}">
+              <span class="ob-option-icon">${o.icon}</span>
+              <span class="ob-option-text">
+                <span class="ob-option-title">${o.title}</span>
+                <span class="ob-option-sub">${o.sub}</span>
+              </span>
+            </button>
+          `).join('')}
+        </div>
+        <div class="ob-row">
+          <button class="ob-btn-sec ob-back">${ot('obBack')}</button>
+          <button class="ob-btn-pri ob-next">${ot('obNext')} →</button>
+        </div>`;
+
+    }else if(OB.step===6){
       inner=`
         <div class="ob-icon">☁</div>
         <h2 class="ob-title">${ot('obStep5Title')}</h2>
@@ -1457,7 +1578,7 @@ applyTheme();
               <span>${ot('obStep5Done')} <strong>${CURRENT_USER.displayName||CURRENT_USER.email}</strong></span>
             </div>`
           :`<button class="ob-btn-google ob-google-signin" ${OB.signingIn?'disabled':''}>
-              <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+              <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
               ${OB.signingIn?'…':ot('obStep5Signin')}
             </button>`
         }
@@ -1466,7 +1587,7 @@ applyTheme();
           <button class="ob-btn-pri ob-next">${CURRENT_USER?ot('obNext')+' →':ot('obStep5Skip')}</button>
         </div>`;
 
-    }else if(OB.step===6){
+    }else if(OB.step===7){
       inner=`
         <div class="ob-done-icon">🎉</div>
         <h2 class="ob-title">${ot('obDoneTitle')}</h2>
@@ -1583,20 +1704,33 @@ applyTheme();
       });
     }
 
-    // Google sign-in button
+    // Step 5 (new): holiday auto-credit buttons
+    body.querySelectorAll('[data-holAuto]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        OB.holAuto = btn.dataset.holAuto === 'true';
+        saveOBState();
+        body.querySelectorAll('[data-holAuto]').forEach(b=>{
+          // Compare strictly: only the clicked value matches
+          b.classList.toggle('ob-option--active', b === btn);
+        });
+      });
+    });
+
+    // Google sign-in button (step 6)
     body.querySelector('.ob-google-signin')?.addEventListener('click',async()=>{
       OB.signingIn=true;
       const btn=body.querySelector('.ob-google-signin');
       if(btn){btn.disabled=true;btn.textContent='…';}
       await signInWithGoogle();
       OB.signingIn=false;
-      // Refresh step 5 body in-place to show signed-in state
+      // Refresh step 6 body in-place to show signed-in state
       body.innerHTML=buildStepHTML();
       wireStepEvents();
     });
 
     // Back button
     body.querySelector('.ob-back')?.addEventListener('click',()=>{
+      // Skip step 3 going backwards if not rotation
       const prev = (OB.step===4 && OB.pattern!=='rotation') ? 2 : OB.step-1;
       transitionTo(prev, -1);
     });
@@ -1607,6 +1741,7 @@ applyTheme();
         const wIn=document.getElementById('ob-wage-in');
         if(wIn){ const v=parseInt(wIn.value); if(!isNaN(v)&&v>=0) OB.wage=v; }
       }
+      // Skip step 3 going forward if not rotation
       const next = (OB.step===2 && OB.pattern!=='rotation') ? 4 : OB.step+1;
       transitionTo(next, 1);
     });
@@ -1668,7 +1803,11 @@ applyTheme();
     const wages = [{date:'2026-01-01', amount:OB.wage}];
     sv('wt4_wages', wages);
 
-    // 4. Mark onboarding complete — ONLY here, never earlier
+    // 4. Save holiday auto-credit preference (default true if user skipped without choosing)
+    sv('wt4_hol_auto', OB.holAuto !== null ? OB.holAuto : true);
+    S.holAuto = OB.holAuto !== null ? OB.holAuto : true;
+
+    // 5. Mark onboarding complete — ONLY here, never earlier
     localStorage.setItem('wt4_onboarding', 'done');
     // Clean up in-progress session key
     localStorage.removeItem('wt4_ob_state');

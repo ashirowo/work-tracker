@@ -554,6 +554,8 @@ body{
 }
 .rules-table td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.6;font-weight:500}
 .rules-table tr:last-child td{border-bottom:none}
+/* Tax rate input */
+#tax-rate-in{max-width:110px;text-align:right;}
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar{width:6px;height:6px}

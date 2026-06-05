@@ -201,7 +201,9 @@ function prefetchHolidays(){
 }
 
 
-const DEFAULT_WAGE=10320,TAX=0.033;
+const DEFAULT_WAGE=10320,DEFAULT_TAX=3.3;
+// Tax rate is stored as a percentage (e.g. 3.3) in wt4_tax_rate
+function getTax(){return ld('wt4_tax_rate',DEFAULT_TAX)/100;}
 function ld(k,d){try{const v=localStorage.getItem(k);return v!==null?JSON.parse(v):d;}catch{return d;}}
 function sv(k,v){localStorage.setItem(k,JSON.stringify(v));}
 function pad(n){return String(n).padStart(2,'0');}
@@ -259,7 +261,7 @@ function holName(s){
 }
 function isSun(s){return dowOf(s)===0;}
 function isSat(s){return dowOf(s)===6;}
-function applyTax(g){return Math.round(g*(1-TAX));}
+function applyTax(g){return Math.round(g*(1-getTax()));}
 
 // ── Shift: anchor-based propagation forward indefinitely ─────────────────────
 function getMonday(s){
@@ -440,11 +442,13 @@ function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride,holCreditOverride){
 // ── State ─────────────────────────────────────────────────────────────────────
 let S={
   lang:ld('wt4_lang','en'),theme:ld('wt4_theme','dark'),holAuto:ld('wt4_hol_auto',true),
+  taxRate:ld('wt4_tax_rate',DEFAULT_TAX),
   tab:'calendar',calY:new Date().getFullYear(),calM:new Date().getMonth(),
   modal:null,mReg:undefined,mOT:undefined,mShift:undefined,mHolCredit:undefined,success:''
 };
 function t(k,...a){const fn=TR[S.lang][k];return typeof fn==='function'?fn(...a):(fn||k);}
 function isHolAuto(){return S.holAuto!==false;}
+function getTaxPct(){return S.taxRate;} // percentage for display (e.g. 3.3)
 function applyTheme(){document.documentElement.setAttribute('data-theme',S.theme);}
 
 // ── Single source of truth for earnings on a given date ────────────────────────────
@@ -564,7 +568,7 @@ function buildStats(){
   return`<div class="stats-row">
     <div class="stat"><div class="stat-lbl">${t('statDays')} — ${t('mn')[S.calM]}</div><div class="stat-val">${days}</div></div>
     <div class="stat"><div class="stat-lbl">${t('statHours')} — ${t('mn')[S.calM]}</div><div class="stat-val blu">${hrs.toFixed(1)}h</div></div>
-    <div class="stat"><div class="stat-lbl">${t('statNet')} — ${t('mn')[S.calM]}</div><div class="stat-val grn">₩${net.toLocaleString()}</div></div>
+    <div class="stat"><div class="stat-lbl">${t('statNetLabel',getTaxPct())} — ${t('mn')[S.calM]}</div><div class="stat-val grn">₩${net.toLocaleString()}</div></div>
   </div>`;
 }
 
@@ -963,8 +967,9 @@ async function renderTrendChart(){
 
 function buildSettings(){
   const wages=getWages();
-  // rules is now a function that takes holAuto to conditionally show correct descriptions
-  const rules=typeof TR[S.lang].rules==='function'?TR[S.lang].rules(isHolAuto()):TR[S.lang].rules;
+  const taxPct=getTaxPct();
+  // rules is now a function that takes holAuto and taxPct to conditionally show correct descriptions
+  const rules=typeof TR[S.lang].rules==='function'?TR[S.lang].rules(isHolAuto(),taxPct):TR[S.lang].rules;
   const holA=isHolAuto();
   const historyRows=wages.slice().reverse().map((w,i)=>{
     const idx=wages.length-1-i; // actual index in forward array
@@ -977,7 +982,7 @@ function buildSettings(){
   }).join('');
   return`<div class="card">
     <div class="card-title">${t('setTitle')}</div>
-    ${S.success&&S.success!=='holAuto'?`<div class="success-banner">${S.success}</div>`:''}
+    ${S.success&&S.success!=='holAuto'&&S.success!=='taxRate'?`<div class="success-banner">${S.success}</div>`:''}
     <div style="font-size:13px;font-weight:600;margin-bottom:10px;">${t('wageLabel')}</div>
     <table class="rules-table" style="margin-bottom:16px;">
       <thead><tr>
@@ -1003,6 +1008,18 @@ function buildSettings(){
     </div>
     <button class="btn-pri" id="save-wage" style="width:100%;margin-top:12px;">${t('savWage')}</button>
     <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">${t('wageHistoryHint')}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">${t('taxRateLabel')}</div>
+    ${S.success==='taxRate'?`<div class="success-banner">${t('taxRateSaved')}</div>`:''}
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">${t('taxRateSub')}</p>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+      <input class="wage-inp" id="tax-rate-in" type="number" value="${taxPct}" min="0" max="45" step="0.1"
+        style="width:110px;text-align:right;">
+      <span style="font-size:14px;font-weight:600;color:var(--text-muted);">%</span>
+      <span style="font-size:12px;color:var(--text-hint);margin-left:4px;">(0 – 45%)</span>
+    </div>
+    <button class="btn-pri" id="save-tax-rate" style="width:100%;">${t('taxRateSave')}</button>
   </div>
   <div class="card">
     <div class="card-title">${t('holAutoLabel')}</div>
@@ -1061,7 +1078,7 @@ function buildModal(){
     return`<div class="calc-box">
       ${c.notes.map(n=>`<div class="cr"><span>${n}</span></div>`).join('')}
       <div class="cr"><span>${t('gross')}</span><span>₩${c.gross.toLocaleString()}</span></div>
-      <div class="cr tax"><span>${t('taxLine')}</span><span>-₩${tax.toLocaleString()}</span></div>
+      <div class="cr tax"><span>${t('taxLine',getTaxPct())}</span><span>-₩${tax.toLocaleString()}</span></div>
       <div class="cr tot"><span>${t('net')}</span><span>₩${c.net.toLocaleString()}</span></div>
       <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">${t('eff')}: ${c.eff}h · ${t('rateLabel')}: ₩${wage.toLocaleString()}</div>
     </div>`;
@@ -1353,6 +1370,18 @@ function attachListeners(){
     S.success=t('wageSaved');render();
   });
 
+  // Tax rate save
+  const saveTaxBtn=document.getElementById('save-tax-rate');
+  if(saveTaxBtn)saveTaxBtn.addEventListener('click',()=>{
+    const inp=document.getElementById('tax-rate-in');
+    if(!inp)return;
+    let v=parseFloat(inp.value);
+    if(isNaN(v))return;
+    v=Math.min(45,Math.max(0,parseFloat(v.toFixed(2))));
+    inp.value=v;
+    S.taxRate=v;sv('wt4_tax_rate',v);scheduleSync();S.success='taxRate';render();
+  });
+
   // Holiday auto-credit toggle
   const holOnBtn=document.getElementById('hol-auto-on');
   const holOffBtn=document.getElementById('hol-auto-off');
@@ -1419,6 +1448,7 @@ applyTheme();
         pattern: OB.pattern,
         currentShift: OB.currentShift,
         wage: OB.wage,
+        taxRate: OB.taxRate,
         holAuto: OB.holAuto,
       }));
     }catch(e){}
@@ -1431,6 +1461,7 @@ applyTheme();
     pattern:      saved?.pattern      ?? null,
     currentShift: saved?.currentShift ?? null,
     wage:         saved?.wage         ?? DEFAULT_WAGE,
+    taxRate:      saved?.taxRate      !== undefined ? saved.taxRate : DEFAULT_TAX,
     holAuto:      saved?.holAuto !== undefined ? saved.holAuto : true, // default: auto-credit ON
     signingIn: false,   // transient — never persisted
   };
@@ -1438,10 +1469,10 @@ applyTheme();
   // Sync app language to whatever OB has (so ot() works correctly on resume)
   S.lang = OB.lang;
 
-  // Steps:  1=lang  2=pattern  3=rotation-shift(rotation only)  4=wage  5=holAuto  6=cloud  7=done
-  // For non-rotation: steps 1,2,4,5,6,7 (skip 3) — 6 total displayed
-  // For rotation:     steps 1,2,3,4,5,6,7         — 7 total displayed
-  function totalSteps(){ return OB.pattern==='rotation' ? 7 : 6; }
+  // Steps:  1=lang  2=pattern  3=rotation-shift(rotation only)  4=wage  5=taxRate  6=holAuto  7=cloud  8=done
+  // For non-rotation: steps 1,2,4,5,6,7,8 (skip 3) — 7 total displayed
+  // For rotation:     steps 1,2,3,4,5,6,7,8         — 8 total displayed
+  function totalSteps(){ return OB.pattern==='rotation' ? 8 : 7; }
   // Displayed progress position (1-based, skips step 3 if not rotation)
   function stepPos(){
     if(OB.pattern!=='rotation' && OB.step>=3) return OB.step-1;
@@ -1541,7 +1572,23 @@ applyTheme();
         </div>`;
 
     }else if(OB.step===5){
-      // NEW: Holiday auto-credit preference
+      // NEW: Tax rate step
+      inner=`
+        <div class="ob-icon">💸</div>
+        <h2 class="ob-title">${ot('obStep5TaxTitle')}</h2>
+        <p class="ob-sub">${ot('obStep5TaxSub')}</p>
+        <div class="ob-wage-wrap">
+          <input class="ob-wage-input" id="ob-tax-in" type="number" value="${OB.taxRate}" min="0" max="45" step="0.1" style="text-align:right;">
+          <span class="ob-wage-currency">%</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-hint);text-align:center;">0% – 45%</div>
+        <div class="ob-row">
+          <button class="ob-btn-sec ob-back">${ot('obBack')}</button>
+          <button class="ob-btn-pri ob-next">${ot('obNext')} →</button>
+        </div>`;
+
+    }else if(OB.step===6){
+      // Holiday auto-credit preference (was step 5)
       const opts=[
         {val:true, icon:'✅', title:ot('obStep5HolYes'), sub:ot('obStep5HolYesSub')},
         {val:false,icon:'⛔', title:ot('obStep5HolNo'),  sub:ot('obStep5HolNoSub')},
@@ -1566,7 +1613,8 @@ applyTheme();
           <button class="ob-btn-pri ob-next">${ot('obNext')} →</button>
         </div>`;
 
-    }else if(OB.step===6){
+    }else if(OB.step===7){
+      // Cloud backup (was step 6)
       inner=`
         <div class="ob-icon">☁</div>
         <h2 class="ob-title">${ot('obStep5Title')}</h2>
@@ -1587,7 +1635,8 @@ applyTheme();
           <button class="ob-btn-pri ob-next">${CURRENT_USER?ot('obNext')+' →':ot('obStep5Skip')}</button>
         </div>`;
 
-    }else if(OB.step===7){
+    }else if(OB.step===8){
+      // Done (was step 7)
       inner=`
         <div class="ob-done-icon">🎉</div>
         <h2 class="ob-title">${ot('obDoneTitle')}</h2>
@@ -1704,6 +1753,21 @@ applyTheme();
       });
     }
 
+    // Tax rate input — live-sync to OB state
+    const taxIn=document.getElementById('ob-tax-in');
+    if(taxIn){
+      taxIn.addEventListener('input',()=>{
+        let v=parseFloat(taxIn.value);
+        if(!isNaN(v)){ v=Math.min(45,Math.max(0,parseFloat(v.toFixed(2)))); OB.taxRate=v; saveOBState(); }
+      });
+      taxIn.addEventListener('blur',()=>{
+        let v=parseFloat(taxIn.value);
+        if(isNaN(v))v=DEFAULT_TAX;
+        v=Math.min(45,Math.max(0,parseFloat(v.toFixed(2))));
+        taxIn.value=v; OB.taxRate=v; saveOBState();
+      });
+    }
+
     // Step 5 (new): holiday auto-credit buttons
     body.querySelectorAll('[data-holAuto]').forEach(btn=>{
       btn.addEventListener('click',()=>{
@@ -1740,6 +1804,10 @@ applyTheme();
       if(OB.step===4){
         const wIn=document.getElementById('ob-wage-in');
         if(wIn){ const v=parseInt(wIn.value); if(!isNaN(v)&&v>=0) OB.wage=v; }
+      }
+      if(OB.step===5){
+        const tIn=document.getElementById('ob-tax-in');
+        if(tIn){ let v=parseFloat(tIn.value); if(!isNaN(v)){ v=Math.min(45,Math.max(0,v)); OB.taxRate=v; } }
       }
       // Skip step 3 going forward if not rotation
       const next = (OB.step===2 && OB.pattern!=='rotation') ? 4 : OB.step+1;
@@ -1803,16 +1871,22 @@ applyTheme();
     const wages = [{date:'2026-01-01', amount:OB.wage}];
     sv('wt4_wages', wages);
 
-    // 4. Save holiday auto-credit preference (default true if user skipped without choosing)
+    // 4. Save tax rate
+    const taxVal = (OB.taxRate !== undefined && !isNaN(OB.taxRate))
+      ? Math.min(45, Math.max(0, OB.taxRate)) : DEFAULT_TAX;
+    sv('wt4_tax_rate', taxVal);
+    S.taxRate = taxVal;
+
+    // 5. Save holiday auto-credit preference (default true if user skipped without choosing)
     sv('wt4_hol_auto', OB.holAuto !== null ? OB.holAuto : true);
     S.holAuto = OB.holAuto !== null ? OB.holAuto : true;
 
-    // 5. Mark onboarding complete — ONLY here, never earlier
+    // 6. Mark onboarding complete — ONLY here, never earlier
     localStorage.setItem('wt4_onboarding', 'done');
     // Clean up in-progress session key
     localStorage.removeItem('wt4_ob_state');
 
-    // 5. Dismiss overlay and render the full app
+    // 7. Dismiss overlay and render the full app
     document.getElementById('ob-overlay')?.remove();
     render();
     prefetchHolidays();

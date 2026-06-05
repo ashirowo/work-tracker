@@ -72,6 +72,7 @@ const SYNC_KEYS = {
   lang:     'wt4_lang',
   theme:    'wt4_theme',
   holAuto:  'wt4_hol_auto',
+  taxRate:  'wt4_tax_rate',
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -123,6 +124,7 @@ async function pullFromCloud(uid) {
       if (cloud.lang    !== undefined) lsSet(SYNC_KEYS.lang,    cloud.lang);
       if (cloud.theme   !== undefined) lsSet(SYNC_KEYS.theme,   cloud.theme);
       if (cloud.holAuto !== undefined) lsSet(SYNC_KEYS.holAuto, cloud.holAuto);
+      if (cloud.taxRate !== undefined) lsSet(SYNC_KEYS.taxRate, cloud.taxRate);
       lsSet('wt4_syncedAt', cloudTs);
     } else {
       // Local is same age or newer — push local up to cloud
@@ -154,6 +156,7 @@ async function pushToCloud(uid) {
     lang:      lsGet(SYNC_KEYS.lang,    'en'),
     theme:     lsGet(SYNC_KEYS.theme,   'dark'),
     holAuto:   lsGet(SYNC_KEYS.holAuto, true),
+    taxRate:   lsGet(SYNC_KEYS.taxRate, 3.3),
     updatedAt: serverTimestamp(),
   };
 

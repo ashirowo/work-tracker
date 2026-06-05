@@ -16,12 +16,25 @@ function updateSyncUI(){
   const badge=document.getElementById('sync-badge');
   if(!badge)return;
   const status=getSyncStatus();
-  const icons={synced:'☁',pending:'⏳',offline:'⚡',idle:''};
+  const isOffline=!navigator.onLine;
+  // When the network is gone, always show the offline icon regardless of
+  // what firebase.js reports (it may not have fired its 'offline' event yet).
+  const effectiveStatus=isOffline?'offline':status;
+  const icons={synced:'☁',pending:'⏳',offline:'📶',idle:''};
   const tips={synced:'Synced',pending:'Syncing...',offline:'Offline — saved locally',idle:''};
-  badge.textContent=icons[status]||'☁';
-  badge.title=tips[status]||'';
-  badge.dataset.status=status;
-  badge.className='sync-badge sync-badge--'+status;
+  badge.textContent=icons[effectiveStatus]||'☁';
+  badge.title=tips[effectiveStatus]||'';
+  badge.dataset.status=effectiveStatus;
+  badge.className='sync-badge sync-badge--'+effectiveStatus;
+}
+// updateOfflineBanner: sets the banner text in the current language.
+// Called from render() and whenever the language changes.
+function updateOfflineBanner(){
+  const el=document.getElementById('offline-banner-text');
+  if(!el)return;
+  // Fall back to English if key missing in a language block
+  const lang=S?.lang||localStorage.getItem('wt4_lang')||'en';
+  el.textContent=(TR[lang]?.offlineBanner)||TR.en.offlineBanner;
 }
 // Expose to window so firebase.js (a separate ES module) can call these.
 // ES modules have isolated scopes — window is the only shared global.
@@ -513,6 +526,7 @@ function render(){
   document.getElementById('app').innerHTML=buildApp();
   attachListeners();
   if(S.modal)buildModal();
+  updateOfflineBanner();
 }
 
 function buildApp(){

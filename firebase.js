@@ -188,6 +188,11 @@ function scheduleSync() {
 
 // ── Auth: Sign in with Google ─────────────────────────────────────────────────
 async function signInWithGoogle() {
+  // Guard: Google auth requires a live network connection.
+  if (!navigator.onLine) {
+    alert('You\'re offline. Please reconnect to the internet and try signing in again.');
+    return;
+  }
   try {
     await signInWithPopup(auth, provider);
     // onAuthStateChanged will handle the rest
@@ -246,9 +251,14 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 // ── Offline/online detection ──────────────────────────────────────────────────
+// The SW registration script in index.html already toggles the banner DOM;
+// here we handle the cloud-sync side: flush queued writes when back online
+// and update the sync badge in both directions.
 window.addEventListener('online', () => {
   console.log('[firebase] Back online — flushing any pending sync.');
+  _setSyncStatus('pending');
   if (_currentUser) pushToCloud(_currentUser.uid);
+  else _setSyncStatus('idle');
 });
 window.addEventListener('offline', () => {
   _setSyncStatus('offline');

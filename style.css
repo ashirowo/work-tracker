@@ -1292,3 +1292,71 @@ body{
 .ob-slide-out-right{animation:obSlideOutRight 0.18s ease forwards}
 .ob-slide-in-right{animation:obSlideInRight 0.2s cubic-bezier(0.22,1,0.36,1) forwards}
 .ob-slide-in-left{animation:obSlideInLeft 0.2s cubic-bezier(0.22,1,0.36,1) forwards}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   OFFLINE BANNER & PWA OFFLINE STATE
+   Shown automatically by index.html when navigator.onLine === false.
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Offline banner ────────────────────────────────────────────────────────── */
+.offline-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 16px;
+  background: var(--c-warn, #b45309);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-align: center;
+  /* Slide in from top */
+  animation: offlineBannerIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* Ensure it sits above everything but below modals */
+  position: relative;
+  z-index: 200;
+}
+.offline-banner[hidden] { display: none; }
+
+.offline-banner__icon {
+  font-size: 15px;
+  line-height: 1;
+  /* Gentle pulse so it's noticeable but not annoying */
+  animation: offlineIconPulse 2.4s ease-in-out infinite;
+}
+
+@keyframes offlineBannerIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes offlineIconPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+
+/* ── Sync badge — offline state ─────────────────────────────────────────────
+   When offline the firebase.js sets status='offline', which maps to the ⚡
+   icon in app.js. We give it a warning tint to match the banner.            */
+.sync-badge--offline {
+  color: var(--c-warn, #b45309) !important;
+}
+
+/* ── Auth & cloud-sync buttons — visually disabled offline ───────────────────
+   [data-offline] is set on <html> by the SW registration script.
+   Pointer-events remain active so users can tap and see a "no connection"
+   message rather than a silently broken button.                              */
+[data-offline] .auth-btn-in {
+  opacity: 0.45;
+  cursor: not-allowed;
+  position: relative;
+}
+[data-offline] .auth-btn-in::after {
+  content: ' (offline)';
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+/* Dark / light theme variable for warning colour */
+:root                 { --c-warn: #b45309; }
+[data-theme="light"]  { --c-warn: #92400e; }

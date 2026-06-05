@@ -28,6 +28,7 @@ export const TR={
 en: {
   signIn: "Sign in", signOut: "Sign out",
   offlineBanner: "Offline — all local features available, cloud sync paused",
+  offlineShort: "Offline",
   appTitle: "Work Hour Tracker", thisWeek: "This week", dayShift: "Day", nightShift: "Night", doubleShift: "Double",
   obStep1Title: "Choose your language",
   obStep2Title: "What's your shift pattern?",
@@ -134,6 +135,7 @@ en: {
 ko: {
   signIn: "로그인", signOut: "로그아웃",
   offlineBanner: "오프라인 — 모든 로컬 기능 사용 가능, 클라우드 동기화 일시 중지",
+  offlineShort: "오프라인",
   appTitle: "근무 시간 관리", thisWeek: "이번 주", dayShift: "주간", nightShift: "야간", doubleShift: "더블",
   obStep1Title: "언어를 선택하세요",
   obStep2Title: "근무 패턴이 어떻게 되나요?",
@@ -240,6 +242,7 @@ ko: {
 id: {
   signIn: "Masuk", signOut: "Keluar",
   offlineBanner: "Offline — semua fitur lokal tersedia, sinkronisasi cloud dijeda",
+  offlineShort: "Offline",
   appTitle: "Pelacak Jam Kerja", thisWeek: "Minggu ini", dayShift: "Siang", nightShift: "Malam", doubleShift: "Dobel",
   obStep1Title: "Pilih bahasa Anda",
   obStep2Title: "Apa pola shift Anda?",
@@ -346,6 +349,7 @@ id: {
 th: {
   signIn: "เข้าสู่ระบบ", signOut: "ออกจากระบบ",
   offlineBanner: "ออฟไลน์ — ฟีเจอร์ในเครื่องทั้งหมดพร้อมใช้งาน, ซิงค์คลาวด์หยุดชั่วคราว",
+  offlineShort: "ออฟไลน์",
   appTitle: "ติดตามชั่วโมงทำงาน", thisWeek: "สัปดาห์นี้", dayShift: "กะกลางวัน", nightShift: "กะกลางคืน", doubleShift: "ควงกะ",
   obStep1Title: "เลือกภาษาของคุณ",
   obStep2Title: "รูปแบบกะของคุณคืออะไร?",
@@ -452,6 +456,7 @@ th: {
 ru: {
   signIn: "Войти", signOut: "Выйти",
   offlineBanner: "Оффлайн — все локальные функции доступны, облачная синхронизация приостановлена",
+  offlineShort: "Оффлайн",
   appTitle: "Учёт рабочих часов", thisWeek: "Эта неделя", dayShift: "День", nightShift: "Ночь", doubleShift: "Двойная",
   obStep1Title: "Выберите язык",
   obStep2Title: "Какой у вас график работы?",
@@ -558,6 +563,7 @@ ru: {
 zh: {
   signIn: "登录", signOut: "退出登录",
   offlineBanner: "离线 — 所有本地功能可用，云同步已暂停",
+  offlineShort: "离线",
   appTitle: "工时追踪器", thisWeek: "本周", dayShift: "白班", nightShift: "夜班", doubleShift: "双班",
   obStep1Title: "选择您的语言",
   obStep2Title: "您的工作制是什么？",
@@ -664,6 +670,7 @@ zh: {
 fr: {
   signIn: "Se connecter", signOut: "Se déconnecter",
   offlineBanner: "Hors ligne — toutes les fonctions locales disponibles, synchronisation cloud en pause",
+  offlineShort: "Hors ligne",
   appTitle: "Suivi des heures", thisWeek: "Cette semaine", dayShift: "Jour", nightShift: "Nuit", doubleShift: "Double",
   obStep1Title: "Choisissez votre langue",
   obStep2Title: "Quel est votre type de poste ?",
@@ -770,6 +777,7 @@ fr: {
 ne: {
   signIn: "साइन इन", signOut: "साइन आउट",
   offlineBanner: "अफलाइन — सबै स्थानीय सुविधाहरू उपलब्ध छन्, क्लाउड सिंक रोकिएको छ",
+  offlineShort: "अफलाइन",
   appTitle: "कामको घण्टा ट्र्याकर", thisWeek: "यो हप्ता", dayShift: "दिन सिफ्ट", nightShift: "रात सिफ्ट", doubleShift: "डबल सिफ्ट",
   obStep1Title: "आफ्नो भाषा छान्नुहोस्",
   obStep2Title: "तपाईंको सिफ्टको ढाँचा के हो?",

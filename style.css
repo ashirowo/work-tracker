@@ -1349,12 +1349,6 @@ body{
 [data-offline] .auth-btn-in {
   opacity: 0.45;
   cursor: not-allowed;
-  position: relative;
-}
-[data-offline] .auth-btn-in::after {
-  content: ' (offline)';
-  font-size: 10px;
-  opacity: 0.8;
 }
 
 /* Dark / light theme variable for warning colour */

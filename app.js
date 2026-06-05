@@ -545,7 +545,7 @@ function buildApp(){
           ?`<img src="${CURRENT_USER.photoURL}" class="avatar" alt="">`
           :`<span class="avatar-initials">${(CURRENT_USER.displayName||CURRENT_USER.email||'?')[0].toUpperCase()}</span>`}
       </button>`
-    :`<button id="auth-login" class="auth-btn auth-btn-in">${t('signIn')}</button>`;
+    :`<button id="auth-login" class="auth-btn auth-btn-in"${!navigator.onLine?' disabled aria-disabled="true"':''}>${!navigator.onLine?t('offlineShort'):t('signIn')}</button>`;
   // Language trigger only — dropdown is a body-level portal (see attachListeners)
   const langHTML=`<button class="hdr-icon-btn" id="lang-btn" title="Language">🌐</button>`;
   return`<div class="hdr">

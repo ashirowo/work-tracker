@@ -28,8 +28,8 @@
   --night-bg:rgba(138,100,255,0.1);
   --night-border:rgba(138,100,255,0.35);
   --day-text:#ffd166;
-  --day-bg:rgba(255,209,102,0.1);
-  --day-border:rgba(255,209,102,0.35);
+  --day-bg:rgba(255,209,102,0.15);
+  --day-border:rgba(255,209,102,0.55);
   --tab-active-bg:rgba(255,255,255,0.07);
   --input-bg:rgba(0,0,0,0.3);
   --shadow:0 4px 24px rgba(0,0,0,0.6),0 1px 0 rgba(255,255,255,0.05);
@@ -556,6 +556,23 @@ body{
 .rules-table tr:last-child td{border-bottom:none}
 /* Tax rate input */
 #tax-rate-in{max-width:110px;text-align:right;}
+/* Chart range toggle */
+.ov-chart-range{display:flex;gap:4px;}
+.ov-range-btn{
+  padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;
+  border:1.5px solid var(--border);background:transparent;
+  color:var(--text-muted);cursor:pointer;letter-spacing:0.04em;
+  transition:all 0.15s ease;
+}
+.ov-range-btn:hover{border-color:var(--primary);color:var(--primary);}
+.ov-range-btn--active{
+  background:var(--primary);border-color:var(--primary);
+  color:#fff;
+}
+.ov-range-btn--active:hover{
+  background:var(--primary-hover,var(--primary));border-color:var(--primary-hover,var(--primary));
+  color:#fff;opacity:0.85;
+}
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar{width:6px;height:6px}
@@ -590,7 +607,7 @@ body{
   background:var(--day-bg);
   border-color:var(--day-border);
   color:var(--day-text);
-  box-shadow:0 2px 10px var(--day-bg);
+  box-shadow:0 2px 10px rgba(255,209,102,0.2);
 }
 .shift-tog-on-night{
   background:var(--night-bg);

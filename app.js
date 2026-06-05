@@ -444,7 +444,8 @@ let S={
   lang:ld('wt4_lang','en'),theme:ld('wt4_theme','dark'),holAuto:ld('wt4_hol_auto',true),
   taxRate:ld('wt4_tax_rate',DEFAULT_TAX),
   tab:'calendar',calY:new Date().getFullYear(),calM:new Date().getMonth(),
-  modal:null,mReg:undefined,mOT:undefined,mShift:undefined,mHolCredit:undefined,success:''
+  modal:null,mReg:undefined,mOT:undefined,mShift:undefined,mHolCredit:undefined,success:'',
+  chartRange:'3m',   // '3m' | '6m' | '1y'
 };
 function t(k,...a){const fn=TR[S.lang][k];return typeof fn==='function'?fn(...a):(fn||k);}
 function isHolAuto(){return S.holAuto!==false;}
@@ -733,33 +734,40 @@ function buildOverview(){
 
   const curEntries=buildMonthEntries(curYM);
   const curWorkedTotal=curEntries.weekday.length+curEntries.sat.length+curEntries.sunhol.length;
-  const FALLBACK_THRESHOLD=5;
 
-  // Fall back to the most recent previous month with sufficient data (<5 days this month).
+  // Confidence rises smoothly from 0 → 1 between CONF_LO and CONF_HI logged days.
+  // Below CONF_LO: fully rely on previous month. Above CONF_HI: fully rely on current month.
+  const CONF_LO=5, CONF_HI=9;
+  const confidence=curWorkedTotal<=CONF_LO ? 0
+    : curWorkedTotal>=CONF_HI ? 1
+    : (curWorkedTotal-CONF_LO)/(CONF_HI-CONF_LO);
+
+  // Find the most recent previous month with at least CONF_LO days of data.
   function getPrevMonthEntries(){
-    const prevMonths=months.filter(ym=>ym<curYM).sort().reverse(); // newest first
+    const prevMonths=months.filter(ym=>ym<curYM).sort().reverse();
     for(const ym of prevMonths){
       const e=buildMonthEntries(ym);
-      const total=e.weekday.length+e.sat.length+e.sunhol.length;
-      if(total>=FALLBACK_THRESHOLD) return e;
+      if(e.weekday.length+e.sat.length+e.sunhol.length>=CONF_LO) return e;
     }
     return null;
   }
 
-  let avgSrc=curEntries;
-  let usingFallback=false;
-  if(curWorkedTotal<FALLBACK_THRESHOLD){
-    const prev=getPrevMonthEntries();
-    if(prev){avgSrc=prev; usingFallback=true;}
+  const prevEntries=confidence<1 ? getPrevMonthEntries() : null;
+
+  // Blend per-bucket averages: (confidence × current) + ((1-confidence) × previous).
+  // If there is no usable previous month, confidence is clamped to 1 regardless.
+  function blendAvg(bucket){
+    const curAvg=weightedAvg(curEntries[bucket]);
+    if(!prevEntries || confidence===1) return curAvg;
+    const prevAvg=weightedAvg(prevEntries[bucket]);
+    return curAvg*confidence + prevAvg*(1-confidence);
   }
 
-  const avgWeekday=weightedAvg(avgSrc.weekday);
-  const avgSat    =weightedAvg(avgSrc.sat);
-  // For sunhol: if current month has no logged sunhol data at all, blend with a
-  // plain 8h-day estimate so the projection doesn't collapse to ₩0.
-  const avgSunholRaw=weightedAvg(avgSrc.sunhol);
-  // Fallback: use the wage active at end-of-month rather than today,
-  // so a mid-month wage change is reflected in the projection.
+  const avgWeekday=blendAvg('weekday');
+  const avgSat    =blendAvg('sat');
+  // For sunhol: if the blended result is still 0, fall back to a plain 8h estimate
+  // so the projection never collapses to ₩0 on future Sundays/holidays.
+  const avgSunholRaw=blendAvg('sunhol');
   const avgSunhol=avgSunholRaw>0
     ? avgSunholRaw
     : applyTax(Math.round(8*wageFor(`${curYM}-${pad(daysInCur)}`)));
@@ -793,16 +801,30 @@ function buildOverview(){
   function fmtYM(ym){ const[y,m]=ym.split('-'); return`${mnames[parseInt(m)-1]} ${y}`; }
 
   // Chart data — up to 7 months, oldest→newest; current month uses projection.
+  // Chart data — all months oldest→newest; current month uses projection.
   // Stored on a module-level var so renderTrendChart() reads the same values
-  // without re-computing separately (which caused the mismatch).
-  const chartMonths=months.slice(-7);
-  const chartLabels=chartMonths.map(ym=>{ const[,m]=ym.split('-'); return mnames[parseInt(m)-1]; });
+  // without re-computing separately. All months are stored; renderTrendChart()
+  // slices based on S.chartRange ('3m' | '6m' | '1y').
+  const chartMonths=months.slice();
+  // Smart labels: include year suffix only when the visible slice spans multiple years.
+  // renderTrendChart() re-runs this logic after slicing, so we store raw ym keys too.
   const chartValues=chartMonths.map(ym=>ym===curYM?projection:monthData[ym].net);
-  _trendChartData={labels:chartLabels,values:chartValues,curYM};
+  _trendChartData={months:chartMonths,values:chartValues,curYM,mnames};
 
   // Best Single Day across ALL logged days (not just current month)
   let allTimeTopDay=null;
   months.forEach(ym=>{ const td=monthData[ym].topDay; if(td&&(!allTimeTopDay||td.net>allTimeTopDay.net)) allTimeTopDay=td; });
+
+  // Range toggle — only show options that have enough data to be meaningful
+  const has6=chartMonths.length>3;
+  const hasYear=chartMonths.length>6;
+  const rangeOpts=[
+    {k:'3m', label:t('chartRange3m')},
+    ...(has6?[{k:'6m', label:t('chartRange6m')}]:[]),
+    ...(hasYear?[{k:'1y', label:t('chartRange1y')}]:[]),
+  ];
+  // Clamp stored range if it's no longer valid for this data set
+  if(!rangeOpts.find(o=>o.k===S.chartRange)) S.chartRange=rangeOpts[rangeOpts.length-1].k;
 
   return`<div class="ov-wrap">
 
@@ -813,8 +835,8 @@ function buildOverview(){
       <div class="ov-hero-label">${t('ovEstTotal')}</div>
       <div class="ov-hero-value">₩${projection.toLocaleString()}</div>
       <div class="ov-hero-pills">
-        <span class="ov-pill ov-pill--base">⬜ ${t('ovBaseEarnings')} <strong>₩${curBaseNet.toLocaleString()}</strong></span>
-        <span class="ov-pill ov-pill--ot">✦ ${t('ovOvertimeDesc')} <strong>₩${curData.overtimeNet.toLocaleString()}</strong></span>
+        <span class="ov-pill ov-pill--base">✦ ${t('ovBaseEarnings')} <strong>₩${curBaseNet.toLocaleString()}</strong></span>
+        <span class="ov-pill ov-pill--ot">✧ ${t('ovOvertimeDesc')} <strong>₩${curData.overtimeNet.toLocaleString()}</strong></span>
       </div>
     </div>
 
@@ -840,7 +862,9 @@ function buildOverview(){
     <div class="ov-chart-card">
       <div class="ov-chart-header">
         <span class="ov-chart-title">Earnings Trend</span>
-        <span class="ov-chart-cur-badge">● ${fmtYM(curYM)}</span>
+        ${rangeOpts.length>1?`<div class="ov-chart-range">
+          ${rangeOpts.map(o=>`<button class="ov-range-btn${S.chartRange===o.k?' ov-range-btn--active':''}" data-range="${o.k}">${o.label}</button>`).join('')}
+        </div>`:''}
       </div>
       <div class="ov-chart-wrap">
         <canvas id="ov-trend-chart" height="160"></canvas>
@@ -878,8 +902,21 @@ async function renderTrendChart(){
   // Use the data already computed by buildOverview() — single source of truth.
   // This guarantees chart bars match the Calendar tab totals exactly.
   if(!_trendChartData) return;
-  const {labels, values} = _trendChartData;
-  if(labels.length<2) return;
+  const {months: allMonths, values: allValues, mnames} = _trendChartData;
+  if(allMonths.length<2) return;
+
+  // Slice to the selected range
+  const sliceCount = S.chartRange==='1y' ? 12 : S.chartRange==='6m' ? 6 : 3;
+  const months = allMonths.slice(-sliceCount);
+  const values = allValues.slice(-sliceCount);
+
+  // Smart year suffix: only add " 'YY" when the slice spans more than one calendar year
+  const years = new Set(months.map(ym=>ym.slice(0,4)));
+  const showYear = years.size > 1;
+  const labels = months.map(ym=>{
+    const [y,m] = ym.split('-');
+    return showYear ? `${mnames[parseInt(m)-1]} '${y.slice(2)}` : mnames[parseInt(m)-1];
+  });
 
   // Theme-aware colours
   const isDark=S.theme==='dark';
@@ -1249,6 +1286,13 @@ function closeModal(){
 function attachListeners(){
   // Render chart if overview tab is active (async, non-blocking)
   if(S.tab==='overview') renderTrendChart();
+
+  // Chart range toggle — update state and re-render chart in-place (no full render)
+  document.querySelectorAll('.ov-range-btn').forEach(btn=>btn.addEventListener('click',()=>{
+    S.chartRange=btn.dataset.range;
+    document.querySelectorAll('.ov-range-btn').forEach(b=>b.classList.toggle('ov-range-btn--active',b===btn));
+    renderTrendChart();
+  }));
 
   document.getElementById('theme-toggle').addEventListener('click',()=>{
     S.theme=S.theme==='dark'?'light':'dark';sv('wt4_theme',S.theme);scheduleSync();render();

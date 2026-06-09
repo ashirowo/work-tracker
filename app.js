@@ -84,36 +84,23 @@ function parseGovXML(xmlText){
     const ds = `${locdate.slice(0,4)}-${locdate.slice(4,6)}-${locdate.slice(6,8)}`;
     koObj[ds] = dateName;
     // Best-effort English translation for common holidays
-    enObj[ds] = translateHolidayName(dateName);
+    // Translation happens at render time in holName() using current language
   });
   return {enObj, koObj};
 }
 
-// Translate Korean holiday names to English
-function translateHolidayName(ko){
-  const map = {
-    '신정':           "New Year's Day",
-    '설날':           'Lunar New Year',
-    '설날 연휴':      'Lunar New Year Holiday',
-    '삼일절':         'Independence Movement Day',
-    '어린이날':       "Children's Day",
-    '부처님오신날':   "Buddha's Birthday",
-    '현충일':         'Memorial Day',
-    '광복절':         'Liberation Day',
-    '추석':           'Chuseok',
-    '추석 연휴':      'Chuseok Holiday',
-    '개천절':         'National Foundation Day',
-    '한글날':         'Hangul Day',
-    '성탄절':         'Christmas',
-    '대체공휴일':     'Substitute Holiday',
-    '근로자의 날':    'Labour Day',
-  };
-  // Exact match first, then partial
+// Translate a Korean holiday name using the current language's holidays map.
+// Falls back to the original Korean name for unknown/irregular holidays.
+function translateHolidayName(ko, lang){
+  const map = TR[lang]?.holidays;
+  if(!map) return ko; // Korean or missing map — return as-is
+  // Exact match first
   if(map[ko]) return map[ko];
+  // Partial match (e.g. '대체공휴일' inside '어린이날 대체공휴일')
   for(const [k,v] of Object.entries(map)){
     if(ko.includes(k)) return v;
   }
-  return ko; // fall back to Korean if no translation found
+  return ko; // unknown holiday — fall back to Korean name
 }
 
 // Fetch all 12 months of a year from the gov API (one request per month, run in parallel)
@@ -269,8 +256,11 @@ function isHol(s){return!!HOLIDAYS[s];}
 // Since date.nager.at gives localName (Korean) as the value, we store both.
 // Implementation: we store localName as primary. To get English, we keep a parallel en map.
 function holName(s){
-  if(S.lang==='ko') return HOL_KO_DYN[s] || HOLIDAYS[s] || s;
-  return HOLIDAYS[s] || s;
+  // Always look up the Korean name first (source of truth from the API)
+  const ko = HOL_KO_DYN[s];
+  if(!ko) return HOLIDAYS[s] || s; // legacy fallback for pre-fetched data
+  if(S.lang === 'ko') return ko;
+  return translateHolidayName(ko, S.lang);
 }
 function isSun(s){return dowOf(s)===0;}
 function isSat(s){return dowOf(s)===6;}

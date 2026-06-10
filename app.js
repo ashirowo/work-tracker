@@ -83,8 +83,9 @@ function parseGovXML(xmlText){
     // Convert YYYYMMDD → YYYY-MM-DD
     const ds = `${locdate.slice(0,4)}-${locdate.slice(4,6)}-${locdate.slice(6,8)}`;
     koObj[ds] = dateName;
-    // Best-effort English translation for common holidays
-    // Translation happens at render time in holName() using current language
+    // enObj is used purely as a presence-check map (for isHol()).
+    // Store the Korean name as the value; holName() handles display translation.
+    enObj[ds] = dateName;
   });
   return {enObj, koObj};
 }

@@ -48,6 +48,8 @@ en: {
       "대체공휴일": "Substitute Holiday",
       "근로자의 날": "Labour Day",
       "제헌절": "Constitution Day"
+    "1월1일": "New Year's Day",
+    "전국동시지방선거": "Local Election Day",
   },
   appTitle: "Work Hour Tracker", thisWeek: "This week", dayShift: "Day", nightShift: "Night", doubleShift: "Double",
   obStep1Title: "Choose your language",
@@ -283,6 +285,8 @@ id: {
       "대체공휴일": "Hari Libur Pengganti",
       "근로자의 날": "Hari Buruh",
       "제헌절": "Hari Konstitusi"
+    "1월1일": "Tahun Baru",
+    "전국동시지방선거": "Hari Pemilihan Lokal",
   },
   appTitle: "Pelacak Jam Kerja", thisWeek: "Minggu ini", dayShift: "Siang", nightShift: "Malam", doubleShift: "Dobel",
   obStep1Title: "Pilih bahasa Anda",
@@ -410,6 +414,8 @@ th: {
       "대체공휴일": "วันหยุดชดเชย",
       "근로자의 날": "วันแรงงาน",
       "제헌절": "วันรัฐธรรมนูญ"
+    "1월1일": "วันปีใหม่",
+    "전국동시지방선거": "วันเลือกตั้งท้องถิ่น",
   },
   appTitle: "ติดตามชั่วโมงทำงาน", thisWeek: "สัปดาห์นี้", dayShift: "กะกลางวัน", nightShift: "กะกลางคืน", doubleShift: "ควงกะ",
   obStep1Title: "เลือกภาษาของคุณ",
@@ -537,6 +543,8 @@ ru: {
       "대체공휴일": "Заменяющий выходной",
       "근로자의 날": "День труда",
       "제헌절": "День Конституции"
+    "1월1일": "Новый год",
+    "전국동시지방선거": "День местных выборов",
   },
   appTitle: "Учёт рабочих часов", thisWeek: "Эта неделя", dayShift: "День", nightShift: "Ночь", doubleShift: "Двойная",
   obStep1Title: "Выберите язык",
@@ -664,6 +672,8 @@ zh: {
       "대체공휴일": "替代假日",
       "근로자의 날": "劳动节",
       "제헌절": "制宪节"
+    "1월1일": "元旦",
+    "전국동시지방선거": "地方选举日",
   },
   appTitle: "工时追踪器", thisWeek: "本周", dayShift: "白班", nightShift: "夜班", doubleShift: "双班",
   obStep1Title: "选择您的语言",
@@ -791,6 +801,8 @@ fr: {
       "대체공휴일": "Jour férié de substitution",
       "근로자의 날": "Fête du Travail",
       "제헌절": "Jour de la Constitution"
+    "1월1일": "Jour de l'An",
+    "전국동시지방선거": "Jour des élections locales",
   },
   appTitle: "Suivi des heures", thisWeek: "Cette semaine", dayShift: "Jour", nightShift: "Nuit", doubleShift: "Double",
   obStep1Title: "Choisissez votre langue",
@@ -918,6 +930,8 @@ ne: {
       "대체공휴일": "वैकल्पिक बिदा",
       "근로자의 날": "श्रमिक दिवस",
       "제헌절": "संविधान दिवस"
+    "1월1일": "नयाँ वर्ष",
+    "전국동시지방선거": "स्थानीय निर्वाचन दिवस",
   },
   appTitle: "कामको घण्टा ट्र्याकर", thisWeek: "यो हप्ता", dayShift: "दिन सिफ्ट", nightShift: "रात सिफ्ट", doubleShift: "डबल सिफ्ट",
   obStep1Title: "आफ्नो भाषा छान्नुहोस्",

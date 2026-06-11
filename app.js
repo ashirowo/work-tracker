@@ -1207,6 +1207,10 @@ function buildModal(){
       <button class="btn-pri" id="m-save">${t('save')}</button>
     </div>
   </div>`;
+  // Remove any stacked modal overlays before appending the new one.
+  // render() rebuilds #app but leaves body-level portals intact, so without
+  // this guard every re-render inside the modal stacks a new overlay.
+  document.querySelectorAll('#modal-ov').forEach(el => el.remove());
   document.body.appendChild(ov);
 
   ov.addEventListener('click',e=>{if(e.target.id==='modal-ov')closeModal();});
@@ -1283,7 +1287,7 @@ function buildModal(){
 }
 
 function closeModal(){
-  const ov=document.getElementById('modal-ov');if(ov)ov.remove();
+  document.querySelectorAll('#modal-ov').forEach(el => el.remove());
   S.modal=null;S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;render();
 }
 

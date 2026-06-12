@@ -1652,7 +1652,7 @@ applyTheme();
         <p class="ob-sub">${ot('obStep5HolSub')}</p>
         <div class="ob-option-list">
           ${opts.map(o=>`
-            <button class="ob-option${OB.holAuto===o.val?' ob-option--active':''}" data-holAuto="${o.val}">
+            <button class="ob-option${OB.holAuto===o.val?' ob-option--active':''}" data-holauto="${o.val}">
               <span class="ob-option-icon">${o.icon}</span>
               <span class="ob-option-text">
                 <span class="ob-option-title">${o.title}</span>
@@ -1822,11 +1822,11 @@ applyTheme();
     }
 
     // Step 5 (new): holiday auto-credit buttons
-    body.querySelectorAll('[data-holAuto]').forEach(btn=>{
+    body.querySelectorAll('[data-holauto]').forEach(btn=>{
       btn.addEventListener('click',()=>{
-        OB.holAuto = btn.dataset.holAuto === 'true';
+        OB.holAuto = btn.dataset.holauto === 'true';
         saveOBState();
-        body.querySelectorAll('[data-holAuto]').forEach(b=>{
+        body.querySelectorAll('[data-holauto]').forEach(b=>{
           // Compare strictly: only the clicked value matches
           b.classList.toggle('ob-option--active', b === btn);
         });

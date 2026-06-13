@@ -1929,8 +1929,23 @@ applyTheme();
     sv('wt4_shifts', sh);
 
     // 3. Save wage
-    const wages = [{date:'2026-01-01', amount:OB.wage}];
-    sv('wt4_wages', wages);
+    // If a cloud pull already populated wt4_wages with multiple entries (existing user
+    // who cleared app data and re-logged in during onboarding), preserve those entries
+    // rather than overwriting with the single onboarding wage.
+    // Similarly, if cloud data was pulled, trust the cloud shifts over the freshly
+    // computed onboarding anchors — the user's real history is already correct.
+    const cloudWasPulled = ld('wt4_cloud_pulled', false);
+    if (cloudWasPulled) {
+      // Cloud data is already in localStorage from pullFromCloud — don't overwrite it.
+      // Only write shifts/wages if the cloud had none (first-time user path).
+      const existingWages = ld('wt4_wages', null);
+      const existingShifts = ld('wt4_shifts', null);
+      if (!existingWages || existingWages.length <= 1) sv('wt4_wages', [{date:'2026-01-01', amount:OB.wage}]);
+      if (!existingShifts || Object.keys(existingShifts).length === 0) sv('wt4_shifts', sh);
+    } else {
+      const wages = [{date:'2026-01-01', amount:OB.wage}];
+      sv('wt4_wages', wages);
+    }
 
     // 4. Save tax rate
     const taxVal = (OB.taxRate !== undefined && !isNaN(OB.taxRate))
@@ -1944,8 +1959,9 @@ applyTheme();
 
     // 6. Mark onboarding complete — ONLY here, never earlier
     localStorage.setItem('wt4_onboarding', 'done');
-    // Clean up in-progress session key
+    // Clean up in-progress session key and cloud-pull flag
     localStorage.removeItem('wt4_ob_state');
+    localStorage.removeItem('wt4_cloud_pulled');
 
     // 7. Dismiss overlay and render the full app
     document.getElementById('ob-overlay')?.remove();

@@ -126,6 +126,9 @@ async function pullFromCloud(uid) {
       if (cloud.holAuto !== undefined) lsSet(SYNC_KEYS.holAuto, cloud.holAuto);
       if (cloud.taxRate !== undefined) lsSet(SYNC_KEYS.taxRate, cloud.taxRate);
       lsSet('wt4_syncedAt', cloudTs);
+      // Signal to completeOnboarding() that cloud data is now in localStorage,
+      // so it should not overwrite wages/shifts with fresh onboarding defaults.
+      lsSet('wt4_cloud_pulled', true);
     } else {
       // Local is same age or newer — push local up to cloud
       console.log('[firebase] Local data is current — pushing to cloud.');

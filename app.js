@@ -389,6 +389,8 @@ function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride,holCreditOverride){
       eff=+(dayWeekdayEff+nightEff).toFixed(2);  // 8+13.16=21.16
       notes.push(tr.nDoubleWeekday);
     }
+    // Extra hours worked after the double shift: 2× multiplier
+    if(otHrs>0){const e=+(otHrs*2).toFixed(2);eff=+(eff+e).toFixed(2);notes.push(tr.nNightOT(otHrs));}
     const g=Math.round(eff*wage);return{gross:g,net:applyTax(g),eff,notes};
   }
 
@@ -1146,11 +1148,13 @@ function buildModal(){
     const sunInfoCls=autoSunQual?'info-box':' info-box';
     bodyHTML=`<div class="info-box">${autoSunQual?t('sunAuto'):t('sunNotYet')}</div>
     <div class="info-box warn" style="margin-top:0;">${t('sunWorkedInfo')}</div>
-    <div class="fg-row" ${shift==='double'?'style="display:none"':''}>
+    <div class="fg-row" id="m-reg-row" ${shift==='double'?'style="display:none"':''}>
       <div class="fg">
         <label>${t('regHrs')}</label>
         <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
       </div>
+    </div>
+    <div class="fg-row" id="m-ot-row">
       <div class="fg">
         <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
         <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
@@ -1167,11 +1171,13 @@ function buildModal(){
     </button>` : '';
     bodyHTML=`<div class="info-box warn">${t(holInfoKey)}</div>
     ${perDayToggle}
-    <div class="fg-row" ${shift==='double'?'style="display:none"':''}>
+    <div class="fg-row" id="m-reg-row" ${shift==='double'?'style="display:none"':''}>
       <div class="fg">
         <label>${t('regHrs')}</label>
         <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
       </div>
+    </div>
+    <div class="fg-row" id="m-ot-row">
       <div class="fg">
         <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
         <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
@@ -1180,11 +1186,13 @@ function buildModal(){
     <div id="m-preview">${previewHTML(reg,ot,shift)}</div>`;
   }else{
     // Normal/Saturday: two inputs
-    bodyHTML=`<div class="fg-row" ${shift==='double'?'style="display:none"':''}>
+    bodyHTML=`<div class="fg-row" id="m-reg-row" ${shift==='double'?'style="display:none"':''}>
       <div class="fg">
         <label>${t('regHrs')}</label>
         <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
       </div>
+    </div>
+    <div class="fg-row" id="m-ot-row">
       <div class="fg">
         <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
         <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
@@ -1223,7 +1231,7 @@ function buildModal(){
   function upd(){
     const sh=curShift();
     const r=sh==='double'?0:(regIn?parseFloat(regIn.value)||0:0);
-    const o=sh==='double'?0:(otIn?parseFloat(otIn.value)||0:0);
+    const o=(otIn?parseFloat(otIn.value)||0:0);
     S.mReg=r;S.mOT=o;
     const prev=document.getElementById('m-preview');
     if(prev)prev.innerHTML=previewHTML(r,o,sh);
@@ -1240,9 +1248,9 @@ function buildModal(){
     if(dBtn){dBtn.className='shift-tog'+(newShift==='day'?' shift-tog-on-day':'');}
     if(nBtn){nBtn.className='shift-tog'+(newShift==='night'?' shift-tog-on-night':'');}
     if(xBtn){xBtn.className='shift-tog'+(newShift==='double'?' shift-tog-on-double':'');}
-    // Show/hide the hour inputs row
-    const fgRow=document.querySelector('#modal-ov .fg-row');
-    if(fgRow){fgRow.style.display=newShift==='double'?'none':'grid';}
+    // Hide reg row on double; OT row always visible
+    const regRow=document.getElementById('m-reg-row');
+    if(regRow){regRow.style.display=newShift==='double'?'none':'grid';}
     upd();
   }
   const sdBtn=document.getElementById('m-shift-day');
@@ -1261,7 +1269,7 @@ function buildModal(){
     // Preserve current input values across the re-render
     const sh=curShift();
     const r=sh==='double'?0:(regIn?parseFloat(regIn.value)||0:0);
-    const o=sh==='double'?0:(otIn?parseFloat(otIn.value)||0:0);
+    const o=(otIn?parseFloat(otIn.value)||0:0);
     S.mReg=r;S.mOT=o;S.mShift=sh;
     const ov=document.getElementById('modal-ov');
     if(ov){ov.remove();}
@@ -1272,7 +1280,7 @@ function buildModal(){
   if(saveBtn)saveBtn.addEventListener('click',()=>{
     const sh=curShift();
     const r=sh==='double'?0:(regIn?parseFloat(regIn.value)||0:0);
-    const o=sh==='double'?0:(otIn?parseFloat(otIn.value)||0:0);
+    const o=(otIn?parseFloat(otIn.value)||0:0);
     const c=calcWage(date,r,o,wage,sh,effectiveHolCredit);
     const logs=getLogs();
     // Store shiftOverride only when it differs from the week default

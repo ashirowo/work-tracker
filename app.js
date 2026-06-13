@@ -1937,12 +1937,12 @@ applyTheme();
     const cloudWasPulled = ld('wt4_cloud_pulled', false);
     if (cloudWasPulled) {
       // Cloud data is already in localStorage from pullFromCloud — don't overwrite it.
-      // Only write shifts/wages if the cloud had none (first-time user path).
+      // Only write wages if the cloud had none (first-time user path).
       const existingWages = ld('wt4_wages', null);
-      const existingShifts = ld('wt4_shifts', null);
       if (!existingWages || existingWages.length <= 1) sv('wt4_wages', [{date:'2026-01-01', amount:OB.wage}]);
-      if (!existingShifts || Object.keys(existingShifts).length === 0) sv('wt4_shifts', sh);
+      // Shifts are left completely untouched — cloud anchors are the source of truth.
     } else {
+      sv('wt4_shifts', sh);
       const wages = [{date:'2026-01-01', amount:OB.wage}];
       sv('wt4_wages', wages);
     }

@@ -1926,25 +1926,19 @@ applyTheme();
       sh[EPOCH2] = fixedShift;
     }
 
-    sv('wt4_shifts', sh);
-
-    // 3. Save wage
-    // If a cloud pull already populated wt4_wages with multiple entries (existing user
-    // who cleared app data and re-logged in during onboarding), preserve those entries
-    // rather than overwriting with the single onboarding wage.
-    // Similarly, if cloud data was pulled, trust the cloud shifts over the freshly
-    // computed onboarding anchors — the user's real history is already correct.
+    // 3. Save shifts and wages, but only if this is a new user.
+    // For returning users who logged in during onboarding, cloud data is already
+    // in localStorage — don't overwrite shifts (would corrupt historical anchors)
+    // or wages (would lose all but the latest entry).
     const cloudWasPulled = ld('wt4_cloud_pulled', false);
     if (cloudWasPulled) {
-      // Cloud data is already in localStorage from pullFromCloud — don't overwrite it.
-      // Only write wages if the cloud had none (first-time user path).
+      // Returning user: shifts stay untouched. Only write wages if cloud had none.
       const existingWages = ld('wt4_wages', null);
       if (!existingWages || existingWages.length <= 1) sv('wt4_wages', [{date:'2026-01-01', amount:OB.wage}]);
-      // Shifts are left completely untouched — cloud anchors are the source of truth.
     } else {
+      // New user: write freshly computed shifts and the onboarding wage.
       sv('wt4_shifts', sh);
-      const wages = [{date:'2026-01-01', amount:OB.wage}];
-      sv('wt4_wages', wages);
+      sv('wt4_wages', [{date:'2026-01-01', amount:OB.wage}]);
     }
 
     // 4. Save tax rate

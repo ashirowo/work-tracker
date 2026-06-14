@@ -2,7 +2,7 @@
 // scheduleSync() is called after every data mutation so changes automatically
 // propagate to Firestore when the user is signed in. If not signed in or offline,
 // the call is a no-op and localStorage continues working as usual.
-import { signInWithGoogle, signOutUser, scheduleSync, getSyncStatus } from './firebase.js';
+import { signInWithGoogle, signOutUser, scheduleSync, getSyncStatus, deleteCloudData } from './firebase.js';
 import { TR, nightWeekdayEff, satNightEff, satDayEff } from './translations.js';
 
 // ── Auth state (global, set by firebase.js) ─────────────────────────────────
@@ -453,6 +453,7 @@ let S={
   modal:null,mReg:undefined,mOT:undefined,mShift:undefined,mHolCredit:undefined,success:'',
   chartRange:'3m',   // '3m' | '6m' | '1y'
   wageEditIdx:undefined, // transient: index of wage history entry being edited, or undefined
+  resetModal:false, // transient: whether the "Reset all data" confirmation modal is open
 };
 function t(k,...a){const fn=TR[S.lang][k];return typeof fn==='function'?fn(...a):(fn||k);}
 function isHolAuto(){return S.holAuto!==false;}
@@ -520,6 +521,7 @@ function render(){
   document.getElementById('app').innerHTML=buildApp();
   attachListeners();
   if(S.modal)buildModal();
+  if(S.resetModal)buildResetModal();
   updateOfflineBanner();
 }
 
@@ -1155,6 +1157,12 @@ function buildSettings(){
       <tbody>${rules.map(([type,rule])=>`<tr><td><strong>${type}</strong></td><td>${rule}</td></tr>`).join('')}</tbody>
     </table>
   </div>
+  <div class="card card--danger">
+    <div class="card-title card-title--danger">${t('dangerZone')}</div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px;">${t('resetTitle')}</div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">${t('resetSub')}</p>
+    <button class="btn-del" id="open-reset-modal" style="width:100%;">${t('resetBtn')}</button>
+  </div>
   <div style="font-size:11px;color:var(--text-hint);text-align:center;margin-top:-6px;">${t('calHint')}</div>`;
 }
 
@@ -1367,6 +1375,93 @@ function buildModal(){
 function closeModal(){
   document.querySelectorAll('#modal-ov').forEach(el => el.remove());
   S.modal=null;S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;render();
+}
+
+// ── Reset all data modal ─────────────────────────────────────────────────────
+// Destructive action: clears all wt4_* localStorage keys (app data + settings),
+// optionally deletes the user's Firestore document, then reloads so onboarding
+// runs fresh. Requires typing a confirmation word to enable the final button.
+function closeResetModal(){
+  document.querySelectorAll('#reset-modal-ov').forEach(el => el.remove());
+  S.resetModal=false;render();
+}
+
+function buildResetModal(){
+  const cw=t('resetConfirmWord');
+  const signedIn=!!CURRENT_USER;
+
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';ov.id='reset-modal-ov';
+  ov.innerHTML=`<div class="modal">
+    <h3 style="color:var(--danger);">${t('resetModalTitle')}</h3>
+    <div class="modal-sub">${t('resetModalIntro')}</div>
+    <ul class="reset-item-list">
+      <li>${t('resetItemLogs')}</li>
+      <li>${t('resetItemShifts')}</li>
+      <li>${t('resetItemWages')}</li>
+      <li>${t('resetItemSettings')}</li>
+      <li>${t('resetItemOnboarding')}</li>
+    </ul>
+    ${signedIn?`
+    <label class="reset-cloud-toggle">
+      <input type="checkbox" id="reset-cloud-cb">
+      <span>${t('resetCloudLabel')}</span>
+    </label>
+    <div class="modal-sub" style="margin-top:-4px;margin-bottom:8px;">${t('resetCloudSub')}</div>
+    <div class="modal-sub" style="margin-bottom:12px;">${t('resetSignOutNote')}</div>
+    `:''}
+    <div class="info-box warn" style="margin-bottom:12px;">${t('resetCancelling')}</div>
+    <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">${t('resetConfirmLabel',cw)}</label>
+    <input class="wage-inp" id="reset-confirm-in" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:100%;text-align:left;margin-bottom:16px;">
+    <div class="m-actions">
+      <button class="btn-sec" id="reset-cancel">${t('cancel')}</button>
+      <button class="btn-del" id="reset-confirm" disabled>${t('resetBtnFinal')}</button>
+    </div>
+  </div>`;
+
+  document.querySelectorAll('#reset-modal-ov').forEach(el => el.remove());
+  document.body.appendChild(ov);
+
+  ov.addEventListener('click',e=>{if(e.target.id==='reset-modal-ov')closeResetModal();});
+  document.getElementById('reset-cancel').addEventListener('click',closeResetModal);
+
+  const confirmIn=document.getElementById('reset-confirm-in');
+  const confirmBtn=document.getElementById('reset-confirm');
+  confirmIn.addEventListener('input',()=>{
+    confirmBtn.disabled = confirmIn.value.trim() !== cw;
+  });
+
+  confirmBtn.addEventListener('click',async()=>{
+    if(confirmIn.value.trim()!==cw)return;
+    confirmBtn.disabled=true;
+    confirmBtn.textContent=t('resetBtnFinal')+'…';
+
+    const wipeCloud=signedIn && document.getElementById('reset-cloud-cb')?.checked;
+    const uid=CURRENT_USER?.uid; // capture before sign-out clears CURRENT_USER
+
+    // Sign out first — signOutUser() may push any pending sync changes before
+    // signing out. Deleting the cloud doc AFTER sign-out (using the captured
+    // uid) ensures nothing gets recreated by that push.
+    if(signedIn){
+      try{ await signOutUser(); }
+      catch(e){ console.warn('[reset] Sign-out failed, continuing with local reset:',e.message); }
+    }
+
+    if(wipeCloud){
+      try{ await deleteCloudData(uid); }
+      catch(e){ console.warn('[reset] Cloud delete failed, continuing with local reset:',e.message); }
+    }
+
+    // Clear every wt4_* key (app data, settings, onboarding state, sync flags).
+    // Holiday API caches (wt4_gov_*, wt4_hol_*) are left intact — they're just
+    // cached lookups, not user data, and will be reused or refreshed naturally.
+    Object.keys(localStorage)
+      .filter(k=>k.startsWith('wt4_') && !k.startsWith('wt4_gov_') && !k.startsWith('wt4_hol_'))
+      .forEach(k=>localStorage.removeItem(k));
+
+    // Reload so onboarding runs fresh against a clean slate.
+    window.location.reload();
+  });
 }
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
@@ -1582,6 +1677,12 @@ function attachListeners(){
       }
       render();
     });
+  });
+
+  // Danger Zone — open reset confirmation modal
+  const openResetBtn=document.getElementById('open-reset-modal');
+  if(openResetBtn)openResetBtn.addEventListener('click',()=>{
+    S.resetModal=true;render();
   });
 }
 

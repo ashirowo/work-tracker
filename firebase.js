@@ -49,7 +49,7 @@ const FIREBASE_CONFIG = {
 import { initializeApp }                              from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
                                                       from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, serverTimestamp }
+import { getFirestore, doc, getDoc, setDoc, deleteDoc, serverTimestamp }
                                                       from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -268,6 +268,23 @@ window.addEventListener('offline', () => {
   console.log('[firebase] Offline — changes will sync when connection restores.');
 });
 
+// ── Delete: remove the user's Firestore document entirely ───────────────────
+// Used by the "Reset all data" flow when the user opts to also wipe their
+// cloud copy. Safe to call when not signed in (no-op).
+async function deleteCloudData(explicitUid) {
+  const targetUid = explicitUid ?? _currentUser?.uid;
+  if (!targetUid) return;
+  try {
+    clearTimeout(_syncTimer);
+    _syncPending = false;
+    await deleteDoc(userDoc(targetUid));
+    console.log('[firebase] Cloud document deleted.');
+  } catch(e) {
+    console.warn('[firebase] Cloud delete failed:', e.message);
+    throw e; // let the caller decide how to surface this
+  }
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 // Exported so app.js can call these without knowing Firebase internals.
 // getSyncStatus() — read by app.js during render to show sync badge
@@ -279,4 +296,5 @@ export {
   scheduleSync,      // call after any data mutation
   pushToCloud,       // call for immediate push (e.g. before page unload)
   getSyncStatus,     // read current sync status for header badge
+  deleteCloudData,   // call to permanently delete the user's Firestore document
 };

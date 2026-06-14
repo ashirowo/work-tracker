@@ -685,44 +685,57 @@ function buildOverview(){
   const curData=monthData[curYM]||{net:0,gross:0,days:0,overtimeNet:0,topDay:null};
   const curBaseNet=Math.max(0,curData.net-curData.overtimeNet);
 
-  // ── Pattern-based projection ───────────────────────────────────────────────
-  // Days are classified into three buckets:
-  //   'weekday'  — Mon–Fri that are NOT public holidays
-  //   'sat'      — Saturdays that are NOT public holidays
-  //   'sunhol'   — Sundays (plain or holiday) AND weekday/Saturday public holidays
-  // This matches how wages are actually calculated (holiday rules apply regardless of DOW).
+  // ── Pattern-based projection (v2) ──────────────────────────────────────────
+  // Days are classified into SIX buckets so shift type (day/night) and
+  // Sunday-vs-holiday pay differences are no longer averaged together:
+  //   'dayWeekday'   — Mon–Fri, day shift, not a public holiday
+  //   'nightWeekday' — Mon–Fri, night shift, not a public holiday
+  //   'daySat'       — Saturday, day shift, not a public holiday
+  //   'nightSat'     — Saturday, night shift, not a public holiday
+  //   'sun'          — plain Sunday (always auto-credited)
+  //   'holiday'      — public holiday (any day of week; auto-credit depends on holAuto)
+  // This mirrors how calcWage() actually branches, so each bucket's average
+  // reflects a single, internally-consistent pay formula. Saturdays are split
+  // by shift just like weekdays — satDayEff(8)=12 vs satNightEff(8)=13.16 are
+  // different formulas and must not be averaged together.
+  const BUCKET_KEYS=['dayWeekday','nightWeekday','daySat','nightSat','sun','holiday'];
+
   function classifyDay(ds){
-    // When holAuto is OFF, holidays are not auto-credited, so they behave like
-    // their real day-of-week for projection purposes (weekday/sat/sun).
-    if(isHol(ds) && isHolAuto()) return 'sunhol'; // auto-credited holiday → sunhol rate
-    if(isSun(ds)) return 'sunhol';
-    if(isSat(ds)) return 'sat';
-    return 'weekday';
+    if(isHol(ds)) return 'holiday';
+    if(isSun(ds)) return 'sun';
+    const night=shiftFor(ds)==='night';
+    if(isSat(ds)) return night ? 'nightSat' : 'daySat';
+    return night ? 'nightWeekday' : 'dayWeekday';
   }
 
-  // Weighted average: 70% recent half, 30% older half (entries sorted oldest→newest).
-  function weightedAvg(entries){
+  // Exponential-decay weighted average: more recent entries count more.
+  // weight(daysAgo) = DECAY^daysAgo, normalized so weights sum to 1.
+  // DECAY=0.9 → an entry 7 days old carries ~48% the weight of today's;
+  // 14 days old ~23%. Smooth, no discontinuity (unlike the old 70/30 split).
+  const DECAY=0.9;
+  function decayWeightedAvg(entries, refDateStr){
     if(!entries.length) return 0;
     if(entries.length===1) return entries[0].net;
-    const mid=Math.ceil(entries.length/2);
-    const recent=entries.slice(mid), older=entries.slice(0,mid);
-    const avg=arr=>arr.reduce((s,e)=>s+e.net,0)/arr.length;
-    return (recent.length && older.length)
-      ? avg(recent)*0.7 + avg(older)*0.3
-      : avg(entries);
+    const refMs=pd(refDateStr).getTime();
+    const dayMs=24*3600*1000;
+    let wSum=0,vSum=0;
+    for(const e of entries){
+      const daysAgo=Math.max(0,Math.round((refMs-pd(e.ds).getTime())/dayMs));
+      const w=Math.pow(DECAY,daysAgo);
+      wSum+=w; vSum+=w*e.net;
+    }
+    return wSum>0 ? vSum/wSum : 0;
   }
 
-  // Build an earnings bucket for a given year-month string.
-  // Includes both manually logged entries AND auto-credited sun/hol days (8h × wage).
-  // Auto-credited days are what actually appear in the user's income — omitting them
-  // would make avgSunhol ≈ 0, projecting ₩0 for every future Sunday/holiday.
+  // Build per-bucket entries for a given year-month string.
+  // Includes both manually logged entries AND auto-credited sun/hol days.
   function buildMonthEntries(ym){
     const [yStr,mStr]=ym.split('-');
     const y=parseInt(yStr),mo=parseInt(mStr)-1;
     const daysInMo=new Date(y,mo+1,0).getDate();
     const isCurrent=ym===curYM;
     const cutoff=isCurrent?todayStr:`${ym}-${pad(daysInMo)}`; // whole month for past months
-    const bucket={weekday:[],sat:[],sunhol:[]};
+    const bucket={}; BUCKET_KEYS.forEach(k=>bucket[k]=[]);
 
     for(let d=1;d<=daysInMo;d++){
       const ds=mkds(y,mo,d);
@@ -734,70 +747,114 @@ function buildOverview(){
       // inflate projections. They still count toward actual earned totals via curData.
       if(g>0 && logs[ds]?.shiftOverride!=='double') bucket[cls].push({net:applyTax(g), ds});
     }
-    // Sort oldest→newest within each bucket so the 70/30 weight is time-ordered
-    ['weekday','sat','sunhol'].forEach(k=>bucket[k].sort((a,b)=>a.ds.localeCompare(b.ds)));
+    // Sort oldest→newest within each bucket so decay weighting is time-ordered
+    BUCKET_KEYS.forEach(k=>bucket[k].sort((a,b)=>a.ds.localeCompare(b.ds)));
     return bucket;
   }
 
   const curEntries=buildMonthEntries(curYM);
-  const curWorkedTotal=curEntries.weekday.length+curEntries.sat.length+curEntries.sunhol.length;
 
-  // Confidence rises smoothly from 0 → 1 between CONF_LO and CONF_HI logged days.
-  // Below CONF_LO: fully rely on previous month. Above CONF_HI: fully rely on current month.
-  const CONF_LO=5, CONF_HI=9;
-  const confidence=curWorkedTotal<=CONF_LO ? 0
-    : curWorkedTotal>=CONF_HI ? 1
-    : (curWorkedTotal-CONF_LO)/(CONF_HI-CONF_LO);
+  // Per-bucket confidence: each bucket's reliability depends on ITS OWN count
+  // this month, not the total. A user with 12 day-shift entries but 0 Saturday
+  // entries should get full confidence on dayWeekday but fall back to last
+  // month (or the deterministic estimate) for sat.
+  // Lower thresholds than before (2/4 vs 5/9) since buckets are now finer-grained
+  // and naturally accumulate fewer entries per month.
+  const CONF_LO=2, CONF_HI=4;
+  function confidenceFor(bucket){
+    const n=curEntries[bucket].length;
+    return n<=CONF_LO ? 0 : n>=CONF_HI ? 1 : (n-CONF_LO)/(CONF_HI-CONF_LO);
+  }
 
-  // Find the most recent previous month with at least CONF_LO days of data.
-  function getPrevMonthEntries(){
+  // Find the most recent previous month with at least CONF_LO entries in this bucket.
+  const prevEntriesCache={};
+  function getPrevMonthEntries(bucket){
+    if(prevEntriesCache[bucket]!==undefined) return prevEntriesCache[bucket];
     const prevMonths=months.filter(ym=>ym<curYM).sort().reverse();
     for(const ym of prevMonths){
       const e=buildMonthEntries(ym);
-      if(e.weekday.length+e.sat.length+e.sunhol.length>=CONF_LO) return e;
+      if(e[bucket].length>=CONF_LO){ prevEntriesCache[bucket]=e; return e; }
     }
+    prevEntriesCache[bucket]=null;
     return null;
   }
 
-  const prevEntries=confidence<1 ? getPrevMonthEntries() : null;
-
-  // Blend per-bucket averages: (confidence × current) + ((1-confidence) × previous).
-  // If there is no usable previous month, confidence is clamped to 1 regardless.
-  function blendAvg(bucket){
-    const curAvg=weightedAvg(curEntries[bucket]);
-    if(!prevEntries || confidence===1) return curAvg;
-    const prevAvg=weightedAvg(prevEntries[bucket]);
-    return curAvg*confidence + prevAvg*(1-confidence);
+  // Deterministic fallback: when there's no usable historical data for a bucket
+  // (neither this month nor a previous month), estimate using calcWage() directly
+  // with a representative 8h day, the wage active on the projection date, and the
+  // correct shift/holiday-credit context. This replaces the old "8h × wage" guess
+  // that only applied to the combined sunhol bucket — now every bucket has a
+  // deterministic floor.
+  function deterministicEstimate(bucket, dateStr){
+    const w=wageFor(dateStr);
+    switch(bucket){
+      case 'dayWeekday':   return applyTax(Math.round(8*w));
+      case 'nightWeekday': return applyTax(Math.round(nightWeekdayEff(8)*w));
+      case 'daySat':       return applyTax(Math.round(satDayEff(8)*w));
+      case 'nightSat':     return applyTax(Math.round(satNightEff(8)*w));
+      case 'sun':          return applyTax(Math.round(8*w));
+      case 'holiday':      return applyTax(Math.round((isHolAuto()?8:0)*w));
+      default:             return 0;
+    }
   }
 
-  const avgWeekday=blendAvg('weekday');
-  const avgSat    =blendAvg('sat');
-  // For sunhol: if the blended result is still 0, fall back to a plain 8h estimate
-  // so the projection never collapses to ₩0 on future Sundays/holidays.
-  const avgSunholRaw=blendAvg('sunhol');
-  const avgSunhol=avgSunholRaw>0
-    ? avgSunholRaw
-    : applyTax(Math.round(8*wageFor(`${curYM}-${pad(daysInCur)}`)));
+  // Blend per-bucket averages: (confidence × current) + ((1-confidence) × previous),
+  // falling back to a deterministic estimate when no historical data exists at all.
+  // refDateStr anchors the decay weighting and wage lookup for the fallback.
+  // Returns {avg, low, high}: low/high are the min/max observed net values across
+  // the pooled current+previous entries used for this bucket, giving an honest
+  // range for the projection rather than a single false-precision number.
+  function blendAvg(bucket, refDateStr){
+    const confidence=confidenceFor(bucket);
+    const curList=curEntries[bucket];
+    const curAvg=decayWeightedAvg(curList, refDateStr);
+    let avg, pooled;
+    if(confidence===1 || curList.length>0){
+      const prevEntries=confidence<1 ? getPrevMonthEntries(bucket) : null;
+      if(prevEntries){
+        const prevAvg=decayWeightedAvg(prevEntries[bucket], refDateStr);
+        avg=curAvg*confidence + prevAvg*(1-confidence);
+        pooled=curList.concat(prevEntries[bucket]);
+      }else{
+        avg=curAvg; // no previous data to blend with — use current as-is
+        pooled=curList;
+      }
+    }else{
+      // No current-month data at all for this bucket
+      const prevEntries=getPrevMonthEntries(bucket);
+      avg=prevEntries ? decayWeightedAvg(prevEntries[bucket], refDateStr) : 0;
+      pooled=prevEntries ? prevEntries[bucket] : [];
+    }
+    if(avg<=0){
+      const det=deterministicEstimate(bucket, refDateStr);
+      return {avg:det, low:det, high:det};
+    }
+    if(!pooled.length) return {avg, low:avg, high:avg};
+    const nets=pooled.map(e=>e.net);
+    return {avg, low:Math.min(...nets), high:Math.max(...nets)};
+  }
 
-  // Count remaining days of each type after today (future logs already counted in curData).
-  let remWeekday=0,remSat=0,remSunhol=0;
+  // Count remaining days of each type after today (future logs already counted in curData),
+  // and accumulate the projection using a PER-DAY average anchored to that day's date
+  // (so wage changes mid-projection and decay weighting both resolve correctly).
+  // Also accumulate low/high bounds for a confidence range display.
+  let remainder=0, remainderLow=0, remainderHigh=0;
   for(let d=1;d<=daysInCur;d++){
     const ds=mkds(curY,curMo,d);
     if(ds<=todayStr) continue;      // past/today already in curData.net
     if(logs[ds]) continue;          // manually logged future day already in curData.net
     const cls=classifyDay(ds);
-    if(cls==='weekday') remWeekday++;
-    else if(cls==='sat') remSat++;
-    else remSunhol++;
+    const {avg,low,high}=blendAvg(cls, ds);
+    remainder+=avg; remainderLow+=low; remainderHigh+=high;
   }
 
-  // Projected = actual earned so far + remaining days × per-type weighted average
-  const projection=Math.round(
-    curData.net
-    + remWeekday * avgWeekday
-    + remSat     * avgSat
-    + remSunhol  * avgSunhol
-  );
+  // Projected = actual earned so far + sum of per-day estimates for remaining days.
+  // projectionLow/High give an honest range using the min/max historically observed
+  // net value per bucket, rather than presenting a single number with false precision.
+  const projection=Math.round(curData.net + remainder);
+  const projectionLow=Math.round(curData.net + remainderLow);
+  const projectionHigh=Math.round(curData.net + remainderHigh);
+
 
   // Best month (exclude current for the "past best" card)
   let bestYM=null,bestNet=0;
@@ -841,6 +898,7 @@ function buildOverview(){
     <div class="ov-hero">
       <div class="ov-hero-label">${t('ovEstTotal')}</div>
       <div class="ov-hero-value">₩${projection.toLocaleString()}</div>
+      ${projectionHigh>projectionLow?`<div class="ov-hero-range">${t('ovEstRange',projectionLow,projectionHigh)}</div>`:''}
       <div class="ov-hero-pills">
         <span class="ov-pill ov-pill--base">✦ ${t('ovBaseEarnings')} <strong>₩${curBaseNet.toLocaleString()}</strong></span>
         <span class="ov-pill ov-pill--ot">✧ ${t('ovOvertimeDesc')} <strong>₩${curData.overtimeNet.toLocaleString()}</strong></span>

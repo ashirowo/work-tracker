@@ -816,6 +816,11 @@ body{
   letter-spacing:-0.04em;
   color:var(--success);
   line-height:1;
+  margin-bottom:6px;
+}
+.ov-hero-range{
+  font-size:12px;
+  color:var(--text-muted);
   margin-bottom:14px;
 }
 .ov-hero-pills{

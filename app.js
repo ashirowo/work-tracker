@@ -452,6 +452,7 @@ let S={
   tab:'calendar',calY:new Date().getFullYear(),calM:new Date().getMonth(),
   modal:null,mReg:undefined,mOT:undefined,mShift:undefined,mHolCredit:undefined,success:'',
   chartRange:'3m',   // '3m' | '6m' | '1y'
+  wageEditIdx:undefined, // transient: index of wage history entry being edited, or undefined
 };
 function t(k,...a){const fn=TR[S.lang][k];return typeof fn==='function'?fn(...a):(fn||k);}
 function isHolAuto(){return S.holAuto!==false;}
@@ -1073,13 +1074,19 @@ function buildSettings(){
   // rules is now a function that takes holAuto and taxPct to conditionally show correct descriptions
   const rules=typeof TR[S.lang].rules==='function'?TR[S.lang].rules(isHolAuto(),taxPct):TR[S.lang].rules;
   const holA=isHolAuto();
+  let editIdx=S.wageEditIdx;
+  if(editIdx!==undefined && (editIdx<0 || editIdx>=wages.length)) editIdx=S.wageEditIdx=undefined;
   const historyRows=wages.slice().reverse().map((w,i)=>{
     const idx=wages.length-1-i; // actual index in forward array
     const isFirst=idx===0;
-    return`<tr>
+    const isEditing=editIdx===idx;
+    return`<tr${isEditing?' class="wage-row--editing"':''}>
       <td style="font-size:13px;color:var(--text-muted);">${w.date}</td>
       <td style="font-size:13px;font-weight:600;">₩${w.amount.toLocaleString()}</td>
-      <td style="text-align:right;">${!isFirst?`<button class="btn-del-sm" data-wage-del="${idx}">${t('del')}</button>`:''}</td>
+      <td style="text-align:right;white-space:nowrap;">
+        <button class="btn-edit-sm${isEditing?' btn-edit-sm--active':''}" data-wage-edit="${idx}">${t('edit')}</button>
+        ${!isFirst?`<button class="btn-del-sm" data-wage-del="${idx}">${t('del')}</button>`:''}
+      </td>
     </tr>`;
   }).join('');
   return`<div class="card">
@@ -1094,33 +1101,38 @@ function buildSettings(){
       </tr></thead>
       <tbody>${historyRows}</tbody>
     </table>
-    <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;letter-spacing:0.04em;text-transform:uppercase;">${t('wageAddNew')}</div>
+    <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;letter-spacing:0.04em;text-transform:uppercase;">${editIdx!==undefined?t('wageEditing'):t('wageAddNew')}</div>
     <div class="wage-row" style="align-items:flex-end;gap:8px;">
       <div class="fg" style="flex:1.2;">
         <label style="font-size:11px;">${t('wageEffFrom')}</label>
-        <input class="wage-inp" id="wage-date-in" type="date" value="${today()}">
+        <input class="wage-inp" id="wage-date-in" type="date" value="${editIdx!==undefined?wages[editIdx].date:today()}">
       </div>
       <div class="fg" style="flex:1;">
         <label style="font-size:11px;">${t('wageAmount')}</label>
         <div style="display:flex;align-items:center;gap:5px;">
-          <input class="wage-inp" id="wage-in" type="number" value="${getWage()}" min="0" step="100">
+          <input class="wage-inp" id="wage-in" type="number" value="${editIdx!==undefined?wages[editIdx].amount:getWage()}" min="0" step="100">
           <span style="font-size:13px;color:var(--text-muted);">₩</span>
         </div>
       </div>
     </div>
-    <button class="btn-pri" id="save-wage" style="width:100%;margin-top:12px;">${t('savWage')}</button>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button class="btn-pri" id="save-wage" style="width:100%;">${editIdx!==undefined?t('updWage'):t('savWage')}</button>
+      ${editIdx!==undefined?`<button class="btn-sec" id="cancel-wage-edit" style="flex:0 0 auto;padding:11px 16px;">${t('cancel')}</button>`:''}
+    </div>
     <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">${t('wageHistoryHint')}</div>
   </div>
   <div class="card">
     <div class="card-title">${t('taxRateLabel')}</div>
     ${S.success==='taxRate'?`<div class="success-banner">${t('taxRateSaved')}</div>`:''}
     <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">${t('taxRateSub')}</p>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-      <input class="wage-inp" id="tax-rate-in" type="number" value="${taxPct}" min="0" max="45" step="0.1"
-        style="width:110px;text-align:right;">
-      <span style="font-size:14px;font-weight:600;color:var(--text-muted);">%</span>
-      <span style="font-size:12px;color:var(--text-hint);margin-left:4px;">(0 – 45%)</span>
+    <div class="tax-preset-row">
+      ${[0,3.3,5,10].map(p=>`<button class="tax-preset-btn${Math.abs(taxPct-p)<0.001?' tax-preset-btn--active':''}" data-tax-preset="${p}">${p}%</button>`).join('')}
+      <div class="tax-custom-inp">
+        <input class="wage-inp" id="tax-rate-in" type="number" value="${taxPct}" min="0" max="45" step="0.1">
+        <span style="font-size:14px;font-weight:600;color:var(--text-muted);">%</span>
+      </div>
     </div>
+    <div style="font-size:12px;color:var(--text-hint);margin-bottom:14px;">${t('taxRateRange')}</div>
     <button class="btn-pri" id="save-tax-rate" style="width:100%;">${t('taxRateSave')}</button>
   </div>
   <div class="card">
@@ -1481,12 +1493,35 @@ function attachListeners(){
     const effDate=dateIn?dateIn.value:today();
     if(isNaN(w)||w<0||!effDate)return;
     const wages=getWages();
+    const editIdx=S.wageEditIdx;
+    let working=wages;
+    // If editing, drop the original entry first (by its ORIGINAL date) so
+    // changing the date doesn't leave behind a stale duplicate at the old date.
+    if(editIdx!==undefined && wages[editIdx]){
+      working=wages.filter((_,i)=>i!==editIdx);
+    }
     // Remove any existing entry for the exact same date, then insert sorted
-    const filtered=wages.filter(e=>e.date!==effDate);
+    const filtered=working.filter(e=>e.date!==effDate);
     filtered.push({date:effDate,amount:w});
     filtered.sort((a,b)=>a.date.localeCompare(b.date));
     saveWages(filtered);
+    S.wageEditIdx=undefined;
     S.success=t('wageSaved');render();
+  });
+
+  // Wage history edit buttons — populate the form with the selected entry
+  document.querySelectorAll('[data-wage-edit]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const idx=parseInt(btn.dataset.wageEdit);
+      S.wageEditIdx = S.wageEditIdx===idx ? undefined : idx; // toggle off if clicked again
+      render();
+    });
+  });
+
+  // Cancel editing — return to "Add new" mode
+  const cancelWageEdit=document.getElementById('cancel-wage-edit');
+  if(cancelWageEdit)cancelWageEdit.addEventListener('click',()=>{
+    S.wageEditIdx=undefined;render();
   });
 
   // Tax rate save
@@ -1499,6 +1534,26 @@ function attachListeners(){
     v=Math.min(45,Math.max(0,parseFloat(v.toFixed(2))));
     inp.value=v;
     S.taxRate=v;sv('wt4_tax_rate',v);scheduleSync();S.success='taxRate';render();
+  });
+
+  // Tax rate presets — fill the custom input and toggle active state in place
+  document.querySelectorAll('[data-tax-preset]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const inp=document.getElementById('tax-rate-in');
+      const v=parseFloat(btn.dataset.taxPreset);
+      if(inp)inp.value=v;
+      document.querySelectorAll('[data-tax-preset]').forEach(b=>{
+        b.classList.toggle('tax-preset-btn--active', parseFloat(b.dataset.taxPreset)===v);
+      });
+    });
+  });
+  // Typing a custom value clears preset active state unless it matches one
+  const taxInp=document.getElementById('tax-rate-in');
+  if(taxInp)taxInp.addEventListener('input',()=>{
+    const v=parseFloat(taxInp.value);
+    document.querySelectorAll('[data-tax-preset]').forEach(b=>{
+      b.classList.toggle('tax-preset-btn--active', !isNaN(v) && Math.abs(parseFloat(b.dataset.taxPreset)-v)<0.001);
+    });
   });
 
   // Holiday auto-credit toggle
@@ -1518,7 +1573,14 @@ function attachListeners(){
       const wages=getWages();
       if(wages.length<=1)return; // always keep at least one entry
       wages.splice(idx,1);
-      saveWages(wages);render();
+      saveWages(wages);
+      // If the deleted row was being edited, exit edit mode. If a row before
+      // the edited one was deleted, shift the tracked index down by one.
+      if(S.wageEditIdx!==undefined){
+        if(S.wageEditIdx===idx) S.wageEditIdx=undefined;
+        else if(S.wageEditIdx>idx) S.wageEditIdx--;
+      }
+      render();
     });
   });
 }

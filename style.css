@@ -515,6 +515,7 @@ body{
   border-bottom:1px solid var(--border);
 }
 .wage-row:last-child{border-bottom:none}
+tr.wage-row--editing td{background:var(--primary-glow);}
 .wage-inp{
   width:150px;
   padding:9px 12px;
@@ -529,7 +530,65 @@ body{
   transition:all 0.18s;
 }
 .wage-inp:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-glow)}
+
 .empty-st{text-align:center;padding:48px 16px;color:var(--text-muted);font-size:13px;font-weight:500}
+
+/* ── Tax rate presets + custom input, side by side, wrapping to fill the row ── */
+.tax-preset-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-bottom:10px;
+}
+.tax-preset-btn{
+  flex:1;
+  padding:9px 8px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:var(--bg-card2);
+  color:var(--text-muted);
+  font-family:'Inter',system-ui,sans-serif;
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer;
+  transition:all 0.15s;
+  text-align:center;
+}
+.tax-preset-btn:hover{border-color:var(--border-strong);color:var(--text)}
+.tax-preset-btn--active{
+  background:var(--primary);
+  border-color:var(--primary);
+  color:#fff;
+  box-shadow:0 2px 10px var(--primary-glow);
+}
+.tax-custom-inp{
+  flex:1;
+  display:flex;
+  align-items:center;
+  gap:4px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:0 8px;
+  background:var(--input-bg);
+  transition:all 0.18s;
+}
+.tax-custom-inp:focus-within{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-glow)}
+.tax-custom-inp .wage-inp{
+  flex:1;
+  width:auto;
+  min-width:0;
+  border:none;
+  background:transparent;
+  padding:9px 0;
+  text-align:center;
+}
+.tax-custom-inp .wage-inp:focus{box-shadow:none;}
+.tax-custom-inp .wage-inp::-webkit-outer-spin-button,
+.tax-custom-inp .wage-inp::-webkit-inner-spin-button{
+  -webkit-appearance:none;
+  margin:0;
+}
+.tax-custom-inp .wage-inp{-moz-appearance:textfield;}
 .success-banner{
   background:var(--success-bg);
   color:var(--success);
@@ -964,6 +1023,22 @@ body{
   white-space:nowrap;
 }
 .btn-del-sm:hover{background:var(--danger);color:#fff;border-color:var(--danger)}
+.btn-edit-sm{
+  padding:3px 10px;
+  background:var(--primary-glow);
+  border:1px solid var(--primary);
+  color:var(--primary);
+  border-radius:7px;
+  font-size:11px;
+  font-family:'Inter',system-ui,sans-serif;
+  font-weight:600;
+  cursor:pointer;
+  transition:all 0.15s;
+  white-space:nowrap;
+  margin-right:6px;
+}
+.btn-edit-sm:hover{background:var(--primary);color:#fff}
+.btn-edit-sm--active{background:var(--primary);color:#fff}
 
 /* ── Date input override (themed, replaces browser default) ── */
 .wage-inp[type="date"]{

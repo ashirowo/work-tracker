@@ -229,17 +229,17 @@ function buildRows(fromYM, toYM) {
 
       if (gross === 0 && !log) continue; // skip days with no earnings and no log entry
 
-      if (shift === 'double') type = 'Double';
-      else if (isHol) type = 'Holiday';
-      else if (sun)   type = 'Sunday';
-      else if (sat)   type = shift === 'day' ? 'Sat (Day)' : 'Sat (Night)';
-      else            type = shift === 'day' ? 'Weekday (Day)' : 'Weekday (Night)';
+      if (shift === 'double') type = t('doubleShift');
+      else if (isHol) type = t('exportLegendHoliday');
+      else if (sun)   type = t('exportLegendSunday');
+      else if (sat)   type = shift === 'day' ? `${t('exportLegendSaturday')} (${t('dayShift')})` : `${t('exportLegendSaturday')} (${t('nightShift')})`;
+      else            type = shift === 'day' ? `${t('exportTypeWeekday')} (${t('dayShift')})` : `${t('exportTypeWeekday')} (${t('nightShift')})`;
 
       rows.push({
         date: ds,
         dayOfWeek: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dowOf(ds)],
         type,
-        shift: shift === 'double' ? 'Double' : shift === 'day' ? 'Day' : 'Night',
+        shift: shift === 'double' ? t('doubleShift') : shift === 'day' ? t('dayShift') : t('nightShift'),
         holiday: isHol ? (holidays[ds] || '') : '',
         autoCredit,
         regHrs,
@@ -262,13 +262,15 @@ function buildRows(fromYM, toYM) {
 // ── CSV export ────────────────────────────────────────────────────────────────
 function exportCSV(fromYM, toYM) {
   const rows = buildRows(fromYM, toYM);
-  if (!rows.length) { alert('No data found for the selected period.'); return; }
+  if (!rows.length) { alert(t('exportNoData')); return; }
 
   const taxPct = getTaxRate();
   const headers = [
-    'Date', 'Day', 'Type', 'Shift', 'Holiday', 'Auto-Credit',
-    'Reg Hours', 'OT Hours', 'Eff Hours',
-    `Hourly Rate (₩)`, 'Gross (₩)', `Tax ${taxPct}% (₩)`, 'Net (₩)'
+    t('exportColDate'), t('exportColDay'), t('exportColType'), t('exportColShift'),
+    t('exportLegendHoliday'), 'Auto',
+    t('exportColRegH'), t('exportColOTH'), t('exportColEffH'),
+    `${t('exportColRate')} (₩)`, `${t('exportColGross')} (₩)`,
+    `${t('exportColTax', taxPct)} (₩)`, `${t('exportColNet')} (₩)`
   ];
 
   const escape = v => {
@@ -281,7 +283,7 @@ function exportCSV(fromYM, toYM) {
     headers.map(escape).join(','),
     ...rows.map(r => [
       r.date, r.dayOfWeek, r.type, r.shift, r.holiday,
-      r.autoCredit ? 'Yes' : '',
+      r.autoCredit ? 'AUTO' : '',
       r.regHrs, r.otHrs, r.effHrs,
       r.hourlyRate, r.gross, r.taxAmt, r.net
     ].map(escape).join(','))
@@ -292,7 +294,7 @@ function exportCSV(fromYM, toYM) {
   const totTax   = rows.reduce((s, r) => s + r.taxAmt, 0);
   const totNet   = rows.reduce((s, r) => s + r.net, 0);
   const totEff   = rows.reduce((s, r) => s + r.effHrs, 0);
-  lines.push(['', '', '', '', '', 'TOTAL', '', '', totEff.toFixed(2), '', totGross, totTax, totNet].map(escape).join(','));
+  lines.push(['', '', '', '', '', t('exportTotal'), '', '', totEff.toFixed(2), '', totGross, totTax, totNet].map(escape).join(','));
 
   const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
@@ -306,7 +308,7 @@ function exportCSV(fromYM, toYM) {
 // ── PDF export ────────────────────────────────────────────────────────────────
 function exportPDF(fromYM, toYM) {
   const rows = buildRows(fromYM, toYM);
-  if (!rows.length) { alert('No data found for the selected period.'); return; }
+  if (!rows.length) { alert(t('exportNoData')); return; }
 
   const taxPct = getTaxRate();
   const totGross = rows.reduce((s, r) => s + r.gross, 0);
@@ -324,7 +326,7 @@ function exportPDF(fromYM, toYM) {
     byMonth[ym].push(r);
   });
 
-  const mnames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const mnames = t('mn');
   function fmtYM(ym) {
     const [y, m] = ym.split('-');
     return `${mnames[parseInt(m) - 1]} ${y}`;
@@ -342,10 +344,10 @@ function exportPDF(fromYM, toYM) {
       <div class="month-summary">
         <div class="month-name">${fmtYM(ym)}</div>
         <div class="month-stats">
-          <div class="ms"><span class="ms-lbl">Days Worked</span><span class="ms-val">${mDays}${mAuto ? ` <span class="auto-tag">+${mAuto} auto</span>` : ''}</span></div>
-          <div class="ms"><span class="ms-lbl">Eff. Hours</span><span class="ms-val">${mEff.toFixed(1)}h</span></div>
-          <div class="ms"><span class="ms-lbl">Gross</span><span class="ms-val">${fmtKRW(mGross)}</span></div>
-          <div class="ms ms--net"><span class="ms-lbl">Net Pay</span><span class="ms-val net-val">${fmtKRW(mNet)}</span></div>
+          <div class="ms"><span class="ms-lbl">${t('exportDaysWorked')}</span><span class="ms-val">${mDays}${mAuto ? ` <span class="auto-tag">${t('exportAutoTag', mAuto)}</span>` : ''}</span></div>
+          <div class="ms"><span class="ms-lbl">${t('exportEffHours')}</span><span class="ms-val">${mEff.toFixed(1)}h</span></div>
+          <div class="ms"><span class="ms-lbl">${t('exportGross')}</span><span class="ms-val">${fmtKRW(mGross)}</span></div>
+          <div class="ms ms--net"><span class="ms-lbl">${t('exportNetPay')}</span><span class="ms-val net-val">${fmtKRW(mNet)}</span></div>
         </div>
       </div>`;
   }).join('');
@@ -353,8 +355,9 @@ function exportPDF(fromYM, toYM) {
   // Build detailed table rows HTML
   const tableRows = rows.map((r, i) => {
     const isHoliday = !!r.holiday;
-    const isSunday  = r.dayOfWeek === 'Sun';
-    const rowClass  = r.autoCredit ? 'auto-row' : (isHoliday ? 'hol-row' : (isSunday ? 'sun-row' : (r.dayOfWeek === 'Sat' ? 'sat-row' : '')));
+    const isSundayRow = dowOf(r.date) === 0;
+    const isSaturdayRow = dowOf(r.date) === 6;
+    const rowClass  = r.autoCredit ? 'auto-row' : (isHoliday ? 'hol-row' : (isSundayRow ? 'sun-row' : (isSaturdayRow ? 'sat-row' : '')));
     const holBadge  = r.holiday ? `<span class="hol-badge">${r.holiday}</span>` : '';
     const autoBadge = r.autoCredit ? `<span class="auto-badge">AUTO</span>` : '';
     return `
@@ -670,72 +673,72 @@ function exportPDF(fromYM, toYM) {
       <div class="doc-logo-icon">🕐</div>
       <div>
         <div class="doc-logo-text">Work Hour Tracker</div>
-        <div class="doc-logo-sub">Pay Statement Export</div>
+        <div class="doc-logo-sub">${t('exportPayStatement')}</div>
       </div>
     </div>
     <div class="doc-meta">
-      <div class="doc-title">Earnings Report</div>
+      <div class="doc-title">${t('exportReportTitle')}</div>
       <div class="doc-period">${periodLabel}</div>
-      <div class="doc-generated">Generated ${generatedDate}</div>
+      <div class="doc-generated">${t('exportGenerated', generatedDate)}</div>
     </div>
   </div>
 
   <!-- KPI strip -->
   <div class="kpi-row">
     <div class="kpi">
-      <div class="kpi-lbl">Total Days</div>
+      <div class="kpi-lbl">${t('exportKpiDays')}</div>
       <div class="kpi-val blue">${daysWorked + autoDays}</div>
-      <div class="kpi-sub">${daysWorked} worked · ${autoDays} auto-credited</div>
+      <div class="kpi-sub">${t('exportKpiDaysSub', daysWorked, autoDays)}</div>
     </div>
     <div class="kpi kpi--hrs">
-      <div class="kpi-lbl">Eff. Hours</div>
+      <div class="kpi-lbl">${t('exportKpiHours')}</div>
       <div class="kpi-val amber">${totEff.toFixed(1)}h</div>
-      <div class="kpi-sub">After multipliers</div>
+      <div class="kpi-sub">${t('exportKpiHoursSub')}</div>
     </div>
     <div class="kpi">
-      <div class="kpi-lbl">Gross Earnings</div>
+      <div class="kpi-lbl">${t('exportKpiGross')}</div>
       <div class="kpi-val">${fmtKRW(totGross)}</div>
-      <div class="kpi-sub">Before ${taxPct}% tax</div>
+      <div class="kpi-sub">${t('exportKpiGrossSub', taxPct)}</div>
     </div>
     <div class="kpi kpi--net">
-      <div class="kpi-lbl">Net Pay</div>
+      <div class="kpi-lbl">${t('exportKpiNet')}</div>
       <div class="kpi-val green">${fmtKRW(totNet)}</div>
-      <div class="kpi-sub">After ${taxPct}% deduction (−${fmtKRW(totTax)})</div>
+      <div class="kpi-sub">${t('exportKpiNetSub', taxPct, fmtKRW(totTax))}</div>
     </div>
   </div>
 
   <!-- Monthly breakdown -->
-  <div class="section-heading">Monthly Breakdown</div>
+  <div class="section-heading">${t('exportMonthlyBreakdown')}</div>
   <div class="month-grid">
     ${monthCards}
   </div>
 
   <!-- Legend -->
   <div class="legend">
-    <div class="legend-item"><div class="legend-swatch" style="background:#e8294a;"></div> Public Holiday</div>
-    <div class="legend-item"><div class="legend-swatch" style="background:#e8294a88;"></div> Sunday</div>
-    <div class="legend-item"><div class="legend-swatch" style="background:#2060e8;"></div> Saturday</div>
-    <div class="legend-item"><div class="legend-swatch" style="background:#d4870a;"></div> Auto-credited day</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#e8294a;"></div> ${t('exportLegendHoliday')}</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#e8294a88;"></div> ${t('exportLegendSunday')}</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#2060e8;"></div> ${t('exportLegendSaturday')}</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#d4870a;"></div> ${t('exportLegendAuto')}</div>
   </div>
 
   <!-- Detail table -->
   <div class="detail-section">
-    <div class="section-heading">Daily Detail</div>
+    <div class="section-heading">${t('exportDailyDetail')}</div>
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Date</th>
-            <th>Day</th>
-            <th>Type</th>
-            <th>Shift</th>
-            <th>Reg h</th>
-            <th>OT h</th>
-            <th>Eff h</th>
-            <th>Rate</th>
-            <th>Gross</th>
-            <th>Tax (${taxPct}%)</th>
-            <th>Net Pay</th>
+            <th>${t('exportColDate')}</th>
+            <th>${t('exportColDay')}</th>
+            <th>${t('exportColType')}</th>
+            <th>${t('exportColShift')}</th>
+            <th>${t('exportColRegH')}</th>
+            <th>${t('exportColOTH')}</th>
+            <th>${t('exportColEffH')}</th>
+            <th>${t('exportColRate')}</th>
+            <th>${t('exportColGross')}</th>
+            <th>${t('exportColTax', taxPct)}</th>
+            <th>${t('exportColNet')}</th>
           </tr>
         </thead>
         <tbody>
@@ -743,7 +746,7 @@ function exportPDF(fromYM, toYM) {
         </tbody>
         <tfoot>
           <tr class="totals-row">
-            <td colspan="4" style="text-align:left;font-size:9pt;letter-spacing:0.04em;">TOTAL</td>
+            <td colspan="4" style="text-align:left;font-size:9pt;letter-spacing:0.04em;">${t('exportTotal')}</td>
             <td class="td-num"></td>
             <td class="td-num"></td>
             <td class="td-num eff">${totEff.toFixed(2)}h</td>
@@ -760,20 +763,17 @@ function exportPDF(fromYM, toYM) {
   <!-- Footer -->
   <div class="doc-footer">
     <div class="footer-left">
-      Work Hour Tracker · Earnings Report<br>
-      Period: ${periodLabel} · Tax rate: ${taxPct}%
+      Work Hour Tracker · ${t('exportReportTitle')}<br>
+      ${t('exportFooterPeriod', periodLabel, taxPct)}
     </div>
     <div class="footer-right">
-      Generated by Work Hour Tracker<br>
+      ${t('exportFooterGenBy')}<br>
       ${generatedDate}
     </div>
   </div>
 
   <div class="footer-note">
-    * Auto-credited hours: Sundays (when all Mon–Fri of that week are logged) and public holidays (when auto-credit is enabled)
-    are automatically credited 8 hours each, even without a manual log entry. These are shown with the AUTO badge and amber background.<br>
-    All earnings calculations use the hourly wage effective on each date. Tax deductions are estimated at ${taxPct}% of gross pay.
-    This report is for informational purposes only.
+    ${t('exportFootnote', taxPct).replace(/\n/g, '<br>')}
   </div>
 
 </div>
@@ -806,7 +806,7 @@ export function buildExportCard() {
   const months = monthsWithData();
   if (!months.length) return ''; // no data yet — hide the card entirely
 
-  const mnames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const mnames = t('mn');
   function optLabel(ym) {
     const [y, m] = ym.split('-');
     return `${mnames[parseInt(m) - 1]} ${y}`;
@@ -836,64 +836,63 @@ export function buildExportCard() {
   }
 
   const presets = [
-    { label: 'This month',  from: clamp(curYM),            to: lastM },
-    { label: 'Last month',  from: clamp(prevYM),           to: clamp(prevYM) },
-    { label: 'Last 3 mo.',  from: threeMonthsAgo(),        to: lastM },
-    { label: 'This year',   from: clamp(`${now.getFullYear()}-01`), to: lastM },
-    { label: 'All time',    from: firstM,                   to: lastM },
+    { label: t('exportPresetThisMonth'), from: clamp(curYM),                      to: lastM },
+    { label: t('exportPresetLastMonth'), from: clamp(prevYM),                     to: clamp(prevYM) },
+    { label: t('exportPresetLast3'),     from: threeMonthsAgo(),                  to: lastM },
+    { label: t('exportPresetThisYear'),  from: clamp(`${now.getFullYear()}-01`),  to: lastM },
+    { label: t('exportPresetAllTime'),   from: firstM,                             to: lastM },
   ].filter((p, i, arr) => {
-    // Deduplicate: skip if from===to and matches a simpler preset
     const key = p.from + p.to;
     return arr.findIndex(x => x.from + x.to === key) === i;
   });
 
-  const presetBtns = presets.map((p, i) =>
+  const presetBtns = presets.map(p =>
     `<button class="exp-preset" data-from="${p.from}" data-to="${p.to}">${p.label}</button>`
   ).join('');
 
   return `
   <div class="card" id="export-card">
-    <div class="card-title">Export Data</div>
+    <div class="card-title">${t('exportTitle')}</div>
     <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
-      Download your work records as a CSV spreadsheet or a styled PDF report.
+      ${t('exportSub')}
     </p>
 
-    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">Quick range</div>
+    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">${t('exportQuickRange')}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px;">
       ${presetBtns}
     </div>
 
-    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">Custom range</div>
+    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">${t('exportCustomRange')}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;">
       <div>
-        <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:5px;">From</label>
+        <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:5px;">${t('exportFrom')}</label>
         <select id="exp-from" class="wage-inp" style="width:100%;cursor:pointer;">
           ${opts}
         </select>
       </div>
       <div>
-        <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:5px;">To</label>
+        <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:5px;">${t('exportTo')}</label>
         <select id="exp-to" class="wage-inp" style="width:100%;cursor:pointer;">
           ${opts}
         </select>
       </div>
     </div>
     <div id="exp-range-err" style="display:none;font-size:12px;color:var(--danger);margin-bottom:12px;">
-      "From" month must be before or equal to "To" month.
+      ${t('exportRangeErr')}
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
       <button class="btn-pri" id="exp-csv" style="display:flex;align-items:center;justify-content:center;gap:7px;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-        Download CSV
+        ${t('exportCSV')}
       </button>
       <button class="btn-sec" id="exp-pdf" style="display:flex;align-items:center;justify-content:center;gap:7px;border-color:var(--border-strong);">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M10 12v6"/><path d="M14 12v6"/><path d="M10 15h4"/></svg>
-        Save as PDF
+        ${t('exportPDF')}
       </button>
     </div>
     <div style="font-size:11px;color:var(--text-hint);margin-top:10px;">
-      PDF opens the browser print dialog — choose "Save as PDF" as the destination.
+      ${t('exportPDFHint')}
     </div>
   </div>`;
 }

@@ -4,6 +4,7 @@
 // the call is a no-op and localStorage continues working as usual.
 import { signInWithGoogle, signOutUser, scheduleSync, getSyncStatus, deleteCloudData } from './firebase.js';
 import { TR, nightWeekdayEff, satNightEff, satDayEff } from './translations.js';
+import { buildExportCard, wireExportCard } from './export.js';
 
 // ── Auth state (global, set by firebase.js) ─────────────────────────────────
 // CURRENT_USER is the single source of truth for auth in the render layer.
@@ -1157,6 +1158,7 @@ function buildSettings(){
       <tbody>${rules.map(([type,rule])=>`<tr><td><strong>${type}</strong></td><td>${rule}</td></tr>`).join('')}</tbody>
     </table>
   </div>
+  ${buildExportCard()}
   <div class="card card--danger">
     <div class="card-title card-title--danger">${t('dangerZone')}</div>
     <div style="font-size:13px;font-weight:600;margin-bottom:4px;">${t('resetTitle')}</div>
@@ -1684,6 +1686,9 @@ function attachListeners(){
   if(openResetBtn)openResetBtn.addEventListener('click',()=>{
     S.resetModal=true;render();
   });
+
+  // Export card
+  if(S.tab==='settings') wireExportCard();
 }
 
 applyTheme();

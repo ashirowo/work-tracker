@@ -17,6 +17,8 @@
 //  ├─────────────────────┼──────────────────────────────────────────────────┤
 //  │ Firebase SDK        │ Cache-first (immutable versioned URL)            │
 //  ├─────────────────────┼──────────────────────────────────────────────────┤
+//  │ jsPDF / html2canvas │ Cache-first (immutable versioned URL)            │
+//  ├─────────────────────┼──────────────────────────────────────────────────┤
 //  │ Korean holiday API  │ Network-first, fall back to cache; no cache=fail │
 //  ├─────────────────────┼──────────────────────────────────────────────────┤
 //  │ Firebase Auth/DB    │ Network-only (auth cannot be faked offline)      │
@@ -27,7 +29,7 @@
 //  The old cache is deleted in the `activate` handler so stale files are purged.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CACHE_VERSION   = 'wt4-v15';
+const CACHE_VERSION   = 'wt4-v16';
 const SHELL_CACHE     = `${CACHE_VERSION}-shell`;
 const FONT_CACHE      = `${CACHE_VERSION}-fonts`;
 const CDN_CACHE       = `${CACHE_VERSION}-cdn`;
@@ -55,6 +57,9 @@ const CDN_ASSETS = [
   'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js',
   'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js',
   'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js',
+  // PDF export — lazy-loaded on first use, cached here so it keeps working offline after that
+  'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js',
+  'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js',
 ];
 
 // ── Domain matchers ───────────────────────────────────────────────────────────

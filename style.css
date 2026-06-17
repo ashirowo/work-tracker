@@ -1494,8 +1494,14 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 [data-theme="light"]  { --c-warn: #92400e; }
 
 /* ── Export card ── */
+.exp-preset-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+}
 .exp-preset {
-  padding: 6px 13px;
+  flex: 1;
+  padding: 8px 6px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg-glass);
@@ -1506,13 +1512,62 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   transition: all 0.15s;
   font-family: 'Inter', system-ui, sans-serif;
   letter-spacing: 0.01em;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.exp-preset:hover {
-  border-color: var(--border-strong);
-  color: var(--text);
-}
+.exp-preset:hover,
 .exp-preset--active {
   background: var(--primary-bg);
   border-color: var(--primary);
   color: var(--primary);
 }
+
+/* Below ~480px, however many presets there are (this varies — fewer once
+   overlapping ranges get de-duped, same five if not) start running out of
+   room to stay on one line at an even 1/N width each. Switch to a flexible
+   3-per-row layout instead: it auto-wraps to as many rows as needed (3+2 for
+   five presets, a single row for three or fewer, a stretched lone button for
+   a remainder of one), and flex-grow still fills any leftover space on a
+   partial row evenly, so it never leaves an awkward gap. */
+@media (max-width: 480px) {
+  .exp-preset-row { flex-wrap: wrap; }
+  .exp-preset { flex: 1 1 calc(33.333% - 4px); }
+}
+
+/* Custom-styled <select> for the export card (From/To/Report language).
+   Native selects inherit the OS's default chrome and right-aligned text from
+   .wage-inp (which is tuned for numeric inputs) — appearance:none plus a
+   custom chevron gives a flat, modern look that matches the rest of the app,
+   with the value left-aligned like every other label in the card. */
+.exp-select {
+  width: 100%;
+  padding: 9px 34px 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 14px;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 600;
+  text-align: left;
+  text-align-last: left;
+  background-color: var(--input-bg);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.18s;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 11px;
+}
+:root[data-theme="dark"] .exp-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7599' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+}
+:root[data-theme="light"] .exp-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236370a0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+}
+.exp-select:hover { border-color: var(--border-strong); }
+.exp-select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+.exp-select option { background-color: var(--input-bg); color: var(--text); text-align: left; }

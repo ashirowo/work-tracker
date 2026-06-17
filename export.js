@@ -41,6 +41,13 @@ function t(k, ...a) {
   const fn = TR[lang]?.[k] ?? TR.en?.[k];
   return typeof fn === 'function' ? fn(...a) : (fn || k);
 }
+// Same as t(), but for an explicitly chosen language rather than the app's
+// current UI language — used by the PDF generator so a report can be
+// produced in a different language than the app is currently displayed in.
+function tFor(lang, k, ...a) {
+  const fn = TR[lang]?.[k] ?? TR.en?.[k];
+  return typeof fn === 'function' ? fn(...a) : (fn || k);
+}
 
 function getLogs() { return ld('wt4_logs', {}); }
 function getShifts() { return ld('wt4_shifts', {}); }
@@ -65,13 +72,13 @@ function getHolidays() {
 function getTaxRate() { return ld('wt4_tax_rate', 3.3); }
 function isHolAuto() { return ld('wt4_hol_auto', true) !== false; }
 
-// Translate a raw Korean holiday name into the current UI language, using the
-// same TR[lang].holidays map app.js uses for the Calendar view. Without this,
-// exported reports always showed holiday names in Korean regardless of the
-// selected language — a gap that matters a lot once exports are meant to be
-// genuinely multi-language.
-function translateHolidayName(ko) {
-  const map = TR[getLang()]?.holidays;
+// Translate a raw Korean holiday name into the given language (defaults to
+// the current UI language), using the same TR[lang].holidays map app.js uses
+// for the Calendar view. Without this, exported reports always showed
+// holiday names in Korean regardless of the selected language — a gap that
+// matters a lot once exports are meant to be genuinely multi-language.
+function translateHolidayName(ko, lang = getLang()) {
+  const map = TR[lang]?.holidays;
   if (!map || !ko) return ko;
   if (map[ko]) return map[ko];
   for (const [k, v] of Object.entries(map)) {
@@ -204,7 +211,9 @@ function monthsWithData() {
 }
 
 // ── Build rows for a date range ───────────────────────────────────────────────
-function buildRows(fromYM, toYM) {
+// `lang` defaults to the app's current UI language (used by CSV export); the
+// PDF generator passes an explicitly-chosen report language instead.
+function buildRows(fromYM, toYM, lang = getLang()) {
   const logs = getLogs();
   const holidays = getHolidays();
   const today = todayStr();
@@ -264,18 +273,18 @@ function buildRows(fromYM, toYM) {
 
       if (gross === 0 && !log) continue; // skip days with no earnings and no log entry
 
-      if (shift === 'double') type = t('doubleShift');
-      else if (isHol) type = t('exportLegendHoliday');
-      else if (sun)   type = t('exportLegendSunday');
-      else if (sat)   type = shift === 'day' ? `${t('exportLegendSaturday')} (${t('dayShift')})` : `${t('exportLegendSaturday')} (${t('nightShift')})`;
-      else            type = shift === 'day' ? `${t('exportTypeWeekday')} (${t('dayShift')})` : `${t('exportTypeWeekday')} (${t('nightShift')})`;
+      if (shift === 'double') type = tFor(lang, 'doubleShift');
+      else if (isHol) type = tFor(lang, 'exportLegendHoliday');
+      else if (sun)   type = tFor(lang, 'exportLegendSunday');
+      else if (sat)   type = shift === 'day' ? `${tFor(lang, 'exportLegendSaturday')} (${tFor(lang, 'dayShift')})` : `${tFor(lang, 'exportLegendSaturday')} (${tFor(lang, 'nightShift')})`;
+      else            type = shift === 'day' ? `${tFor(lang, 'exportTypeWeekday')} (${tFor(lang, 'dayShift')})` : `${tFor(lang, 'exportTypeWeekday')} (${tFor(lang, 'nightShift')})`;
 
       rows.push({
         date: ds,
-        dayOfWeek: t('dh')[dowOf(ds)],
+        dayOfWeek: tFor(lang, 'dh')[dowOf(ds)],
         type,
-        shift: shift === 'double' ? t('doubleShift') : shift === 'day' ? t('dayShift') : t('nightShift'),
-        holiday: isHol ? translateHolidayName(holidays[ds] || '') : '',
+        shift: shift === 'double' ? tFor(lang, 'doubleShift') : shift === 'day' ? tFor(lang, 'dayShift') : tFor(lang, 'nightShift'),
+        holiday: isHol ? translateHolidayName(holidays[ds] || '', lang) : '',
         autoCredit,
         regHrs,
         otHrs,
@@ -394,6 +403,42 @@ const PDF_LANG_FONT = {
   zh: { family: 'Noto Sans SC',         sample: '汉字测试 09' },
   ne: { family: 'Noto Sans Devanagari', sample: 'नेपाली परीक्षण ०९' },
 };
+
+// Selectable report languages — labelled in their own native script so they're
+// recognizable regardless of which language the app's UI currently is in.
+// (Used for font lookups; the Korean entry's display label gets overridden
+// per-UI-language below, since it should read as the current language's own
+// word for "Korean" rather than always the Korean script itself.)
+const PDF_LANGUAGES = [
+  { code: 'en', label: 'English' },
+  { code: 'ko', label: '한국어' },
+  { code: 'id', label: 'Bahasa Indonesia' },
+  { code: 'th', label: 'ไทย' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'zh', label: '中文' },
+  { code: 'fr', label: 'Français' },
+  { code: 'ne', label: 'नेपाली' },
+];
+
+// The report-language picker only ever offers two choices: whatever the
+// app's current UI language is, plus Korean (since payslips/labor offices
+// in Korea are the most common reason to want a language other than the
+// app's own). When the app's UI language already IS Korean, there's no
+// second option to offer, so the picker isn't rendered at all (see
+// buildExportCard) — this function is only called in the other case, but
+// still guards against being called with lang === 'ko' just in case.
+//
+// Labels are shown in the CURRENT UI language, not the report's own
+// language: the current-language entry's native name already doubles as
+// its own translation (e.g. "Français" is correct in a French UI too), but
+// "Korean" needs an actual translated word (e.g. "Korean" / "Coréen" /
+// "한국어") rather than always showing the Korean script.
+function getReportLanguageOptions() {
+  const current = getLang();
+  const currentEntry = PDF_LANGUAGES.find(l => l.code === current) ?? PDF_LANGUAGES[0];
+  if (current === 'ko') return [currentEntry];
+  return [currentEntry, { code: 'ko', label: t('langKorean') }];
+}
 
 async function ensurePdfFont(lang) {
   const cfg = PDF_LANG_FONT[lang];
@@ -538,67 +583,69 @@ function ensurePdfStylesheet() {
 
 // ── Small formatting helpers shared by the HTML builders below ──────────────
 function fmtKRW(n) { return '₩' + n.toLocaleString('en-US'); }
-function fmtYM(ym) {
+function fmtYM(ym, lang = getLang()) {
   const [y, m] = ym.split('-');
-  return `${t('mn')[parseInt(m) - 1]} ${y}`;
+  return `${tFor(lang, 'mn')[parseInt(m) - 1]} ${y}`;
 }
 
 const PDF_COLGROUP = `<colgroup><col class="c-date"><col class="c-day"><col class="c-type"><col class="c-shift"><col class="c-reg"><col class="c-ot"><col class="c-eff"><col class="c-rate"><col class="c-gross"><col class="c-tax"><col class="c-net"></colgroup>`;
 
 // ── HTML block builders ──────────────────────────────────────────────────────
-function buildHeaderHTML(periodLabel, generatedDate) {
+// Every builder takes `lang` as its first argument — the chosen report
+// language, which may differ from the app's current UI language.
+function buildHeaderHTML(lang, periodLabel, generatedDate) {
   return `
     <div class="doc-header">
       <div class="doc-logo">
         <div class="doc-logo-icon">🕐</div>
         <div>
           <div class="doc-logo-text">Work Hour Tracker</div>
-          <div class="doc-logo-sub">${t('exportPayStatement')}</div>
+          <div class="doc-logo-sub">${tFor(lang, 'exportPayStatement')}</div>
         </div>
       </div>
       <div class="doc-meta">
-        <div class="doc-title">${t('exportReportTitle')}</div>
+        <div class="doc-title">${tFor(lang, 'exportReportTitle')}</div>
         <div class="doc-period">${periodLabel}</div>
-        <div class="doc-generated">${t('exportGenerated', generatedDate)}</div>
+        <div class="doc-generated">${tFor(lang, 'exportGenerated', generatedDate)}</div>
       </div>
     </div>`;
 }
 
-function buildContHeaderHTML(periodLabel, pageNum, totalPages) {
+function buildContHeaderHTML(lang, periodLabel, pageNum, totalPages) {
   return `
     <div class="cont-header">
-      <span><b>Work Hour Tracker</b> — ${t('exportReportTitle')}</span>
+      <span><b>Work Hour Tracker</b> — ${tFor(lang, 'exportReportTitle')}</span>
       <span>${periodLabel} · ${pageNum}/${totalPages}</span>
     </div>`;
 }
 
-function buildKpiHTML(daysWorked, autoDays, totEff, totGross, totNet, totTax, taxPct) {
+function buildKpiHTML(lang, daysWorked, autoDays, totEff, totGross, totNet, totTax, taxPct) {
   return `
     <div class="kpi-row">
       <div class="kpi"><div class="kpi-bar"></div>
-        <div class="kpi-lbl">${t('exportKpiDays')}</div>
+        <div class="kpi-lbl">${tFor(lang, 'exportKpiDays')}</div>
         <div class="kpi-val blue">${daysWorked + autoDays}</div>
-        <div class="kpi-sub">${t('exportKpiDaysSub', daysWorked, autoDays)}</div>
+        <div class="kpi-sub">${tFor(lang, 'exportKpiDaysSub', daysWorked, autoDays)}</div>
       </div>
       <div class="kpi kpi--hrs"><div class="kpi-bar"></div>
-        <div class="kpi-lbl">${t('exportKpiHours')}</div>
+        <div class="kpi-lbl">${tFor(lang, 'exportKpiHours')}</div>
         <div class="kpi-val amber">${totEff.toFixed(1)}h</div>
-        <div class="kpi-sub">${t('exportKpiHoursSub')}</div>
+        <div class="kpi-sub">${tFor(lang, 'exportKpiHoursSub')}</div>
       </div>
       <div class="kpi"><div class="kpi-bar"></div>
-        <div class="kpi-lbl">${t('exportKpiGross')}</div>
+        <div class="kpi-lbl">${tFor(lang, 'exportKpiGross')}</div>
         <div class="kpi-val">${fmtKRW(totGross)}</div>
-        <div class="kpi-sub">${t('exportKpiGrossSub', taxPct)}</div>
+        <div class="kpi-sub">${tFor(lang, 'exportKpiGrossSub', taxPct)}</div>
       </div>
       <div class="kpi kpi--net"><div class="kpi-bar"></div>
-        <div class="kpi-lbl">${t('exportKpiNet')}</div>
+        <div class="kpi-lbl">${tFor(lang, 'exportKpiNet')}</div>
         <div class="kpi-val green">${fmtKRW(totNet)}</div>
-        <div class="kpi-sub">${t('exportKpiNetSub', taxPct, fmtKRW(totTax))}</div>
+        <div class="kpi-sub">${tFor(lang, 'exportKpiNetSub', taxPct, fmtKRW(totTax))}</div>
       </div>
     </div>`;
 }
 
-function buildMonthGridHTML(byMonth) {
+function buildMonthGridHTML(lang, byMonth) {
   const cards = Object.entries(byMonth).map(([ym, mrows]) => {
     const mGross = mrows.reduce((s, r) => s + r.gross, 0);
     const mNet   = mrows.reduce((s, r) => s + r.net, 0);
@@ -607,42 +654,42 @@ function buildMonthGridHTML(byMonth) {
     const mEff   = mrows.reduce((s, r) => s + r.effHrs, 0);
     return `
       <div class="month-summary">
-        <div class="month-name">${fmtYM(ym)}</div>
+        <div class="month-name">${fmtYM(ym, lang)}</div>
         <div class="month-stats">
-          <div class="ms"><span class="ms-lbl">${t('exportDaysWorked')}</span><span class="ms-val">${mDays}${mAuto ? ` <span class="auto-tag">${t('exportAutoTag', mAuto)}</span>` : ''}</span></div>
-          <div class="ms"><span class="ms-lbl">${t('exportEffHours')}</span><span class="ms-val">${mEff.toFixed(1)}h</span></div>
-          <div class="ms"><span class="ms-lbl">${t('exportGross')}</span><span class="ms-val">${fmtKRW(mGross)}</span></div>
-          <div class="ms ms--net"><span class="ms-lbl">${t('exportNetPay')}</span><span class="ms-val net-val">${fmtKRW(mNet)}</span></div>
+          <div class="ms"><span class="ms-lbl">${tFor(lang, 'exportDaysWorked')}</span><span class="ms-val">${mDays}${mAuto ? ` <span class="auto-tag">${tFor(lang, 'exportAutoTag', mAuto)}</span>` : ''}</span></div>
+          <div class="ms"><span class="ms-lbl">${tFor(lang, 'exportEffHours')}</span><span class="ms-val">${mEff.toFixed(1)}h</span></div>
+          <div class="ms"><span class="ms-lbl">${tFor(lang, 'exportGross')}</span><span class="ms-val">${fmtKRW(mGross)}</span></div>
+          <div class="ms ms--net"><span class="ms-lbl">${tFor(lang, 'exportNetPay')}</span><span class="ms-val net-val">${fmtKRW(mNet)}</span></div>
         </div>
       </div>`;
   }).join('');
-  return `<div class="section-heading">${t('exportMonthlyBreakdown')}</div><div class="month-grid">${cards}</div>`;
+  return `<div class="section-heading">${tFor(lang, 'exportMonthlyBreakdown')}</div><div class="month-grid">${cards}</div>`;
 }
 
-function buildLegendHTML() {
+function buildLegendHTML(lang) {
   return `
     <div class="legend">
-      <div class="legend-item"><div class="legend-swatch" style="background:#e8294a;"></div>${t('exportLegendHoliday')}</div>
-      <div class="legend-item"><div class="legend-swatch" style="background:#e8294a88;"></div>${t('exportLegendSunday')}</div>
-      <div class="legend-item"><div class="legend-swatch" style="background:#2060e8;"></div>${t('exportLegendSaturday')}</div>
-      <div class="legend-item"><div class="legend-swatch" style="background:#d4870a;"></div>${t('exportLegendAuto')}</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#e8294a;"></div>${tFor(lang, 'exportLegendHoliday')}</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#e8294a88;"></div>${tFor(lang, 'exportLegendSunday')}</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#2060e8;"></div>${tFor(lang, 'exportLegendSaturday')}</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#d4870a;"></div>${tFor(lang, 'exportLegendAuto')}</div>
     </div>`;
 }
 
-function buildTheadHTML(taxPct) {
+function buildTheadHTML(lang, taxPct) {
   return `<thead><tr>
-    <th>${t('exportColDate')}</th><th>${t('exportColDay')}</th><th>${t('exportColType')}</th><th>${t('exportColShift')}</th>
-    <th>${t('exportColRegH')}</th><th>${t('exportColOTH')}</th><th>${t('exportColEffH')}</th>
-    <th>${t('exportColRate')}</th><th>${t('exportColGross')}</th><th>${t('exportColTax', taxPct)}</th><th>${t('exportColNet')}</th>
+    <th>${tFor(lang, 'exportColDate')}</th><th>${tFor(lang, 'exportColDay')}</th><th>${tFor(lang, 'exportColType')}</th><th>${tFor(lang, 'exportColShift')}</th>
+    <th>${tFor(lang, 'exportColRegH')}</th><th>${tFor(lang, 'exportColOTH')}</th><th>${tFor(lang, 'exportColEffH')}</th>
+    <th>${tFor(lang, 'exportColRate')}</th><th>${tFor(lang, 'exportColGross')}</th><th>${tFor(lang, 'exportColTax', taxPct)}</th><th>${tFor(lang, 'exportColNet')}</th>
   </tr></thead>`;
 }
 
-function buildRowHTML(r, idx) {
+function buildRowHTML(lang, r, idx) {
   const dow = dowOf(r.date);
   const isSundayRow = dow === 0, isSaturdayRow = dow === 6;
   const rowClass = r.autoCredit ? 'auto-row' : (r.holiday ? 'hol-row' : (isSundayRow ? 'sun-row' : (isSaturdayRow ? 'sat-row' : '')));
   const holBadge  = r.holiday ? `<span class="hol-badge">${r.holiday}</span>` : '';
-  const autoBadge = r.autoCredit ? `<span class="auto-badge">${t('exportAutoBadge')}</span>` : '';
+  const autoBadge = r.autoCredit ? `<span class="auto-badge">${tFor(lang, 'exportAutoBadge')}</span>` : '';
   return `
     <tr class="${rowClass}${idx % 2 === 0 ? ' even' : ''}">
       <td class="td-date">${r.date}</td>
@@ -659,9 +706,9 @@ function buildRowHTML(r, idx) {
     </tr>`;
 }
 
-function buildTfootHTML(totEff, totGross, totTax, totNet) {
+function buildTfootHTML(lang, totEff, totGross, totTax, totNet) {
   return `<tfoot><tr class="totals-row">
-    <td colspan="4" style="text-align:left;font-size:10px;letter-spacing:0.04em;">${t('exportTotal')}</td>
+    <td colspan="4" style="text-align:left;font-size:10px;letter-spacing:0.04em;">${tFor(lang, 'exportTotal')}</td>
     <td class="td-num"></td><td class="td-num"></td>
     <td class="td-num eff">${totEff.toFixed(2)}h</td>
     <td class="td-num"></td>
@@ -671,22 +718,25 @@ function buildTfootHTML(totEff, totGross, totTax, totNet) {
   </tr></tfoot>`;
 }
 
-function buildFooterHTML(periodLabel, taxPct, generatedDate) {
+function buildFooterHTML(lang, periodLabel, taxPct, generatedDate) {
   return `
     <div class="doc-footer">
-      <div class="footer-left">Work Hour Tracker · ${t('exportReportTitle')}<br>${t('exportFooterPeriod', periodLabel, taxPct)}</div>
-      <div class="footer-right">${t('exportFooterGenBy')}<br>${generatedDate}</div>
+      <div class="footer-left">Work Hour Tracker · ${tFor(lang, 'exportReportTitle')}<br>${tFor(lang, 'exportFooterPeriod', periodLabel, taxPct)}</div>
+      <div class="footer-right">${tFor(lang, 'exportFooterGenBy')}<br>${generatedDate}</div>
     </div>
-    <div class="footer-note">${t('exportFootnote', taxPct).replace(/\n/g, '<br>')}</div>`;
+    <div class="footer-note">${tFor(lang, 'exportFootnote', taxPct).replace(/\n/g, '<br>')}</div>`;
 }
 
 // ── PDF export entry point ───────────────────────────────────────────────────
-async function exportPDF(fromYM, toYM) {
-  const rows = buildRows(fromYM, toYM);
+// `lang` is the report's chosen language — independent of the app's current
+// UI language, so a report can be generated in a different language than
+// whatever the app happens to be displaying right now.
+async function exportPDF(fromYM, toYM, lang = getLang()) {
+  const rows = buildRows(fromYM, toYM, lang);
   if (!rows.length) { alert(t('exportNoData')); return; }
 
   const { jsPDF, html2canvas } = await loadPdfLibs();
-  const fontStack = await ensurePdfFont(getLang());
+  const fontStack = await ensurePdfFont(lang);
   ensurePdfStylesheet();
 
   const taxPct     = getTaxRate();
@@ -701,14 +751,14 @@ async function exportPDF(fromYM, toYM) {
   rows.forEach(r => { const ym = r.date.slice(0, 7); (byMonth[ym] ??= []).push(r); });
 
   const localeMap = { ko: 'ko-KR', th: 'th-TH', ru: 'ru-RU', zh: 'zh-CN', fr: 'fr-FR', id: 'id-ID', ne: 'ne-NP' };
-  const generatedDate = new Date().toLocaleDateString(localeMap[getLang()] || 'en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const periodLabel = fromYM === toYM ? fmtYM(fromYM) : `${fmtYM(fromYM)} – ${fmtYM(toYM)}`;
+  const generatedDate = new Date().toLocaleDateString(localeMap[lang] || 'en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const periodLabel = fromYM === toYM ? fmtYM(fromYM, lang) : `${fmtYM(fromYM, lang)} – ${fmtYM(toYM, lang)}`;
 
-  const headerHTML = buildHeaderHTML(periodLabel, generatedDate)
-    + buildKpiHTML(daysWorked, autoDays, totEff, totGross, totNet, totTax, taxPct)
-    + buildMonthGridHTML(byMonth)
-    + buildLegendHTML();
-  const footerHTML = buildFooterHTML(periodLabel, taxPct, generatedDate);
+  const headerHTML = buildHeaderHTML(lang, periodLabel, generatedDate)
+    + buildKpiHTML(lang, daysWorked, autoDays, totEff, totGross, totNet, totTax, taxPct)
+    + buildMonthGridHTML(lang, byMonth)
+    + buildLegendHTML(lang);
+  const footerHTML = buildFooterHTML(lang, periodLabel, taxPct, generatedDate);
 
   // ── Off-screen scratch root — same document, just positioned off-screen.
   // (Not display:none / visibility:hidden — the browser needs to actually lay
@@ -729,14 +779,14 @@ async function exportPDF(fromYM, toYM) {
 
     const measCont = document.createElement('div');
     measCont.className = 'pdf-page';
-    measCont.innerHTML = buildContHeaderHTML(periodLabel, 1, 1);
+    measCont.innerHTML = buildContHeaderHTML(lang, periodLabel, 1, 1);
     root.appendChild(measCont);
 
     const measTable = document.createElement('table');
     measTable.style.width = CONTENT_PX_W + 'px';
-    measTable.innerHTML = PDF_COLGROUP + buildTheadHTML(taxPct)
-      + `<tbody>${rows.map((r, i) => buildRowHTML(r, i)).join('')}</tbody>`
-      + buildTfootHTML(totEff, totGross, totTax, totNet);
+    measTable.innerHTML = PDF_COLGROUP + buildTheadHTML(lang, taxPct)
+      + `<tbody>${rows.map((r, i) => buildRowHTML(lang, r, i)).join('')}</tbody>`
+      + buildTfootHTML(lang, totEff, totGross, totTax, totNet);
     root.appendChild(measTable);
 
     const measFooter = document.createElement('div');
@@ -788,12 +838,12 @@ async function exportPDF(fromYM, toYM) {
       const pageEl = document.createElement('div');
       pageEl.className = 'pdf-page';
 
-      let html = p.isFirst ? headerHTML : buildContHeaderHTML(periodLabel, i + 1, total);
+      let html = p.isFirst ? headerHTML : buildContHeaderHTML(lang, periodLabel, i + 1, total);
       if (p.rowEnd > p.rowStart || p.includeTfoot) {
         const slice = rows.slice(p.rowStart, p.rowEnd);
-        html += `<table>${PDF_COLGROUP}${buildTheadHTML(taxPct)}<tbody>${
-          slice.map((r, j) => buildRowHTML(r, p.rowStart + j)).join('')
-        }</tbody>${p.includeTfoot ? buildTfootHTML(totEff, totGross, totTax, totNet) : ''}</table>`;
+        html += `<table>${PDF_COLGROUP}${buildTheadHTML(lang, taxPct)}<tbody>${
+          slice.map((r, j) => buildRowHTML(lang, r, p.rowStart + j)).join('')
+        }</tbody>${p.includeTfoot ? buildTfootHTML(lang, totEff, totGross, totTax, totNet) : ''}</table>`;
       }
       if (p.includeFooter) html += footerHTML;
 
@@ -875,7 +925,7 @@ export function buildExportCard() {
     </p>
 
     <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">${t('exportQuickRange')}</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px;">
+    <div class="exp-preset-row">
       ${presetBtns}
     </div>
 
@@ -883,13 +933,13 @@ export function buildExportCard() {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;">
       <div>
         <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:5px;">${t('exportFrom')}</label>
-        <select id="exp-from" class="wage-inp" style="width:100%;cursor:pointer;">
+        <select id="exp-from" class="exp-select">
           ${opts}
         </select>
       </div>
       <div>
         <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:5px;">${t('exportTo')}</label>
-        <select id="exp-to" class="wage-inp" style="width:100%;cursor:pointer;">
+        <select id="exp-to" class="exp-select">
           ${opts}
         </select>
       </div>
@@ -897,6 +947,14 @@ export function buildExportCard() {
     <div id="exp-range-err" style="display:none;font-size:12px;color:var(--danger);margin-bottom:12px;">
       ${t('exportRangeErr')}
     </div>
+
+    ${getLang() === 'ko' ? '' : `
+    <div style="margin-bottom:18px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">${t('exportPdfLangLabel')}</div>
+      <select id="exp-pdf-lang" class="exp-select">
+        ${getReportLanguageOptions().map(l => `<option value="${l.code}"${l.code === getLang() ? ' selected' : ''}>${l.label}</option>`).join('')}
+      </select>
+    </div>`}
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
       <button class="btn-pri" id="exp-csv" style="display:flex;align-items:center;justify-content:center;gap:7px;">
@@ -966,10 +1024,11 @@ export function wireExportCard() {
     if (!validate()) return;
     const btn = e.currentTarget;
     const original = btn.innerHTML;
+    const langSel = document.getElementById('exp-pdf-lang');
     btn.disabled = true;
     btn.innerHTML = `<svg class="exp-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-9-9"/></svg>${t('exportPDFGenerating')}`;
     try {
-      await exportPDF(fromSel.value, toSel.value);
+      await exportPDF(fromSel.value, toSel.value, langSel?.value || getLang());
     } catch (err) {
       console.warn('[export] PDF generation failed:', err);
       alert(t('exportPDFError'));

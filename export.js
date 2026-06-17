@@ -179,16 +179,26 @@ function monthsWithData() {
   const today = todayStr();
   const set = new Set();
 
+  const logDates = Object.keys(logs).sort();
+  const earliestLogDate = logDates[0] || null;
+
   // From logs
-  Object.keys(logs).forEach(ds => {
+  logDates.forEach(ds => {
     if (ds <= today) set.add(ds.slice(0, 7));
   });
 
-  // Auto-credited days (sundays/holidays) also produce data for a month
-  const hols = getHolidays();
-  Object.keys(hols).forEach(ds => {
-    if (ds <= today && isHolAuto()) set.add(ds.slice(0, 7));
-  });
+  // Auto-credited holidays also produce data for a month — but never before
+  // the user's own first logged day. getHolidays() generates entries for a
+  // fixed window (curYear-3 .. curYear+2) regardless of when someone actually
+  // started tracking, so without this bound a brand-new user would still see
+  // export ranges stretching back to whichever years happen to have a
+  // New Year's/Labour Day in that window.
+  if (earliestLogDate && isHolAuto()) {
+    const hols = getHolidays();
+    Object.keys(hols).forEach(ds => {
+      if (ds >= earliestLogDate && ds <= today) set.add(ds.slice(0, 7));
+    });
+  }
 
   return [...set].sort();
 }
@@ -199,6 +209,14 @@ function buildRows(fromYM, toYM) {
   const holidays = getHolidays();
   const today = todayStr();
   const rows = [];
+
+  // Auto-credit (holiday pay / perfect-attendance Sunday pay) should never
+  // reach earlier than the user's own first logged day. Without this, a
+  // holiday that happened before someone ever started tracking would still
+  // show up as "earned" — e.g. starting on Jan 10 shouldn't auto-credit
+  // Jan 1 just because it's a holiday that falls in the same month.
+  const earliestLogDate = Object.keys(logs).sort()[0] || null;
+  const startedBy = ds => earliestLogDate !== null && ds >= earliestLogDate;
 
   const [fy, fm] = fromYM.split('-').map(Number);
   const [ty, tm] = toYM.split('-').map(Number);
@@ -231,9 +249,9 @@ function buildRows(fromYM, toYM) {
         otHrs  = log.otHrs  !== undefined ? log.otHrs  : 0;
         const c = calcWage(ds, regHrs, otHrs, wage, log.shiftOverride, log.holCreditOverride, holidays);
         gross = c.gross; net = c.net; eff = c.eff;
-      } else if (isHol && holCredit) {
+      } else if (isHol && holCredit && startedBy(ds)) {
         gross = Math.round(8 * wage); net = applyTax(gross); eff = 8; autoCredit = true;
-      } else if (sun) {
+      } else if (sun && startedBy(ds)) {
         const ws = getMonday(ds);
         let allLogged = true;
         for (let i = 0; i <= 4; i++) {

@@ -272,7 +272,7 @@ function buildRows(fromYM, toYM) {
 
       rows.push({
         date: ds,
-        dayOfWeek: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dowOf(ds)],
+        dayOfWeek: t('dh')[dowOf(ds)],
         type,
         shift: shift === 'double' ? t('doubleShift') : shift === 'day' ? t('dayShift') : t('nightShift'),
         holiday: isHol ? translateHolidayName(holidays[ds] || '') : '',
@@ -642,7 +642,7 @@ function buildRowHTML(r, idx) {
   const isSundayRow = dow === 0, isSaturdayRow = dow === 6;
   const rowClass = r.autoCredit ? 'auto-row' : (r.holiday ? 'hol-row' : (isSundayRow ? 'sun-row' : (isSaturdayRow ? 'sat-row' : '')));
   const holBadge  = r.holiday ? `<span class="hol-badge">${r.holiday}</span>` : '';
-  const autoBadge = r.autoCredit ? `<span class="auto-badge">AUTO</span>` : '';
+  const autoBadge = r.autoCredit ? `<span class="auto-badge">${t('exportAutoBadge')}</span>` : '';
   return `
     <tr class="${rowClass}${idx % 2 === 0 ? ' even' : ''}">
       <td class="td-date">${r.date}</td>

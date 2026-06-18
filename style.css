@@ -666,7 +666,7 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   -webkit-appearance:none;
   margin:0;
 }
-.tax-custom-inp .wage-inp{-moz-appearance:textfield;}
+.tax-custom-inp .wage-inp{appearance:textfield;}
 .success-banner{
   background:var(--success-bg);
   color:var(--success);

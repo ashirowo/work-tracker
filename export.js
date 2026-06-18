@@ -303,6 +303,34 @@ function buildRows(fromYM, toYM, lang = getLang()) {
   return rows;
 }
 
+// ── Export confirmation toast ────────────────────────────────────────────────
+// Mobile browsers are inconsistent about confirming a download happened:
+// Android Chrome shows its own "Download complete" notification, but iOS
+// Safari often just opens the file inline with no visible save cue, and an
+// installed PWA has no browser chrome at all to show a download bar. So we
+// show our own lightweight, self-dismissing confirmation rather than relying
+// on the OS/browser to tell the user anything.
+let _toastHideTimer = null;
+function showExportToast(message) {
+  document.getElementById('exp-toast')?.remove();
+  clearTimeout(_toastHideTimer);
+
+  const el = document.createElement('div');
+  el.id = 'exp-toast';
+  el.className = 'exp-toast';
+  el.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>${message}</span>`;
+  document.body.appendChild(el);
+
+  // Add the visible class on the next frame so the fade-in actually animates
+  // instead of snapping straight to its end state.
+  requestAnimationFrame(() => el.classList.add('exp-toast--visible'));
+
+  _toastHideTimer = setTimeout(() => {
+    el.classList.remove('exp-toast--visible');
+    setTimeout(() => el.remove(), 220);
+  }, 2800);
+}
+
 // ── CSV export ────────────────────────────────────────────────────────────────
 function exportCSV(fromYM, toYM) {
   const rows = buildRows(fromYM, toYM);
@@ -347,6 +375,7 @@ function exportCSV(fromYM, toYM) {
   a.download = `work-tracker-${fromYM}-to-${toYM}.csv`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
+  showExportToast(t('exportSavedToast', a.download));
 }
 
 // ── PDF export — real client-side PDF generation ─────────────────────────────
@@ -861,7 +890,9 @@ async function exportPDF(fromYM, toYM, lang = getLang()) {
       if (i > 0) pdf.addPage([PAGE_W_MM, img.heightMm + MARGIN_MM * 2], 'landscape');
       pdf.addImage(img.dataUrl, 'JPEG', MARGIN_MM, MARGIN_MM, CONTENT_W_MM, img.heightMm);
     });
-    pdf.save(`work-tracker-${fromYM}-to-${toYM}.pdf`);
+    const pdfFilename = `work-tracker-${fromYM}-to-${toYM}.pdf`;
+    pdf.save(pdfFilename);
+    showExportToast(t('exportSavedToast', pdfFilename));
 
   } finally {
     document.body.removeChild(root);

@@ -1432,6 +1432,41 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 .ob-slide-in-left{animation:obSlideInLeft 0.2s cubic-bezier(0.22,1,0.36,1) forwards}
 
 /* ══════════════════════════════════════════════════════════════════════════════
+   EXPORT CONFIRMATION TOAST
+   Self-dismissing confirmation shown after a CSV/PDF download is triggered.
+   Mobile browsers don't reliably surface their own "download complete" UI —
+   Android Chrome does, but iOS Safari often just opens the file inline with
+   no visible "saved" cue, and an installed PWA has no browser chrome at all
+   to show a download bar. So the app shows its own confirmation instead of
+   relying on the OS/browser.
+   ══════════════════════════════════════════════════════════════════════════════ */
+.exp-toast{
+  position:fixed;
+  left:50%;
+  bottom:max(20px, env(safe-area-inset-bottom));
+  transform:translate(-50%, 10px);
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:11px 16px;
+  background:var(--bg-card2);
+  border:1px solid rgba(52,212,122,0.25);
+  border-radius:12px;
+  box-shadow:var(--shadow);
+  font-size:13px;
+  font-weight:600;
+  color:var(--text);
+  max-width:calc(100vw - 32px);
+  opacity:0;
+  z-index:10000;
+  transition:opacity 0.2s ease, transform 0.2s cubic-bezier(0.22,1,0.36,1);
+  pointer-events:none;
+}
+.exp-toast svg{flex-shrink:0;color:var(--success);}
+.exp-toast span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.exp-toast--visible{opacity:1;transform:translate(-50%, 0);}
+
+/* ══════════════════════════════════════════════════════════════════════════════
    OFFLINE BANNER & PWA OFFLINE STATE
    Shown automatically by index.html when navigator.onLine === false.
    ══════════════════════════════════════════════════════════════════════════════ */

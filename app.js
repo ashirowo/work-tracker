@@ -451,7 +451,7 @@ let S={
   lang:ld('wt4_lang','en'),theme:ld('wt4_theme','dark'),holAuto:ld('wt4_hol_auto',true),
   taxRate:ld('wt4_tax_rate',DEFAULT_TAX),
   tab:'calendar',calY:new Date().getFullYear(),calM:new Date().getMonth(),
-  modal:null,mReg:undefined,mOT:undefined,mShift:undefined,mHolCredit:undefined,success:'',
+  modal:null,mReg:undefined,mOT:undefined,mShift:undefined,mHolCredit:undefined,mNote:undefined,success:'',
   chartRange:'3m',   // '3m' | '6m' | '1y'
   wageEditIdx:undefined, // transient: index of wage history entry being edited, or undefined
   resetModal:false, // transient: whether the "Reset all data" confirmation modal is open
@@ -613,7 +613,7 @@ function buildCal(){
     if(logged)cls+=' logged';
     else if(autoSun||autoHol)cls+=' auto-cred';
     if(tod)cls+=' today';
-    const dot=logged?`<div class="dot"></div>`:(autoSun||autoHol)?`<div class="adot"></div>`:hol?`<div class="hdot"></div>`:'';
+    const dot=logged?`<div class="dot${logs[s].note?' dot--note':''}" ${logs[s].note?`title="${logs[s].note.replace(/"/g,'&quot;')}"`:''} ></div>`:(autoSun||autoHol)?`<div class="adot"></div>`:hol?`<div class="hdot"></div>`:'';
     cells+=`<div class="${cls}" data-date="${s}"><div class="dn">${d}</div>${dot}</div>`;
   }
   const holChips=Object.entries(HOLIDAYS).filter(([s])=>s.startsWith(`${y}-${pad(m+1)}`))
@@ -1182,6 +1182,8 @@ function buildModal(){
   if(isSun(date))badges+=`<span class="mbadge b-sun">${dn[0]}</span>`; // always show Sunday badge
   if(sat)badges+=`<span class="mbadge b-sat">${dn[6]}</span>`;
 
+  const defNote = existing?.note || '';
+  const note = S.mNote !== undefined ? S.mNote : defNote;
   const defReg = existing?.regHrs !== undefined
   ? existing.regHrs
   // When credit is ON (auto or per-day), default to 0 (input is for *extra* worked hours).
@@ -1228,17 +1230,13 @@ function buildModal(){
     const sunInfoCls=autoSunQual?'info-box':' info-box';
     bodyHTML=`<div class="info-box">${autoSunQual?t('sunAuto'):t('sunNotYet')}</div>
     <div class="info-box warn" style="margin-top:0;">${t('sunWorkedInfo')}</div>
-    <div class="fg-row" id="m-reg-row" ${shift==='double'?'style="display:none"':''}>
-      <div class="fg">
-        <label>${t('regHrs')}</label>
-        <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
-      </div>
+    <div class="fg" id="m-reg-row" ${shift==='double'?'style="display:none"':''}>
+      <label>${t('regHrs')}</label>
+      <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
     </div>
-    <div class="fg-row" id="m-ot-row">
-      <div class="fg">
-        <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
-        <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
-      </div>
+    <div class="fg" id="m-ot-row">
+      <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
+      <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
     </div>
     <div id="m-preview">${previewHTML(reg,ot,shift)}</div>`;
   }else if(holDay){
@@ -1251,32 +1249,24 @@ function buildModal(){
     </button>` : '';
     bodyHTML=`<div class="info-box warn">${t(holInfoKey)}</div>
     ${perDayToggle}
-    <div class="fg-row" id="m-reg-row" ${shift==='double'?'style="display:none"':''}>
-      <div class="fg">
-        <label>${t('regHrs')}</label>
-        <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
-      </div>
+    <div class="fg" id="m-reg-row" ${shift==='double'?'style="display:none"':''}>
+      <label>${t('regHrs')}</label>
+      <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
     </div>
-    <div class="fg-row" id="m-ot-row">
-      <div class="fg">
-        <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
-        <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
-      </div>
+    <div class="fg" id="m-ot-row">
+      <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
+      <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
     </div>
     <div id="m-preview">${previewHTML(reg,ot,shift)}</div>`;
   }else{
     // Normal/Saturday: two inputs
-    bodyHTML=`<div class="fg-row" id="m-reg-row" ${shift==='double'?'style="display:none"':''}>
-      <div class="fg">
-        <label>${t('regHrs')}</label>
-        <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
-      </div>
+    bodyHTML=`<div class="fg" id="m-reg-row" ${shift==='double'?'style="display:none"':''}>
+      <label>${t('regHrs')}</label>
+      <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
     </div>
-    <div class="fg-row" id="m-ot-row">
-      <div class="fg">
-        <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
-        <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
-      </div>
+    <div class="fg" id="m-ot-row">
+      <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
+      <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
     </div>
     <div id="m-preview">${previewHTML(reg,ot,shift)}</div>`;
   }
@@ -1289,6 +1279,11 @@ function buildModal(){
     <div style="margin-bottom:12px;">${badges}</div>
     ${shiftToggleHTML}
     ${bodyHTML}
+    <div style="margin-top:14px;margin-bottom:14px;">
+      <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">${t('noteLabel')}</label>
+      <textarea id="m-note" class="m-note" rows="2" placeholder="${t('notePlaceholder')}" maxlength="300">${note}</textarea>
+      <div class="m-note-hint">${t('noteHint')}</div>
+    </div>
     <div class="m-actions">
       <button class="btn-sec" id="m-cancel">${t('cancel')}</button>
       ${existing?`<button class="btn-del" id="m-del">${t('del')}</button>`:''}
@@ -1306,7 +1301,7 @@ function buildModal(){
   const delBtn=document.getElementById('m-del');
   if(delBtn)delBtn.addEventListener('click',()=>{const l=getLogs();delete l[date];saveLogs(l);closeModal();});
 
-  const regIn=document.getElementById('m-reg'),otIn=document.getElementById('m-ot');
+  const regIn=document.getElementById('m-reg'),otIn=document.getElementById('m-ot'),noteIn=document.getElementById('m-note');
   function curShift(){return S.mShift!==undefined?S.mShift:shift;}
   function upd(){
     const sh=curShift();
@@ -1318,6 +1313,7 @@ function buildModal(){
   }
   if(regIn)regIn.addEventListener('input',upd);
   if(otIn)otIn.addEventListener('input',upd);
+  if(noteIn)noteIn.addEventListener('input',()=>{S.mNote=noteIn.value;});
 
   function applyShiftToggle(newShift){
     S.mShift=newShift;
@@ -1330,7 +1326,7 @@ function buildModal(){
     if(xBtn){xBtn.className='shift-tog'+(newShift==='double'?' shift-tog-on-double':'');}
     // Hide reg row on double; OT row always visible
     const regRow=document.getElementById('m-reg-row');
-    if(regRow){regRow.style.display=newShift==='double'?'none':'grid';}
+    if(regRow){regRow.style.display=newShift==='double'?'none':'block';}
     upd();
   }
   const sdBtn=document.getElementById('m-shift-day');
@@ -1351,6 +1347,7 @@ function buildModal(){
     const r=sh==='double'?0:(regIn?parseFloat(regIn.value)||0:0);
     const o=(otIn?parseFloat(otIn.value)||0:0);
     S.mReg=r;S.mOT=o;S.mShift=sh;
+    if(noteIn) S.mNote=noteIn.value;
     const ov=document.getElementById('modal-ov');
     if(ov){ov.remove();}
     render(); // re-renders full modal with updated effectiveHolCredit
@@ -1361,6 +1358,7 @@ function buildModal(){
     const sh=curShift();
     const r=sh==='double'?0:(regIn?parseFloat(regIn.value)||0:0);
     const o=(otIn?parseFloat(otIn.value)||0:0);
+    const n=(noteIn?noteIn.value.trim():'') || (S.mNote!==undefined?S.mNote.trim():'');
     const c=calcWage(date,r,o,wage,sh,effectiveHolCredit);
     const logs=getLogs();
     // Store shiftOverride only when it differs from the week default
@@ -1369,14 +1367,14 @@ function buildModal(){
     const creditOverride=(holDay && S.mHolCredit!==undefined && S.mHolCredit!==isHolAuto())
       ? S.mHolCredit : undefined;
     logs[date]={regHrs:r,otHrs:o,hrs:r+o,gross:c.gross,net:c.net,eff:c.eff,
-      shiftOverride:override,...(creditOverride!==undefined&&{holCreditOverride:creditOverride})};
+      shiftOverride:override,...(creditOverride!==undefined&&{holCreditOverride:creditOverride}),...(n&&{note:n})};
     saveLogs(logs);closeModal();
   });
 }
 
 function closeModal(){
   document.querySelectorAll('#modal-ov').forEach(el => el.remove());
-  S.modal=null;S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;render();
+  S.modal=null;S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;S.mNote=undefined;render();
 }
 
 // ── Reset all data modal ─────────────────────────────────────────────────────
@@ -1495,11 +1493,11 @@ function attachListeners(){
   document.querySelectorAll('.dc[data-date]').forEach(el=>el.addEventListener('click',()=>{
     const s=el.dataset.date;if(s>today())return;
     const logs=getLogs();
-    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;render();
+    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;S.mNote=undefined;render();
   }));
   document.querySelectorAll('.log-edit[data-date]').forEach(el=>el.addEventListener('click',()=>{
     const s=el.dataset.date,logs=getLogs();
-    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;render();
+    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;S.mNote=undefined;render();
   }));
   // ── Auth ────────────────────────────────────────────────────────────────────
   const loginBtn=document.getElementById('auth-login');

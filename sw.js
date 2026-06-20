@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// sw.js — Service Worker for Work Hour Tracker
+// sw.js — Service Worker for Shiftr
 //
 // CACHING STRATEGY OVERVIEW:
 //
@@ -29,7 +29,7 @@
 //  The old cache is deleted in the `activate` handler so stale files are purged.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CACHE_VERSION   = 'wt4-v22';
+const CACHE_VERSION   = 'wt4-v23';
 const SHELL_CACHE     = `${CACHE_VERSION}-shell`;
 const FONT_CACHE      = `${CACHE_VERSION}-fonts`;
 const CDN_CACHE       = `${CACHE_VERSION}-cdn`;

@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// export.js — CSV + PDF export for Work Hour Tracker
+// export.js — CSV + PDF export for Shiftr
 //
 // HOW TO INTEGRATE:
 //   1. Copy this file next to app.js / firebase.js.
@@ -372,7 +372,7 @@ function exportCSV(fromYM, toYM) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `work-tracker-${fromYM}-to-${toYM}.csv`;
+  a.download = `shiftr-${fromYM}-to-${toYM}.csv`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
   showExportToast(t('exportSavedToast', a.download));
@@ -628,7 +628,7 @@ function buildHeaderHTML(lang, periodLabel, generatedDate) {
       <div class="doc-logo">
         <div class="doc-logo-icon">🕐</div>
         <div>
-          <div class="doc-logo-text">Work Hour Tracker</div>
+          <div class="doc-logo-text">Shiftr</div>
           <div class="doc-logo-sub">${tFor(lang, 'exportPayStatement')}</div>
         </div>
       </div>
@@ -643,7 +643,7 @@ function buildHeaderHTML(lang, periodLabel, generatedDate) {
 function buildContHeaderHTML(lang, periodLabel, pageNum, totalPages) {
   return `
     <div class="cont-header">
-      <span><b>Work Hour Tracker</b> — ${tFor(lang, 'exportReportTitle')}</span>
+      <span><b>Shiftr</b> — ${tFor(lang, 'exportReportTitle')}</span>
       <span>${periodLabel} · ${pageNum}/${totalPages}</span>
     </div>`;
 }
@@ -750,7 +750,7 @@ function buildTfootHTML(lang, totEff, totGross, totTax, totNet) {
 function buildFooterHTML(lang, periodLabel, taxPct, generatedDate) {
   return `
     <div class="doc-footer">
-      <div class="footer-left">Work Hour Tracker · ${tFor(lang, 'exportReportTitle')}<br>${tFor(lang, 'exportFooterPeriod', periodLabel, taxPct)}</div>
+      <div class="footer-left">Shiftr · ${tFor(lang, 'exportReportTitle')}<br>${tFor(lang, 'exportFooterPeriod', periodLabel, taxPct)}</div>
       <div class="footer-right">${tFor(lang, 'exportFooterGenBy')}<br>${generatedDate}</div>
     </div>
     <div class="footer-note">${tFor(lang, 'exportFootnote', taxPct).replace(/\n/g, '<br>')}</div>`;
@@ -890,7 +890,7 @@ async function exportPDF(fromYM, toYM, lang = getLang()) {
       if (i > 0) pdf.addPage([PAGE_W_MM, img.heightMm + MARGIN_MM * 2], 'landscape');
       pdf.addImage(img.dataUrl, 'JPEG', MARGIN_MM, MARGIN_MM, CONTENT_W_MM, img.heightMm);
     });
-    const pdfFilename = `work-tracker-${fromYM}-to-${toYM}.pdf`;
+    const pdfFilename = `shiftr-${fromYM}-to-${toYM}.pdf`;
     pdf.save(pdfFilename);
     showExportToast(t('exportSavedToast', pdfFilename));
 

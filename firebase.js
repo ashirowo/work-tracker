@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// firebase.js — Cloud sync module for Work Hour Tracker
+// firebase.js — Cloud sync module for Shiftr
 //
 // ARCHITECTURE OVERVIEW:
 // ┌─────────────┐    login/logout     ┌───────────────┐

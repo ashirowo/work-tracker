@@ -451,7 +451,7 @@ let S={
   lang:ld('wt4_lang','en'),theme:ld('wt4_theme','dark'),holAuto:ld('wt4_hol_auto',true),
   taxRate:ld('wt4_tax_rate',DEFAULT_TAX),
   tab:'calendar',calY:new Date().getFullYear(),calM:new Date().getMonth(),
-  modal:null,mReg:undefined,mOT:undefined,mShift:undefined,mHolCredit:undefined,mNote:undefined,success:'',
+  modal:null,mReg:undefined,mOT:undefined,mShift:undefined,mHolCredit:undefined,success:'',
   chartRange:'3m',   // '3m' | '6m' | '1y'
   wageEditIdx:undefined, // transient: index of wage history entry being edited, or undefined
   resetModal:false, // transient: whether the "Reset all data" confirmation modal is open
@@ -547,7 +547,15 @@ function buildApp(){
   const langHTML=`<button class="hdr-icon-btn" id="lang-btn" title="Language">🌐</button>`;
   return`<div class="hdr">
     <div>
-      <div class="hdr-title">${t('appTitle')}</div>
+      <div class="hdr-title">
+        <svg class="hdr-logo" viewBox="0 0 71.9 29.9" height="20" role="img" aria-label="Shiftr" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="wm-dark" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#f0f2ff"/><stop offset="100%" stop-color="#8a9fd4"/></linearGradient>
+            <linearGradient id="wm-light" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#0d1033"/><stop offset="100%" stop-color="#6370a0"/></linearGradient>
+          </defs>
+          <path d="M8.033999999999999 21.684Q5.928 21.684 4.316 20.93Q2.7039999999999997 20.176000000000002 1.7939999999999998 18.772000000000002Q0.884 17.368000000000002 0.884 15.392V14.664000000000001H4.264V15.392Q4.264 17.03 5.2780000000000005 17.849Q6.292 18.668 8.033999999999999 18.668Q9.802 18.668 10.672999999999998 17.966Q11.543999999999999 17.264 11.543999999999999 16.172Q11.543999999999999 15.418 11.114999999999998 14.95Q10.686 14.482 9.867 14.183Q9.048 13.884 7.877999999999999 13.624L7.279999999999999 13.494Q5.4079999999999995 13.078000000000001 4.069 12.441Q2.73 11.804 2.015 10.764Q1.3 9.724 1.3 8.06Q1.3 6.396000000000001 2.093 5.213000000000001Q2.8859999999999997 4.030000000000001 4.329 3.3930000000000007Q5.771999999999999 2.7560000000000002 7.7219999999999995 2.7560000000000002Q9.671999999999999 2.7560000000000002 11.192999999999998 3.4190000000000005Q12.713999999999999 4.082000000000001 13.584999999999999 5.3950000000000005Q14.456 6.708 14.456 8.684000000000001V9.464H11.075999999999999V8.684000000000001Q11.075999999999999 7.644 10.672999999999998 7.007000000000001Q10.27 6.370000000000001 9.516 6.071000000000001Q8.762 5.772 7.7219999999999995 5.772Q6.162 5.772 5.420999999999999 6.357Q4.68 6.942 4.68 7.956000000000001Q4.68 8.632000000000001 5.031 9.100000000000001Q5.382 9.568000000000001 6.084 9.88Q6.786 10.192 7.877999999999999 10.426L8.475999999999999 10.556000000000001Q10.426 10.972000000000001 11.869 11.622Q13.312 12.272 14.117999999999999 13.338000000000001Q14.924 14.404 14.924 16.068Q14.924 17.732 14.079 18.993000000000002Q13.234 20.254 11.687 20.969Q10.139999999999999 21.684 8.033999999999999 21.684Z M17.575999999999997 21.32V3.120000000000001H20.851999999999997V10.010000000000002H21.32Q21.528 9.594000000000001 21.97 9.178Q22.412 8.762 23.153 8.489Q23.894 8.216000000000001 25.037999999999997 8.216000000000001Q26.546 8.216000000000001 27.677 8.905000000000001Q28.808 9.594000000000001 29.432 10.803Q30.055999999999997 12.012 30.055999999999997 13.624V21.32H26.779999999999998V13.884Q26.779999999999998 12.428 26.064999999999998 11.700000000000001Q25.349999999999998 10.972000000000001 24.023999999999997 10.972000000000001Q22.516 10.972000000000001 21.683999999999997 11.973Q20.851999999999997 12.974 20.851999999999997 14.768V21.32Z M33.592 21.32V8.424000000000001H36.867999999999995V21.32ZM35.23 6.916Q34.346 6.916 33.735 6.344Q33.123999999999995 5.772 33.123999999999995 4.836000000000002Q33.123999999999995 3.900000000000002 33.735 3.328000000000001Q34.346 2.7560000000000002 35.23 2.7560000000000002Q36.13999999999999 2.7560000000000002 36.738 3.328000000000001Q37.336 3.900000000000002 37.336 4.836000000000002Q37.336 5.772 36.738 6.344Q36.13999999999999 6.916 35.23 6.916Z M42.63999999999999 21.32V11.128H39.364V8.424000000000001H42.63999999999999V6.032000000000002Q42.63999999999999 4.7059999999999995 43.43299999999999 3.9130000000000003Q44.22599999999999 3.120000000000001 45.49999999999999 3.120000000000001H48.879999999999995V5.824000000000002H46.64399999999999Q45.916 5.824000000000002 45.916 6.604000000000001V8.424000000000001H49.29599999999999V11.128H45.916V21.32Z M56.78399999999999 21.32Q55.50999999999999 21.32 54.71699999999999 20.527Q53.92399999999999 19.734 53.92399999999999 18.408V11.128H50.699999999999996V8.424000000000001H53.92399999999999V4.420000000000002H57.199999999999996V8.424000000000001H60.73599999999999V11.128H57.199999999999996V17.836Q57.199999999999996 18.616 57.928 18.616H60.42399999999999V21.32Z M63.699999999999996 21.32V8.424000000000001H66.92399999999999V9.88H67.392Q67.678 9.100000000000001 68.341 8.736Q69.00399999999999 8.372000000000002 69.88799999999999 8.372000000000002H71.448V11.284H69.836Q68.588 11.284 67.782 11.947000000000001Q66.976 12.610000000000001 66.976 13.988V21.32Z" class="wm-text"/>
+        </svg>
+      </div>
       <div class="hdr-sub">${t('thisWeek')}: ${shift==='day'?'☀ '+t('dayShift'):'☾ '+t('nightShift')}</div>
     </div>
     <div class="hdr-right">
@@ -613,7 +621,7 @@ function buildCal(){
     if(logged)cls+=' logged';
     else if(autoSun||autoHol)cls+=' auto-cred';
     if(tod)cls+=' today';
-    const dot=logged?`<div class="dot${logs[s].note?' dot--note':''}" ${logs[s].note?`title="${logs[s].note.replace(/"/g,'&quot;')}"`:''} ></div>`:(autoSun||autoHol)?`<div class="adot"></div>`:hol?`<div class="hdot"></div>`:'';
+    const dot=logged?`<div class="dot"></div>`:(autoSun||autoHol)?`<div class="adot"></div>`:hol?`<div class="hdot"></div>`:'';
     cells+=`<div class="${cls}" data-date="${s}"><div class="dn">${d}</div>${dot}</div>`;
   }
   const holChips=Object.entries(HOLIDAYS).filter(([s])=>s.startsWith(`${y}-${pad(m+1)}`))
@@ -1182,8 +1190,6 @@ function buildModal(){
   if(isSun(date))badges+=`<span class="mbadge b-sun">${dn[0]}</span>`; // always show Sunday badge
   if(sat)badges+=`<span class="mbadge b-sat">${dn[6]}</span>`;
 
-  const defNote = existing?.note || '';
-  const note = S.mNote !== undefined ? S.mNote : defNote;
   const defReg = existing?.regHrs !== undefined
   ? existing.regHrs
   // When credit is ON (auto or per-day), default to 0 (input is for *extra* worked hours).
@@ -1230,13 +1236,17 @@ function buildModal(){
     const sunInfoCls=autoSunQual?'info-box':' info-box';
     bodyHTML=`<div class="info-box">${autoSunQual?t('sunAuto'):t('sunNotYet')}</div>
     <div class="info-box warn" style="margin-top:0;">${t('sunWorkedInfo')}</div>
-    <div class="fg" id="m-reg-row" ${shift==='double'?'style="display:none"':''}>
-      <label>${t('regHrs')}</label>
-      <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
+    <div class="fg-row" id="m-reg-row" ${shift==='double'?'style="display:none"':''}>
+      <div class="fg">
+        <label>${t('regHrs')}</label>
+        <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
+      </div>
     </div>
-    <div class="fg" id="m-ot-row">
-      <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
-      <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
+    <div class="fg-row" id="m-ot-row">
+      <div class="fg">
+        <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
+        <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
+      </div>
     </div>
     <div id="m-preview">${previewHTML(reg,ot,shift)}</div>`;
   }else if(holDay){
@@ -1249,24 +1259,32 @@ function buildModal(){
     </button>` : '';
     bodyHTML=`<div class="info-box warn">${t(holInfoKey)}</div>
     ${perDayToggle}
-    <div class="fg" id="m-reg-row" ${shift==='double'?'style="display:none"':''}>
-      <label>${t('regHrs')}</label>
-      <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
+    <div class="fg-row" id="m-reg-row" ${shift==='double'?'style="display:none"':''}>
+      <div class="fg">
+        <label>${t('regHrs')}</label>
+        <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
+      </div>
     </div>
-    <div class="fg" id="m-ot-row">
-      <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
-      <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
+    <div class="fg-row" id="m-ot-row">
+      <div class="fg">
+        <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
+        <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
+      </div>
     </div>
     <div id="m-preview">${previewHTML(reg,ot,shift)}</div>`;
   }else{
     // Normal/Saturday: two inputs
-    bodyHTML=`<div class="fg" id="m-reg-row" ${shift==='double'?'style="display:none"':''}>
-      <label>${t('regHrs')}</label>
-      <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
+    bodyHTML=`<div class="fg-row" id="m-reg-row" ${shift==='double'?'style="display:none"':''}>
+      <div class="fg">
+        <label>${t('regHrs')}</label>
+        <input id="m-reg" type="number" value="${reg}" min="0" step="0.5">
+      </div>
     </div>
-    <div class="fg" id="m-ot-row">
-      <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
-      <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
+    <div class="fg-row" id="m-ot-row">
+      <div class="fg">
+        <label>${t('otHrs')} <span style="font-size:10px;color:var(--text-hint);">${t('otHint')}</span></label>
+        <input id="m-ot" type="number" value="${ot}" min="0" max="24" step="0.5">
+      </div>
     </div>
     <div id="m-preview">${previewHTML(reg,ot,shift)}</div>`;
   }
@@ -1279,11 +1297,6 @@ function buildModal(){
     <div style="margin-bottom:12px;">${badges}</div>
     ${shiftToggleHTML}
     ${bodyHTML}
-    <div style="margin-top:14px;margin-bottom:14px;">
-      <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;">${t('noteLabel')}</label>
-      <textarea id="m-note" class="m-note" rows="2" placeholder="${t('notePlaceholder')}" maxlength="300">${note}</textarea>
-      <div class="m-note-hint">${t('noteHint')}</div>
-    </div>
     <div class="m-actions">
       <button class="btn-sec" id="m-cancel">${t('cancel')}</button>
       ${existing?`<button class="btn-del" id="m-del">${t('del')}</button>`:''}
@@ -1301,7 +1314,7 @@ function buildModal(){
   const delBtn=document.getElementById('m-del');
   if(delBtn)delBtn.addEventListener('click',()=>{const l=getLogs();delete l[date];saveLogs(l);closeModal();});
 
-  const regIn=document.getElementById('m-reg'),otIn=document.getElementById('m-ot'),noteIn=document.getElementById('m-note');
+  const regIn=document.getElementById('m-reg'),otIn=document.getElementById('m-ot');
   function curShift(){return S.mShift!==undefined?S.mShift:shift;}
   function upd(){
     const sh=curShift();
@@ -1313,7 +1326,6 @@ function buildModal(){
   }
   if(regIn)regIn.addEventListener('input',upd);
   if(otIn)otIn.addEventListener('input',upd);
-  if(noteIn)noteIn.addEventListener('input',()=>{S.mNote=noteIn.value;});
 
   function applyShiftToggle(newShift){
     S.mShift=newShift;
@@ -1326,7 +1338,7 @@ function buildModal(){
     if(xBtn){xBtn.className='shift-tog'+(newShift==='double'?' shift-tog-on-double':'');}
     // Hide reg row on double; OT row always visible
     const regRow=document.getElementById('m-reg-row');
-    if(regRow){regRow.style.display=newShift==='double'?'none':'block';}
+    if(regRow){regRow.style.display=newShift==='double'?'none':'grid';}
     upd();
   }
   const sdBtn=document.getElementById('m-shift-day');
@@ -1347,7 +1359,6 @@ function buildModal(){
     const r=sh==='double'?0:(regIn?parseFloat(regIn.value)||0:0);
     const o=(otIn?parseFloat(otIn.value)||0:0);
     S.mReg=r;S.mOT=o;S.mShift=sh;
-    if(noteIn) S.mNote=noteIn.value;
     const ov=document.getElementById('modal-ov');
     if(ov){ov.remove();}
     render(); // re-renders full modal with updated effectiveHolCredit
@@ -1358,7 +1369,6 @@ function buildModal(){
     const sh=curShift();
     const r=sh==='double'?0:(regIn?parseFloat(regIn.value)||0:0);
     const o=(otIn?parseFloat(otIn.value)||0:0);
-    const n=(noteIn?noteIn.value.trim():'') || (S.mNote!==undefined?S.mNote.trim():'');
     const c=calcWage(date,r,o,wage,sh,effectiveHolCredit);
     const logs=getLogs();
     // Store shiftOverride only when it differs from the week default
@@ -1367,14 +1377,14 @@ function buildModal(){
     const creditOverride=(holDay && S.mHolCredit!==undefined && S.mHolCredit!==isHolAuto())
       ? S.mHolCredit : undefined;
     logs[date]={regHrs:r,otHrs:o,hrs:r+o,gross:c.gross,net:c.net,eff:c.eff,
-      shiftOverride:override,...(creditOverride!==undefined&&{holCreditOverride:creditOverride}),...(n&&{note:n})};
+      shiftOverride:override,...(creditOverride!==undefined&&{holCreditOverride:creditOverride})};
     saveLogs(logs);closeModal();
   });
 }
 
 function closeModal(){
   document.querySelectorAll('#modal-ov').forEach(el => el.remove());
-  S.modal=null;S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;S.mNote=undefined;render();
+  S.modal=null;S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;render();
 }
 
 // ── Reset all data modal ─────────────────────────────────────────────────────
@@ -1493,11 +1503,11 @@ function attachListeners(){
   document.querySelectorAll('.dc[data-date]').forEach(el=>el.addEventListener('click',()=>{
     const s=el.dataset.date;if(s>today())return;
     const logs=getLogs();
-    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;S.mNote=undefined;render();
+    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;render();
   }));
   document.querySelectorAll('.log-edit[data-date]').forEach(el=>el.addEventListener('click',()=>{
     const s=el.dataset.date,logs=getLogs();
-    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;S.mNote=undefined;render();
+    S.modal={date:s,existing:logs[s]||null};S.mReg=undefined;S.mOT=undefined;S.mShift=undefined;S.mHolCredit=undefined;render();
   }));
   // ── Auth ────────────────────────────────────────────────────────────────────
   const loginBtn=document.getElementById('auth-login');

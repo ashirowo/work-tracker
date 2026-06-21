@@ -29,7 +29,7 @@
 //  The old cache is deleted in the `activate` handler so stale files are purged.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CACHE_VERSION   = 'wt4-v26';
+const CACHE_VERSION   = 'wt4-v27';
 const SHELL_CACHE     = `${CACHE_VERSION}-shell`;
 const FONT_CACHE      = `${CACHE_VERSION}-fonts`;
 const CDN_CACHE       = `${CACHE_VERSION}-cdn`;
@@ -48,6 +48,8 @@ const SHELL_ASSETS = [
   './translations.js',
   './export.js',
   './manifest.json',
+  './logo-dark.svg',
+  './logo-light.svg',
   './icon-192.png',
   './icon-512.png',
 ];

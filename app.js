@@ -1093,7 +1093,7 @@ function buildSettings(){
     const isEditing=editIdx===idx;
     return`<tr${isEditing?' class="wage-row--editing"':''}>
       <td style="font-size:13px;color:var(--text-muted);">${w.date}</td>
-      <td style="font-size:13px;font-weight:600;">₩${w.amount.toLocaleString()}</td>
+      <td style="font-size:13px;font-weight:600;color:var(--text-muted);">₩${w.amount.toLocaleString()}</td>
       <td style="text-align:right;white-space:nowrap;">
         <button class="btn-edit-sm${isEditing?' btn-edit-sm--active':''}" data-wage-edit="${idx}">${t('edit')}</button>
         ${!isFirst?`<button class="btn-del-sm" data-wage-del="${idx}">${t('del')}</button>`:''}
@@ -1103,7 +1103,7 @@ function buildSettings(){
   return`<div class="card">
     <div class="card-title">${t('setTitle')}</div>
     ${S.success&&S.success!=='holAuto'&&S.success!=='taxRate'?`<div class="success-banner">${S.success}</div>`:''}
-    <div style="font-size:13px;font-weight:600;margin-bottom:10px;">${t('wageLabel')}</div>
+    <div style="font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:10px;">${t('wageLabel')}</div>
     <table class="rules-table" style="margin-bottom:16px;">
       <thead><tr>
         <th>${t('wageEffFrom')}</th>
@@ -1169,7 +1169,7 @@ function buildSettings(){
   ${buildExportCard()}
   <div class="card card--danger">
     <div class="card-title card-title--danger">${t('dangerZone')}</div>
-    <div style="font-size:13px;font-weight:600;margin-bottom:4px;">${t('resetTitle')}</div>
+    <div style="font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:4px;">${t('resetTitle')}</div>
     <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">${t('resetSub')}</p>
     <button class="btn-del" id="open-reset-modal" style="width:100%;">${t('resetBtn')}</button>
   </div>
@@ -1668,6 +1668,36 @@ function attachListeners(){
     S.holAuto=true;sv('wt4_hol_auto',true);scheduleSync();S.success='holAuto';render();
   });
   if(holOffBtn)holOffBtn.addEventListener('click',()=>{
+    // Before turning holAuto off, bake any past auto-credited holidays into real
+    // log entries so they don't silently disappear. Two cases:
+    //
+    // 1. No log entry at all — create one with holCreditOverride:true.
+    // 2. Existing log entry but no explicit holCreditOverride (was stored without
+    //    it because it matched the global default at save time, line 1376) — set
+    //    holCreditOverride:true and recalculate so the credit is preserved.
+    const logs = getLogs();
+    const todayStr = today();
+    let changed = false;
+    Object.keys(HOLIDAYS).forEach(ds => {
+      if(ds >= todayStr) return;                          // skip today and future
+      const w = wageFor(ds);
+      const sf = shiftFor(ds);
+      if(!logs[ds]) {
+        // Case 1: no entry — bake in as a pure holiday credit day
+        const c = calcWage(ds, 0, 0, w, sf, true);
+        logs[ds] = {regHrs:0, otHrs:0, hrs:0, gross:c.gross, net:c.net, eff:c.eff,
+          holCreditOverride:true};
+        changed = true;
+      } else if(logs[ds].holCreditOverride === undefined) {
+        // Case 2: entry exists but no explicit override — the credit was implied
+        // by holAuto being ON, so bake it in now before the setting changes
+        const l = logs[ds];
+        const c = calcWage(ds, l.regHrs||0, l.otHrs||0, w, l.shiftOverride||sf, true);
+        logs[ds] = {...l, holCreditOverride:true, gross:c.gross, net:c.net, eff:c.eff};
+        changed = true;
+      }
+    });
+    if(changed) saveLogs(logs);
     S.holAuto=false;sv('wt4_hol_auto',false);scheduleSync();S.success='holAuto';render();
   });
 

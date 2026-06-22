@@ -29,7 +29,7 @@
 //  The old cache is deleted in the `activate` handler so stale files are purged.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CACHE_VERSION   = 'wt4-v27';
+const CACHE_VERSION   = 'wt4-v30';
 const SHELL_CACHE     = `${CACHE_VERSION}-shell`;
 const FONT_CACHE      = `${CACHE_VERSION}-fonts`;
 const CDN_CACHE       = `${CACHE_VERSION}-cdn`;
@@ -50,8 +50,12 @@ const SHELL_ASSETS = [
   './manifest.json',
   './logo-dark.svg',
   './logo-light.svg',
-  './icon-192.png',
-  './icon-512.png',
+  './ico/favicon.ico',
+  './ico/favicon-16x16.png',
+  './ico/favicon-32x32.png',
+  './ico/apple-touch-icon.png',
+  './ico/android-chrome-192x192.png',
+  './ico/android-chrome-512x512.png',
 ];
 
 // ── CDN assets (versioned — safe to cache indefinitely) ───────────────────────

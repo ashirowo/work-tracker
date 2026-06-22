@@ -519,6 +519,7 @@ function autoEff(ds, logsArg){
 // ── Render ────────────────────────────────────────────────────────────────────
 function render(){
   applyTheme();
+  document.title = t('pageTitle');
   document.getElementById('app').innerHTML=buildApp();
   attachListeners();
   if(S.modal)buildModal();

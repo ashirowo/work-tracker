@@ -47,9 +47,9 @@
   --text:#0d1033;
   --text-muted:#6370a0;
   --text-hint:#b0b8d8;
-  --primary:#3a5fff;
-  --primary-glow:rgba(58,95,255,0.15);
-  --primary-bg:rgba(58,95,255,0.08);
+  --primary:#4977fd;
+  --primary-glow:rgba(73,119,253,0.15);
+  --primary-bg:rgba(73,119,253,0.08);
   --success:#18a958;
   --success-bg:rgba(24,169,88,0.08);
   --success-glow:rgba(24,169,88,0.15);
@@ -91,7 +91,7 @@ body{
 }
 [data-theme="light"] body{
   background-image:
-    radial-gradient(ellipse 70% 40% at 10% 0%,rgba(58,95,255,0.05) 0%,transparent 60%),
+    radial-gradient(ellipse 70% 40% at 10% 0%,rgba(73,119,253,0.05) 0%,transparent 60%),
     radial-gradient(ellipse 50% 30% at 90% 100%,rgba(96,64,200,0.04) 0%,transparent 60%);
   background-attachment:fixed;
 }

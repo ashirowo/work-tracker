@@ -522,7 +522,7 @@ const PDF_CSS = `
 
 .wt4-pdfdoc .doc-header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:22px;border-bottom:2px solid var(--border);margin-bottom:26px;}
 .wt4-pdfdoc .doc-logo{display:flex;align-items:center;gap:12px;}
-.wt4-pdfdoc .doc-logo-icon{width:46px;height:46px;background:linear-gradient(135deg,#3a5fff 0%,#6c8eff 100%);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;}
+.wt4-pdfdoc .doc-logo-icon{width:46px;height:46px;border-radius:12px;flex-shrink:0;overflow:hidden;}
 .wt4-pdfdoc .doc-logo-text{font-size:18px;font-weight:700;letter-spacing:-0.03em;}
 .wt4-pdfdoc .doc-logo-sub{font-size:12px;color:var(--ink-muted);margin-top:2px;font-weight:500;}
 .wt4-pdfdoc .doc-meta{text-align:right;}
@@ -626,7 +626,7 @@ function buildHeaderHTML(lang, periodLabel, generatedDate) {
   return `
     <div class="doc-header">
       <div class="doc-logo">
-        <div class="doc-logo-icon">🕐</div>
+        <div class="doc-logo-icon"><img src="./ico/android-chrome-192x192.png" width="46" height="46" style="display:block;"></div>
         <div>
           <div class="doc-logo-text">Shiftr</div>
           <div class="doc-logo-sub">${tFor(lang, 'exportPayStatement')}</div>

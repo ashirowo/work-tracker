@@ -1,7 +1,8 @@
 {
   "name": "Shiftr",
   "short_name": "Shiftr",
-  "start_url": ".",
+  "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0f1117",
   "theme_color": "#0f1117",

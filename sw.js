@@ -29,7 +29,7 @@
 //  The old cache is deleted in the `activate` handler so stale files are purged.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CACHE_VERSION   = 'wt4-v33';
+const CACHE_VERSION   = 'wt4-v34';
 const SHELL_CACHE     = `${CACHE_VERSION}-shell`;
 const FONT_CACHE      = `${CACHE_VERSION}-fonts`;
 const CDN_CACHE       = `${CACHE_VERSION}-cdn`;
@@ -104,7 +104,12 @@ self.addEventListener('install', event => {
           }
         }
       }),
-    ]).then(() => self.skipWaiting())
+    ]).then(() => {
+      console.log('[SW] Install complete, skipping wait.');
+      // Skip waiting immediately so this SW activates without needing
+      // a second page load — critical for fixing stuck devices.
+      return self.skipWaiting();
+    })
   );
 });
 
@@ -211,25 +216,33 @@ async function cacheFirst(request, cacheName) {
  */
 async function shellCacheFirst(request) {
   const cache = await caches.open(SHELL_CACHE);
+  const pathname = new URL(request.url).pathname;
 
-  // Try exact match first
+  // Try exact match first (handles no-query requests)
   let cached = await cache.match(request);
   if (cached) return cached;
 
-  // Try stripping query string (handles ?v=x.y.z versioning)
-  const stripped = new Request(new URL(request.url).pathname, { headers: request.headers });
-  cached = await cache.match(stripped);
+  // Try bare pathname match (handles ?v=x.y.z versioned URLs)
+  const bareRequest = new Request(pathname, { headers: request.headers });
+  cached = await cache.match(bareRequest);
   if (cached) return cached;
 
-  // Try network
+  // Try network — store under BOTH the full URL and the bare pathname
+  // so the next request (with or without ?v=) finds it in cache.
   try {
     const fresh = await fetch(request);
-    if (fresh.ok) cache.put(request, fresh.clone());
+    if (fresh.ok) {
+      cache.put(request, fresh.clone());
+      // Also store under bare pathname for query-string-insensitive lookup
+      cache.put(bareRequest, fresh.clone());
+    }
     return fresh;
   } catch {
     // For navigation requests fall back to the cached app shell
     if (request.mode === 'navigate') {
-      const shell = await cache.match('./index.html') || await cache.match('./');
+      const shell = await cache.match('./index.html')
+                 || await cache.match(new URL('./index.html', self.location).pathname)
+                 || await cache.match('./');
       if (shell) return shell;
     }
     return offlineResponse();

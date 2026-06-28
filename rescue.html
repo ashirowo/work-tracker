@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shiftr — Data Rescue</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, 'Inter', system-ui, sans-serif;
+    background: #0f1117;
+    color: #e2e8f0;
+    min-height: 100vh;
+    padding: 24px 16px 48px;
+  }
+
+  .logo {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+  .logo span { color: #7c6fff; }
+
+  .subtitle {
+    font-size: 13px;
+    color: #6b7599;
+    margin-bottom: 32px;
+  }
+
+  .card {
+    background: #161b2e;
+    border: 1px solid #1e2740;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
+  .card-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6b7599;
+    margin-bottom: 12px;
+  }
+
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 12px 14px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+  }
+  .status--ok    { background: rgba(34,197,94,0.12);  color: #4ade80; }
+  .status--warn  { background: rgba(251,191,36,0.12); color: #fbbf24; }
+  .status--error { background: rgba(239,68,68,0.12);  color: #f87171; }
+  .status--info  { background: rgba(124,111,255,0.12);color: #a78bfa; }
+
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .dot--green  { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+  .dot--yellow { background: #fbbf24; box-shadow: 0 0 6px #fbbf24; }
+  .dot--red    { background: #f87171; box-shadow: 0 0 6px #f87171; }
+  .dot--purple { background: #a78bfa; box-shadow: 0 0 6px #a78bfa; }
+
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+    border: none;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    margin-bottom: 10px;
+    font-family: inherit;
+  }
+  .btn:active { transform: scale(0.97); opacity: 0.85; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn--primary  { background: linear-gradient(135deg,#7c6fff,#6c5ce7); color: #fff; }
+  .btn--success  { background: linear-gradient(135deg,#22c55e,#16a34a); color: #fff; }
+  .btn--danger   { background: linear-gradient(135deg,#ef4444,#dc2626); color: #fff; }
+  .btn--ghost    { background: #1e2740; color: #94a3b8; border: 1px solid #2a3655; }
+
+  textarea {
+    width: 100%;
+    background: #0f1117;
+    border: 1px solid #1e2740;
+    border-radius: 10px;
+    color: #e2e8f0;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    padding: 12px;
+    resize: none;
+    margin-bottom: 10px;
+    outline: none;
+  }
+  textarea:focus { border-color: #7c6fff; }
+
+  .data-preview {
+    background: #0f1117;
+    border: 1px solid #1e2740;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: #94a3b8;
+    line-height: 1.7;
+  }
+  .data-preview strong { color: #e2e8f0; }
+
+  .section { margin-bottom: 8px; }
+
+  .divider {
+    border: none;
+    border-top: 1px solid #1e2740;
+    margin: 20px 0;
+  }
+
+  #step-backup, #step-restore { display: block; }
+
+  .tab-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .tab {
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid #1e2740;
+    background: transparent;
+    color: #6b7599;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  .tab--active {
+    background: #1e2740;
+    color: #e2e8f0;
+    border-color: #7c6fff;
+  }
+
+  .hidden { display: none !important; }
+
+  .small { font-size: 12px; color: #6b7599; margin-top: 6px; line-height: 1.5; }
+
+  .copy-feedback {
+    text-align: center;
+    font-size: 13px;
+    color: #4ade80;
+    font-weight: 600;
+    margin-top: 6px;
+    min-height: 20px;
+  }
+</style>
+</head>
+<body>
+
+<div class="logo">Shift<span>r</span></div>
+<div class="subtitle">Emergency Data Rescue Tool</div>
+
+<!-- SW status card -->
+<div class="card">
+  <div class="card-title">Service Worker Status</div>
+  <div id="sw-status" class="status status--info">
+    <div class="dot dot--purple"></div>
+    <span>Checking...</span>
+  </div>
+  <button class="btn btn--danger" id="btn-unregister" style="display:none">
+    ⚠️ Unregister Broken Service Worker
+  </button>
+</div>
+
+<!-- Tab switcher -->
+<div class="tab-row">
+  <button class="tab tab--active" id="tab-backup" onclick="showTab('backup')">💾 Backup</button>
+  <button class="tab" id="tab-restore" onclick="showTab('restore')">♻️ Restore</button>
+</div>
+
+<!-- BACKUP PANEL -->
+<div id="panel-backup">
+  <div class="card">
+    <div class="card-title">Your Data</div>
+    <div id="data-summary" class="data-preview">Scanning localStorage...</div>
+    <button class="btn btn--primary" id="btn-copy" onclick="copyBackup()" disabled>
+      📋 Copy Backup to Clipboard
+    </button>
+    <div class="copy-feedback" id="copy-feedback"></div>
+    <p class="small">Copy this, paste it into Samsung Notes or any text app. Keep it safe — you'll paste it back after clearing site data.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Next Steps</div>
+    <div class="data-preview" style="line-height:2;">
+      1. Tap <strong>"Copy Backup"</strong> above<br>
+      2. Paste into <strong>Samsung Notes</strong><br>
+      3. Go to Samsung Internet <strong>Settings → Privacy → Delete browsing data</strong><br>
+      4. Check <strong>Cached images</strong> + <strong>Site data</strong> → Delete<br>
+      5. Come back to <strong>rescue.html</strong><br>
+      6. Switch to the <strong>Restore tab</strong> and paste your backup
+    </div>
+  </div>
+</div>
+
+<!-- RESTORE PANEL -->
+<div id="panel-restore" class="hidden">
+  <div class="card">
+    <div class="card-title">Paste Your Backup</div>
+    <textarea id="restore-input" rows="8" placeholder='Paste your backup JSON here...
+It should start with {"wt4_logs":... or similar'></textarea>
+    <button class="btn btn--success" onclick="restoreData()">
+      ♻️ Restore My Data
+    </button>
+    <div id="restore-status" class="small" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">After Restoring</div>
+    <div class="data-preview">
+      Once restored, tap the button below to go to the app. Your data will be waiting.
+    </div>
+    <button class="btn btn--ghost" onclick="window.location.href='./index.html'">
+      → Open Shiftr
+    </button>
+  </div>
+</div>
+
+<script>
+// ── Unregister all service workers immediately ────────────────────────────────
+// This runs before anything else so the broken SW can't interfere.
+async function unregisterSW() {
+  const statusEl = document.getElementById('sw-status');
+  const unregBtn = document.getElementById('btn-unregister');
+
+  if (!('serviceWorker' in navigator)) {
+    statusEl.className = 'status status--info';
+    statusEl.innerHTML = '<div class="dot dot--purple"></div><span>Service workers not supported in this browser</span>';
+    return;
+  }
+
+  try {
+    const regs = await navigator.serviceWorker.getRegistrations();
+
+    if (regs.length === 0) {
+      statusEl.className = 'status status--ok';
+      statusEl.innerHTML = '<div class="dot dot--green"></div><span>No service worker registered — you\'re clear</span>';
+      return;
+    }
+
+    // Show what we found
+    statusEl.className = 'status status--warn';
+    statusEl.innerHTML = `<div class="dot dot--yellow"></div><span>Found ${regs.length} service worker(s) — unregistering now...</span>`;
+    unregBtn.style.display = 'none';
+
+    // Unregister all
+    await Promise.all(regs.map(r => r.unregister()));
+
+    statusEl.className = 'status status--ok';
+    statusEl.innerHTML = '<div class="dot dot--green"></div><span>✓ Service worker unregistered successfully</span>';
+
+  } catch (err) {
+    statusEl.className = 'status status--error';
+    statusEl.innerHTML = `<div class="dot dot--red"></div><span>Error: ${err.message}</span>`;
+  }
+}
+
+// ── Scan localStorage ─────────────────────────────────────────────────────────
+function scanLocalStorage() {
+  const summaryEl = document.getElementById('data-summary');
+  const copyBtn   = document.getElementById('btn-copy');
+
+  const WTK = ['wt4_logs','wt4_shifts','wt4_wages','wt4_lang','wt4_theme',
+                'wt4_hol_auto','wt4_tax_rate','wt4_syncedAt','wt4_cloud_pulled',
+                'wt4_onboarded','wt4_currency','wt4_hol_cache'];
+
+  const found = {};
+  let totalKeys = 0;
+
+  // Grab all Shiftr keys
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (key.startsWith('wt4_') || key.startsWith('wt3_'))) {
+      found[key] = localStorage.getItem(key);
+      totalKeys++;
+    }
+  }
+
+  if (totalKeys === 0) {
+    summaryEl.innerHTML = '<span style="color:#f87171">⚠️ No Shiftr data found in this browser profile.<br>You may already be on a clean profile, or data was already cleared.</span>';
+    copyBtn.disabled = true;
+    return;
+  }
+
+  // Parse logs to count entries
+  let logCount = 0;
+  try {
+    const logs = JSON.parse(found['wt4_logs'] || '{}');
+    logCount = Object.values(logs).reduce((a, m) => a + Object.keys(m).length, 0);
+  } catch(e) {}
+
+  let shiftCount = 0;
+  try {
+    const shifts = JSON.parse(found['wt4_shifts'] || '{}');
+    shiftCount = Object.keys(shifts).length;
+  } catch(e) {}
+
+  summaryEl.innerHTML = `
+    <strong>${totalKeys} keys found</strong><br>
+    📋 ${logCount} work log entries<br>
+    🔄 ${shiftCount} shift types<br>
+    🌐 Language: ${found['wt4_lang'] ? JSON.parse(found['wt4_lang']) : 'not set'}<br>
+    🎨 Theme: ${found['wt4_theme'] ? JSON.parse(found['wt4_theme']) : 'not set'}
+  `;
+
+  copyBtn.disabled = false;
+
+  // Store the backup JSON globally for copying
+  window._backupJSON = JSON.stringify(found, null, 2);
+}
+
+// ── Copy backup to clipboard ──────────────────────────────────────────────────
+async function copyBackup() {
+  const feedbackEl = document.getElementById('copy-feedback');
+  if (!window._backupJSON) return;
+
+  try {
+    await navigator.clipboard.writeText(window._backupJSON);
+    feedbackEl.textContent = '✓ Copied! Paste it into Samsung Notes now.';
+  } catch(e) {
+    // Clipboard API blocked — show the raw text in a textarea for manual copy
+    const ta = document.createElement('textarea');
+    ta.value = window._backupJSON;
+    ta.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:40%;font-size:10px;z-index:999;background:#0f1117;color:#e2e8f0;border:2px solid #7c6fff;padding:8px;';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    feedbackEl.textContent = 'Select all text in the box above and copy it manually.';
+  }
+}
+
+// ── Restore data ──────────────────────────────────────────────────────────────
+function restoreData() {
+  const input    = document.getElementById('restore-input').value.trim();
+  const statusEl = document.getElementById('restore-status');
+
+  if (!input) {
+    statusEl.style.color = '#f87171';
+    statusEl.textContent = '⚠️ Please paste your backup JSON first.';
+    return;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(input);
+  } catch(e) {
+    statusEl.style.color = '#f87171';
+    statusEl.textContent = '⚠️ Invalid JSON. Make sure you copied the full backup without cutting anything off.';
+    return;
+  }
+
+  const keys = Object.keys(parsed).filter(k => k.startsWith('wt4_') || k.startsWith('wt3_'));
+  if (keys.length === 0) {
+    statusEl.style.color = '#f87171';
+    statusEl.textContent = '⚠️ No Shiftr data found in the pasted text. Are you sure this is the right backup?';
+    return;
+  }
+
+  let restored = 0;
+  keys.forEach(key => {
+    try {
+      localStorage.setItem(key, parsed[key]);
+      restored++;
+    } catch(e) {
+      console.warn('Failed to restore key:', key, e);
+    }
+  });
+
+  statusEl.style.color = '#4ade80';
+  statusEl.textContent = `✓ Restored ${restored} keys successfully. You can now open Shiftr.`;
+}
+
+// ── Tab switcher ──────────────────────────────────────────────────────────────
+function showTab(tab) {
+  document.getElementById('panel-backup').classList.toggle('hidden', tab !== 'backup');
+  document.getElementById('panel-restore').classList.toggle('hidden', tab !== 'restore');
+  document.getElementById('tab-backup').classList.toggle('tab--active', tab === 'backup');
+  document.getElementById('tab-restore').classList.toggle('tab--active', tab === 'restore');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+unregisterSW();
+scanLocalStorage();
+</script>
+</body>
+</html>

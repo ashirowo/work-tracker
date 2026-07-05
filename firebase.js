@@ -51,10 +51,6 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
                                                       from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, deleteDoc, serverTimestamp }
                                                       from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-// Shared storage-key constants — the single source of truth these keys used to
-// be manually kept in sync with (they were duplicated as literals in app.js and
-// export.js). Now all three modules reference core/constants.
-import { LS } from './core/constants.js';
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 const firebaseApp = initializeApp(FIREBASE_CONFIG);
@@ -67,18 +63,18 @@ let _currentUser  = null;   // Firebase User object, or null
 let _syncTimer    = null;   // debounce handle for push
 let _syncPending  = false;  // true if a push is queued
 
-// Keys we sync between localStorage and Firestore. Sourced from the shared LS
-// map so a key rename in core/constants propagates here automatically.
+// Keys we sync between localStorage and Firestore
+// These must match the localStorage keys used in app.js
 const SYNC_KEYS = {
-  logs:      LS.logs,
-  shifts:    LS.shifts,
-  wages:     LS.wages,
-  lang:      LS.lang,
-  theme:     LS.theme,
-  holAuto:   LS.holAuto,
-  taxRate:   LS.taxRate,
-  dedMode:   LS.deductionMode,
-  insurance: LS.insurance,
+  logs:     'wt4_logs',
+  shifts:   'wt4_shifts',
+  wages:    'wt4_wages',
+  lang:     'wt4_lang',
+  theme:    'wt4_theme',
+  holAuto:  'wt4_hol_auto',
+  taxRate:  'wt4_tax_rate',
+  dedMode:  'wt4_deduction_mode',
+  insurance:'wt4_insurance',
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

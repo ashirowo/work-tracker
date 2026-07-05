@@ -1,88 +1,104 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // export.js — CSV + PDF export for Shiftr
 //
-// INTEGRATION (current):
-//   • Shared logic (date math, storage, and the wage-calc engine) is imported
-//     from ./core/* — the SAME modules app.js uses, so an exported report and
-//     the on-screen numbers are computed by one engine, never two.
-//   • The export-card MARKUP is rendered by app.js (buildExportCardInline);
-//     this module exposes wireExportCard() to bind that card's behavior, plus
-//     buildRows / exportCSV / exportPDF / monthsWithData / showExportToast.
+// HOW TO INTEGRATE:
+//   1. Copy this file next to app.js / firebase.js.
+//   2. In app.js, add this import at the top:
+//        import { buildExportCard, wireExportCard } from './export.js';
+//   3. In buildSettings(), paste this just before the Danger Zone card:
+//        ${buildExportCard()}
+//   4. In attachListeners() (inside the `if(S.tab==='settings')` block, or
+//      at the end of attachListeners since it's always safe), add:
+//        wireExportCard();
 //
-// DEPENDENCIES: no up-front third-party libs — CSV is a plain Blob download.
-//   PDF is generated client-side; on first use, jsPDF + html2canvas are
-//   lazy-loaded from CDN (same pattern app.js uses for Chart.js) and cached by
-//   the service worker afterward, so PDF export keeps working offline too.
+// DEPENDENCIES: none required up front — CSV is a plain Blob download with no
+//   external libraries. PDF is generated as a real binary client-side; the
+//   first time a user exports a PDF, jsPDF + html2canvas are lazy-loaded from
+//   CDN (same pattern app.js uses for Chart.js) and cached by the service
+//   worker afterward, so PDF export keeps working offline too.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { TR } from './translations.js';
-import { LS } from './core/constants.js';
-import { pad, mkds, pd, today as todayStr, dowOf, isSun, isSat, getMonday } from './core/datetime.js';
-import { ld, getLogs, getShifts, getWages, wageFor, getInsurance, isHolAuto, getDeductionMode } from './core/storage.js';
-import {
-  calcWage as _calcWage, shiftFor, isFixedShiftPattern, applyTax,
-  deductionPct, careRateOfGross, insuranceRatePct,
-} from './core/payroll.js';
-import { translateHolidayName } from './core/holidays.js';
+import { TR, nightWeekdayEff, satNightEff, satDayEff } from './translations.js';
 
-// ── Export-specific helpers ──────────────────────────────────────────────────
-// Pure date/storage/payroll helpers now come from ./core (single source of truth
-// shared with app.js). Only the export-only concerns live here: language
-// resolution, the report-scoped holiday snapshot, and the deduction-noun/label
-// formatting used by the CSV columns and PDF headers.
+// ── Re-use helpers already defined in app.js via a small shared-state bridge ──
+// We read from localStorage directly (same keys as app.js) so this module is
+// fully self-contained and doesn't need to import app.js internals.
 
-function getLang() { return ld(LS.lang, 'en'); }
+function ld(k, d) {
+  try { const v = localStorage.getItem(k); return v !== null ? JSON.parse(v) : d; } catch { return d; }
+}
+function pad(n) { return String(n).padStart(2, '0'); }
+function mkds(y, m, d) { return `${y}-${pad(m + 1)}-${pad(d)}`; }
+function pd(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
+function todayStr() { const d = new Date(); return mkds(d.getFullYear(), d.getMonth(), d.getDate()); }
+function dowOf(s) { return pd(s).getDay(); }
+function isSun(s) { return dowOf(s) === 0; }
+function isSat(s) { return dowOf(s) === 6; }
+
+function getLang() { return ld('wt4_lang', 'en'); }
 function t(k, ...a) {
   const lang = getLang();
   const fn = TR[lang]?.[k] ?? TR.en?.[k];
   return typeof fn === 'function' ? fn(...a) : (fn || k);
 }
-// Same as t(), but for an explicitly chosen language — used by the PDF generator
-// so a report can be produced in a language other than the app's current UI.
+// Same as t(), but for an explicitly chosen language rather than the app's
+// current UI language — used by the PDF generator so a report can be
+// produced in a different language than the app is currently displayed in.
 function tFor(lang, k, ...a) {
   const fn = TR[lang]?.[k] ?? TR.en?.[k];
   return typeof fn === 'function' ? fn(...a) : (fn || k);
 }
 
-// A snapshot of all holidays across the relevant year range, read from the gov
-// cache. Reports take this snapshot once and pass it into calcWage so a single
-// export is internally consistent even if the live cache changes mid-run.
+function getLogs() { return ld('wt4_logs', {}); }
+function getShifts() { return ld('wt4_shifts', {}); }
+function getWages() { return ld('wt4_wages', [{ date: '2026-01-01', amount: 10320 }]); }
 function getHolidays() {
+  // Collect all gov-cached holiday data across relevant years
   const hols = {};
   const curY = new Date().getFullYear();
   for (let yr = curY - 3; yr <= curY + 2; yr++) {
     try {
-      const raw = localStorage.getItem(LS.govPrefix + yr);
+      const raw = localStorage.getItem('wt4_gov_' + yr);
       if (raw) {
         const { ko } = JSON.parse(raw);
         if (ko) Object.assign(hols, ko);
       }
     } catch (e) {}
-    hols[`${yr}-05-01`] = '근로자의 날'; // Labour Day
+    // Labour Day
+    hols[`${yr}-05-01`] = '근로자의 날';
   }
   return hols;
 }
+function getTaxRate() { return ld('wt4_tax_rate', 3.3); }
+function isHolAuto() { return ld('wt4_hol_auto', true) !== false; }
 
-// calcWage for exports: same engine as app.js, but the holiday-presence check
-// comes from the report's `holidays` snapshot rather than the live module state,
-// and note labels aren't needed. `holAuto` is read from storage here (exports
-// have no live session S). The trailing `holidays` param keeps the original
-// export call signature intact.
-function calcWage(dateStr, regHrs, otHrs, wage, shiftOverride, holCreditOverride, holidays) {
-  return _calcWage(dateStr, regHrs, otHrs, wage, shiftOverride, holCreditOverride, {
-    isHol: ds => !!holidays[ds],
-    holAuto: ld(LS.holAuto, true) !== false,
-    tr: TR[getLang()] || TR.en,
-  });
+// ── Deductions (mirrors app.js) ──────────────────────────────────────────────
+// Two mutually-exclusive modes: 'tax' (flat %) or 'insurance' (4대 보험 summed).
+// Long-term care is derived from the health premium, not a % of gross.
+// Industrial-accident insurance is employer-paid and intentionally excluded.
+const DEFAULT_INSURANCE = { pension: 4.75, health: 3.595, careOfHealth: 13.14, employment: 0.9 };
+function getDeductionMode() { return ld('wt4_deduction_mode', 'tax'); }
+function getInsurance() {
+  const s = ld('wt4_insurance', null);
+  return s ? { ...DEFAULT_INSURANCE, ...s } : { ...DEFAULT_INSURANCE };
 }
-
+function careRateOfGross(ins) { ins = ins || getInsurance(); return ins.health * (ins.careOfHealth / 100); }
+function insuranceRatePct(ins) {
+  ins = ins || getInsurance();
+  return ins.pension + ins.health + careRateOfGross(ins) + ins.employment;
+}
+// Active deduction as a percentage (so the PDF can show it), per current mode.
+function deductionPct() {
+  return getDeductionMode() === 'insurance' ? insuranceRatePct() : getTaxRate();
+}
 // Mode-aware column/label noun, e.g. "Tax" or "4대 보험", in the given language.
 function dedNoun(lang) {
   const m = getDeductionMode();
   return (TR[lang] && TR[lang].exportDedNoun && TR[lang].exportDedNoun[m])
     || (m === 'insurance' ? '4 Insurances' : 'Tax');
 }
-// Compact column-header variant (e.g. "Insurance") for the narrow table column.
+// Compact column-header variant (e.g. "Insurance") for the narrow table column,
+// so the header doesn't force the deduction column wider than its numbers.
 function dedCol(lang) {
   const m = getDeductionMode();
   return (TR[lang] && TR[lang].exportDedCol && TR[lang].exportDedCol[m])
@@ -93,6 +109,123 @@ function dedLabel(lang, pct) {
   return `${dedNoun(lang)} (${Math.round(pct * 100) / 100}%)`;
 }
 
+// Translate a raw Korean holiday name into the given language (defaults to
+// the current UI language), using the same TR[lang].holidays map app.js uses
+// for the Calendar view. Without this, exported reports always showed
+// holiday names in Korean regardless of the selected language — a gap that
+// matters a lot once exports are meant to be genuinely multi-language.
+function translateHolidayName(ko, lang = getLang()) {
+  const map = TR[lang]?.holidays;
+  if (!map || !ko) return ko;
+  if (map[ko]) return map[ko];
+  for (const [k, v] of Object.entries(map)) {
+    if (ko.includes(k)) return v;
+  }
+  return ko; // unknown/irregular holiday — fall back to the Korean name
+}
+
+function wageFor(dateStr) {
+  const wages = getWages();
+  let active = 10320;
+  for (const { date, amount } of wages) {
+    if (date <= dateStr) active = amount;
+    else break;
+  }
+  return active;
+}
+
+function getMonday(s) {
+  const d = pd(s), day = d.getDay(), diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  const m = new Date(d); m.setDate(diff);
+  return mkds(m.getFullYear(), m.getMonth(), m.getDate());
+}
+
+function shiftFor(s) {
+  const sh = getShifts(), ws = getMonday(s);
+  const keys = Object.keys(sh).filter(k => k <= ws).sort();
+  if (!keys.length) return 'day';
+  const anchor = keys[keys.length - 1];
+  const anchorShift = sh[anchor];
+  if (keys.length >= 2 && sh[keys[keys.length - 2]] === anchorShift) return anchorShift;
+  const msPerWeek = 7 * 24 * 3600 * 1000;
+  const weeks = Math.round((pd(ws) - pd(anchor)) / msPerWeek);
+  return weeks % 2 === 0 ? anchorShift : (anchorShift === 'day' ? 'night' : 'day');
+}
+
+// True when the user works a single fixed shift (day-only or night-only) rather
+// than an alternating rotation. Fixed mode is stored as ≥2 anchors that are all
+// the same value; in that case the Type column omits the redundant shift suffix.
+function isFixedShiftPattern() {
+  const sh = getShifts();
+  const vals = Object.values(sh).filter(v => v === 'day' || v === 'night');
+  if (vals.length < 2) return false;
+  return vals.every(v => v === vals[0]);
+}
+
+function applyTax(g) { return Math.round(g * (1 - deductionPct() / 100)); }
+
+function calcWage(dateStr, regHrs, otHrs, wage, shiftOverride, holCreditOverride, holidays) {
+  const shift = shiftOverride || shiftFor(dateStr);
+  const holDay = !!holidays[dateStr];
+  const sun = isSun(dateStr) && !holDay;
+  const sat = isSat(dateStr) && !holDay;
+  const holCredit = holCreditOverride !== undefined ? holCreditOverride : isHolAuto();
+  let eff = 0;
+
+  if (shift === 'double') {
+    const nightEff = +(satNightEff(8)).toFixed(2);
+    const daySatEff = +(8 / 8 * 12).toFixed(2);
+    if (sun || holDay) {
+      const hasAutoBase = sun || (holDay && holCredit);
+      eff = hasAutoBase ? +(8 + daySatEff + nightEff).toFixed(2) : +(daySatEff + nightEff).toFixed(2);
+    } else if (sat) {
+      eff = +(daySatEff + nightEff).toFixed(2);
+    } else {
+      eff = +(8 + nightEff).toFixed(2);
+    }
+    if (otHrs > 0) eff = +(eff + otHrs * 2).toFixed(2);
+    const g = Math.round(eff * wage);
+    return { gross: g, net: applyTax(g), eff };
+  }
+
+  if (sun) {
+    eff = 8;
+    if (regHrs > 0 || otHrs > 0) {
+      const wEff = shift === 'day'
+        ? +(satDayEff(regHrs) + (otHrs > 0 ? otHrs * 1.5 : 0)).toFixed(2)
+        : +(satNightEff(regHrs) + (otHrs > 0 ? otHrs * 2 : 0)).toFixed(2);
+      eff = +(8 + wEff).toFixed(2);
+    }
+    const g = Math.round(eff * wage); return { gross: g, net: applyTax(g), eff };
+  }
+
+  if (holDay) {
+    if (holCredit) eff = 8;
+    if (regHrs > 0 || otHrs > 0) {
+      const wEff = shift === 'day'
+        ? +(satDayEff(regHrs) + (otHrs > 0 ? otHrs * 1.5 : 0)).toFixed(2)
+        : +(satNightEff(regHrs) + (otHrs > 0 ? otHrs * 2 : 0)).toFixed(2);
+      eff = +(eff + wEff).toFixed(2);
+    }
+    const g = Math.round(eff * wage); return { gross: g, net: applyTax(g), eff };
+  }
+
+  if (sat) {
+    eff = shift === 'day'
+      ? +(satDayEff(regHrs) + (otHrs > 0 ? otHrs * 1.5 : 0)).toFixed(2)
+      : +(satNightEff(regHrs) + (otHrs > 0 ? otHrs * 2 : 0)).toFixed(2);
+    const g = Math.round(eff * wage); return { gross: g, net: applyTax(g), eff };
+  }
+
+  if (shift === 'day') {
+    eff = regHrs;
+    if (otHrs > 0) eff = +(eff + otHrs * 1.5).toFixed(2);
+  } else {
+    eff = nightWeekdayEff(regHrs);
+    if (otHrs > 0) eff = +(eff + otHrs * 2).toFixed(2);
+  }
+  const g = Math.round(eff * wage); return { gross: g, net: applyTax(g), eff };
+}
 
 // ── Determine which months have any data ──────────────────────────────────────
 export function monthsWithData() {
@@ -1045,10 +1178,109 @@ export async function exportPDF(fromYM, toYM, lang = getLang(), opts = {}) {
   }
 }
 
-// NOTE: the export-card MARKUP is built by app.js (buildExportCardInline);
-// this module only wires its behavior (wireExportCard below). The former
-// buildExportCard() HTML builder was removed as dead code — app.js diverged
-// to its own inline version and never imported this one.
+// ── Export UI card HTML ────────────────────────────────────────────────────────
+export function buildExportCard() {
+  const months = monthsWithData();
+  if (!months.length) return ''; // no data yet — hide the card entirely
+
+  const mnames = t('mn');
+  function optLabel(ym) {
+    const [y, m] = ym.split('-');
+    return `${mnames[parseInt(m) - 1]} ${y}`;
+  }
+
+  const opts = months.map(ym => `<option value="${ym}">${optLabel(ym)}</option>`).join('');
+  const lastM  = months[months.length - 1];
+  const firstM = months[0];
+
+  // Build preset buttons
+  const now = new Date();
+  const curYM = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+  const prevYM = now.getMonth() === 0
+    ? `${now.getFullYear() - 1}-12`
+    : `${now.getFullYear()}-${pad(now.getMonth())}`;
+
+  function clamp(ym) {
+    if (ym < firstM) return firstM;
+    if (ym > lastM)  return lastM;
+    return ym;
+  }
+
+  function threeMonthsAgo() {
+    let y = now.getFullYear(), m = now.getMonth() - 2;
+    if (m < 0) { m += 12; y--; }
+    return clamp(`${y}-${pad(m + 1)}`);
+  }
+
+  const presets = [
+    { label: t('exportPresetThisMonth'), from: clamp(curYM),                      to: lastM },
+    { label: t('exportPresetLastMonth'), from: clamp(prevYM),                     to: clamp(prevYM) },
+    { label: t('exportPresetLast3'),     from: threeMonthsAgo(),                  to: lastM },
+    { label: t('exportPresetThisYear'),  from: clamp(`${now.getFullYear()}-01`),  to: lastM },
+    { label: t('exportPresetAllTime'),   from: firstM,                             to: lastM },
+  ].filter((p, i, arr) => {
+    const key = p.from + p.to;
+    return arr.findIndex(x => x.from + x.to === key) === i;
+  });
+
+  const presetBtns = presets.map(p =>
+    `<button class="exp-preset" data-from="${p.from}" data-to="${p.to}">${p.label}</button>`
+  ).join('');
+
+  return `
+  <div class="card" id="export-card">
+    <div class="card-title">${t('exportTitle')}</div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+      ${t('exportSub')}
+    </p>
+
+    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">${t('exportQuickRange')}</div>
+    <div class="exp-preset-row">
+      ${presetBtns}
+    </div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">${t('exportCustomRange')}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;">
+      <div>
+        <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:5px;">${t('exportFrom')}</label>
+        <select id="exp-from" class="exp-select">
+          ${opts}
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:5px;">${t('exportTo')}</label>
+        <select id="exp-to" class="exp-select">
+          ${opts}
+        </select>
+      </div>
+    </div>
+    <div id="exp-range-err" style="display:none;font-size:12px;color:var(--danger);margin-bottom:12px;">
+      ${t('exportRangeErr')}
+    </div>
+
+    ${getLang() === 'ko' ? '' : `
+    <div style="margin-bottom:18px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">${t('exportPdfLangLabel')}</div>
+      <select id="exp-pdf-lang" class="exp-select">
+        ${getReportLanguageOptions().map(l => `<option value="${l.code}"${l.code === getLang() ? ' selected' : ''}>${l.label}</option>`).join('')}
+      </select>
+    </div>`}
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <button class="btn-pri" id="exp-csv" style="display:flex;align-items:center;justify-content:center;gap:7px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        ${t('exportCSV')}
+      </button>
+      <button class="btn-sec" id="exp-pdf" style="display:flex;align-items:center;justify-content:center;gap:7px;border-color:var(--border-strong);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M10 12v6"/><path d="M14 12v6"/><path d="M10 15h4"/></svg>
+        ${t('exportPDF')}
+      </button>
+    </div>
+    <div style="font-size:11px;color:var(--text-hint);margin-top:10px;">
+      ${t('exportPDFHint')}
+    </div>
+  </div>`;
+}
 
 // ── Wire events for the export card ───────────────────────────────────────────
 export function wireExportCard() {

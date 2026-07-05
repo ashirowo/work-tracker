@@ -51,6 +51,10 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
                                                       from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, deleteDoc, serverTimestamp }
                                                       from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+// Shared storage-key constants — the single source of truth these keys used to
+// be manually kept in sync with (they were duplicated as literals in app.js and
+// export.js). Now all three modules reference core/constants.
+import { LS } from './core/constants.js';
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 const firebaseApp = initializeApp(FIREBASE_CONFIG);
@@ -63,16 +67,18 @@ let _currentUser  = null;   // Firebase User object, or null
 let _syncTimer    = null;   // debounce handle for push
 let _syncPending  = false;  // true if a push is queued
 
-// Keys we sync between localStorage and Firestore
-// These must match the localStorage keys used in app.js
+// Keys we sync between localStorage and Firestore. Sourced from the shared LS
+// map so a key rename in core/constants propagates here automatically.
 const SYNC_KEYS = {
-  logs:     'wt4_logs',
-  shifts:   'wt4_shifts',
-  wages:    'wt4_wages',
-  lang:     'wt4_lang',
-  theme:    'wt4_theme',
-  holAuto:  'wt4_hol_auto',
-  taxRate:  'wt4_tax_rate',
+  logs:      LS.logs,
+  shifts:    LS.shifts,
+  wages:     LS.wages,
+  lang:      LS.lang,
+  theme:     LS.theme,
+  holAuto:   LS.holAuto,
+  taxRate:   LS.taxRate,
+  dedMode:   LS.deductionMode,
+  insurance: LS.insurance,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -125,14 +131,25 @@ async function pullFromCloud(uid) {
       if (cloud.theme   !== undefined) lsSet(SYNC_KEYS.theme,   cloud.theme);
       if (cloud.holAuto !== undefined) lsSet(SYNC_KEYS.holAuto, cloud.holAuto);
       if (cloud.taxRate !== undefined) lsSet(SYNC_KEYS.taxRate, cloud.taxRate);
+      if (cloud.dedMode !== undefined) lsSet(SYNC_KEYS.dedMode, cloud.dedMode);
+      if (cloud.insurance !== undefined) lsSet(SYNC_KEYS.insurance, cloud.insurance);
       lsSet('wt4_syncedAt', cloudTs);
       // Signal to completeOnboarding() that cloud data is now in localStorage,
       // so it should not overwrite wages/shifts with fresh onboarding defaults.
       lsSet('wt4_cloud_pulled', true);
-    } else {
-      // Local is same age or newer — push local up to cloud
-      console.log('[firebase] Local data is current — pushing to cloud.');
+      _setSyncStatus('synced');
+    } else if (_syncPending) {
+      // We have a genuine local change queued (from scheduleSync()) that
+      // hasn't been pushed yet — e.g. an edit made just before this reload.
+      // Push it now rather than losing it.
+      console.log('[firebase] Pending local change — pushing to cloud.');
       await pushToCloud(uid);
+    } else {
+      // Nothing changed on either side — this is the common "just reopened
+      // the app" case. Do NOT push: a push here would be a no-op write that
+      // only serves to bump updatedAt/wt4_syncedAt on every single reload.
+      console.log('[firebase] Already in sync — nothing to push.');
+      _setSyncStatus('synced');
     }
 
     // Re-render app with newly merged data — go through setCURRENT_USER
@@ -160,6 +177,8 @@ async function pushToCloud(uid) {
     theme:     lsGet(SYNC_KEYS.theme,   'dark'),
     holAuto:   lsGet(SYNC_KEYS.holAuto, true),
     taxRate:   lsGet(SYNC_KEYS.taxRate, 3.3),
+    dedMode:   lsGet(SYNC_KEYS.dedMode, 'tax'),
+    insurance: lsGet(SYNC_KEYS.insurance, {}),
     updatedAt: serverTimestamp(),
   };
 

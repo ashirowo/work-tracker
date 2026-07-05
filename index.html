@@ -12,9 +12,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=1.2.3">
-<link rel="manifest" href="./manifest.json?v=1.0.2">
-<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" referrerpolicy="no-referrer">
+<link rel="stylesheet" href="./style.css?v=2.1.0">
+<link rel="manifest" href="./manifest.json?v=2.1.0">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Shiftr">
 </head>
@@ -26,6 +27,48 @@
 </div>
 
 <div class="app" id="app"></div>
+
+<!-- First-run splash — a calm branded holding screen shown only while
+     data-onboarding="pending", covering the gap between first paint and the
+     onboarding overlay mounting. Removed by CSS the moment the overlay exists. -->
+<div class="ob-splash" id="ob-splash" aria-hidden="true">
+  <span class="ob-splash-mark">
+    <svg viewBox="0 0 72 72" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="obsp-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#7c93ff"/><stop offset="100%" stop-color="#a78bfa"/></linearGradient></defs>
+      <path d="M8.034 21.684Q5.928 21.684 4.316 20.93Q2.704 20.176 1.794 18.772Q0.884 17.368 0.884 15.392V14.664H4.264V15.392Q4.264 17.03 5.278 17.849Q6.292 18.668 8.034 18.668Q9.802 18.668 10.673 17.966Q11.544 17.264 11.544 16.172Q11.544 15.418 11.115 14.95Q10.686 14.482 9.867 14.183Q9.048 13.884 7.878 13.624L7.28 13.494Q5.408 13.078 4.069 12.441Q2.73 11.804 2.015 10.764Q1.3 9.724 1.3 8.06Q1.3 6.396 2.093 5.213Q2.886 4.03 4.329 3.393Q5.772 2.756 7.722 2.756Q9.672 2.756 11.193 3.419Q12.714 4.082 13.585 5.395Q14.456 6.708 14.456 8.684V9.464H11.076V8.684Q11.076 7.644 10.673 7.007Q10.27 6.37 9.516 6.071Q8.762 5.772 7.722 5.772Q6.162 5.772 5.421 6.357Q4.68 6.942 4.68 7.956Q4.68 8.632 5.031 9.1Q5.382 9.568 6.084 9.88Q6.786 10.192 7.878 10.426L8.476 10.556Q10.426 10.972 11.869 11.622Q13.312 12.272 14.118 13.338Q14.924 14.404 14.924 16.068Q14.924 17.732 14.079 18.993Q13.234 20.254 11.687 20.969Q10.14 21.684 8.034 21.684Z" fill="url(#obsp-g)" transform="translate(19.4 10.75) scale(2.05)"/>
+    </svg>
+  </span>
+</div>
+
+<!-- First-run guard — runs synchronously before the deferred app module so the
+     calendar shell never flashes for a user who hasn't finished onboarding. It
+     sets data-onboarding on <html>; CSS then hides #app and shows a splash until
+     app.js mounts the overlay (which clears the attribute). Mirrors the exact
+     "already onboarded?" test in app.js's initOnboarding(). -->
+<script>
+(function () {
+  'use strict';
+  try {
+    var done = localStorage.getItem('wt4_onboarding') === 'done';
+    var active = localStorage.getItem('wt4_ob_state') !== null;
+    var hasData = false;
+    if (!active) {
+      // Cheap presence checks — mirror initOnboarding()'s hasData test.
+      var logs = localStorage.getItem('wt4_logs');
+      var shifts = localStorage.getItem('wt4_shifts');
+      hasData = (localStorage.getItem('wt4_wages') !== null) ||
+                (localStorage.getItem('wt4_wage') !== null) ||
+                (logs && logs !== '{}') ||
+                (shifts && shifts !== '{}');
+    }
+    // Show the splash whenever onboarding will run: not done, and either a
+    // session is in progress or there's no pre-existing data to grandfather in.
+    if (!done && (active || !hasData)) {
+      document.documentElement.setAttribute('data-onboarding', 'pending');
+    }
+  } catch (e) { /* storage blocked — app.js will handle it */ }
+}());
+</script>
 
 <script>
 (function () {
@@ -50,6 +93,11 @@
 
   if (!('serviceWorker' in navigator)) return; // unsupported browser
 
+  // Was this page already being served BY a service worker when it loaded?
+  // On a first-ever visit this is null — there's nothing to "update" yet, so
+  // the SW taking control for the first time must not trigger a reload.
+  var hadController = !!navigator.serviceWorker.controller;
+
   window.addEventListener('load', function () {
     navigator.serviceWorker.register('./sw.js', { scope: './' })
       .then(function (reg) {
@@ -69,15 +117,20 @@
         console.warn('[SW] Registration failed:', err);
       });
 
-    // When a new SW takes over, reload the page so all assets are fresh.
+    // When a new SW takes over an ALREADY-controlled page, reload so all
+    // assets are fresh. Skip the reload on a first-time install: clients.claim()
+    // fires controllerchange even when there was no prior controller, and
+    // reloading in that case just repeats the same first load pointlessly
+    // (the double/triple-load-on-first-visit bug).
     var refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadController) { hadController = true; return; }
       if (!refreshing) { refreshing = true; window.location.reload(); }
     });
   });
 }());
 </script>
 
-<script type="module" src="./app.js?v=1.3.0"></script>
+<script type="module" src="./app.js?v=2.1.0"></script>
 </body>
 </html>

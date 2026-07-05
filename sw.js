@@ -29,7 +29,7 @@
 //  The old cache is deleted in the `activate` handler so stale files are purged.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CACHE_VERSION   = 'wt4-v35';
+const CACHE_VERSION   = 'wt4-v41';
 const SHELL_CACHE     = `${CACHE_VERSION}-shell`;
 const FONT_CACHE      = `${CACHE_VERSION}-fonts`;
 const CDN_CACHE       = `${CACHE_VERSION}-cdn`;
@@ -47,6 +47,12 @@ const SHELL_ASSETS = [
   './firebase.js',
   './translations.js',
   './export.js',
+  './onboarding.js',
+  './core/constants.js',
+  './core/datetime.js',
+  './core/storage.js',
+  './core/payroll.js',
+  './core/holidays.js',
   './manifest.json',
   './logo-dark.svg',
   './logo-light.svg',
@@ -82,57 +88,47 @@ const FIREBASE_ORIGINS   = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// INSTALL — pre-cache ONLY the app shell, then skip waiting immediately.
-//
-// CDN assets (Firebase, jsPDF, etc.) are intentionally NOT fetched here.
-// Fetching large external URLs during install causes Samsung Internet and
-// some other browsers to hang the SW in 'installing' forever if any request
-// stalls. CDN assets are instead cached lazily on first fetch (cacheFirst
-// strategy falls through to network and stores the response).
+// INSTALL — pre-cache the app shell and CDN assets
 // ─────────────────────────────────────────────────────────────────────────────
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(SHELL_CACHE)
-      .then(cache => cache.addAll(SHELL_ASSETS))
-      .catch(err => console.warn('[SW] Shell pre-cache partial failure:', err))
-      .then(() => {
-        console.log('[SW] Install complete — skipping wait.');
-        return self.skipWaiting();
-      })
+    Promise.all([
+      // Cache app shell
+      caches.open(SHELL_CACHE).then(cache =>
+        cache.addAll(SHELL_ASSETS).catch(err =>
+          console.warn('[SW] Shell pre-cache partial failure:', err)
+        )
+      ),
+      // Cache CDN assets — fail individually so one bad URL doesn't block install
+      caches.open(CDN_CACHE).then(async cache => {
+        for (const url of CDN_ASSETS) {
+          try {
+            const res = await fetch(url, { mode: 'cors' });
+            if (res.ok) await cache.put(url, res);
+          } catch (e) {
+            console.warn('[SW] CDN pre-cache skipped (offline?):', url);
+          }
+        }
+      }),
+    ]).then(() => self.skipWaiting())
   );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ACTIVATE — delete old caches, claim clients, warm CDN cache in background
+// ACTIVATE — delete old caches, take control of all clients immediately
 // ─────────────────────────────────────────────────────────────────────────────
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys()
-      .then(keys =>
-        Promise.all(
-          keys
-            .filter(k => !ALL_CACHES.includes(k))
-            .map(k => {
-              console.log('[SW] Deleting old cache:', k);
-              return caches.delete(k);
-            })
-        )
+    caches.keys().then(keys =>
+      Promise.all(
+        keys
+          .filter(k => !ALL_CACHES.includes(k))
+          .map(k => {
+            console.log('[SW] Deleting old cache:', k);
+            return caches.delete(k);
+          })
       )
-      .then(() => self.clients.claim())
-      .then(() => {
-        // Warm CDN cache in the background AFTER activation — never blocks
-        // the page. Each URL is isolated so one failure can't affect others.
-        caches.open(CDN_CACHE).then(async cache => {
-          for (const url of CDN_ASSETS) {
-            try {
-              const res = await fetch(url, { mode: 'cors' });
-              if (res.ok) await cache.put(url, res);
-            } catch (e) {
-              console.warn('[SW] CDN warm-cache skipped:', url);
-            }
-          }
-        });
-      })
+    ).then(() => self.clients.claim())
   );
 });
 

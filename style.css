@@ -1,3 +1,52 @@
+/* ============================================================================
+   Shiftr — Work Shift Tracker  ·  stylesheet
+   ----------------------------------------------------------------------------
+   Organized into the major parts below (source order preserved so the cascade
+   and every theme/responsive override behave exactly as before). Search a part
+   by its ▛ KEY ▟ banner.
+
+   TABLE OF CONTENTS
+    1. RESET & TOKENS             Reset, design tokens (dark/light theme variables)
+    2. BASE                       Base elements (body, .app, backgrounds)
+    3. HEADER                     Header: brand, sign-in, control cluster, sync
+    4. STATS HERO                 Stats hero: pay card, mini cards, card tilt/tactility
+    5. OVERVIEW                   Overview tab: recent shifts, monthly breakdown, panels
+    6. NAV & CARDS                Tabs, sliding indicator, generic card
+    7. CALENDAR                   Calendar: grid, day cells, week pattern, status surfaces
+    8. LOGS & FORMS               Logs, info boxes, forms, calc preview
+    9. MODALS                     Modals: base, reset, wage (wm-*), shared chrome, buttons
+   10. EXPORT & SETTINGS          Export presets/ranges, settings, tax, scrollbar, toggles
+   11. AUTH & DROPDOWNS           Auth UI, header icon buttons, avatar, portal dropdowns
+   12. OVERVIEW EXTRAS            Overview tab extras, wage history, date input
+   13. CALENDAR LIGHT THEME       Calendar light-theme overrides
+   14. ONBOARDING                 Onboarding overlay: splash, stages, hero, option cards
+   15. TOASTS & OFFLINE           Undo toast, offline banner, offline sync/auth states
+   16. EXPORT CARD (STATBAR)      Export card stat bar
+   17. PROJECTED EARNINGS         Projected earnings hero card + embedded chart
+   18. STAT4 ROW                  4-stat card row + responsive variants
+   19. ALL-SHIFTS MODAL           All-shifts modal: panel, toolbar, sort dropdown, rows, pagination
+   20. DEDUCTION & S3 CARDS       Row grids, deduction cards, insurance, s3 base card system
+   21. WAGE TIMELINE & FORM       Wage timeline, add button, add/edit form, target/tax rings
+   22. HOLIDAY CREDIT             Holiday credit card
+   23. EXPORT CARD (FULL)         Export card: shell, chips, formats, ranges, dropdowns, button
+   24. RULES & DANGER ZONE        Wage calc rules card, danger zone, responsive
+   25. HOLIDAY CREDITS & MODAL    Upcoming holiday credits section + all-holidays modal
+   26. WORK-LOG MODAL v2          Work-log modal v2 (day-entry experience)
+   27. OVERVIEW MOTION            Overview entrance choreography, tactility, reduced-motion
+   ----------------------------------------------------------------------------
+   Notes:
+   • Theme tokens live in PART 1 (:root[data-theme=dark|light]).
+   • @keyframes are kept beside the components that use them (moving them away
+     from their explanatory comments would hurt maintainability, not help it).
+   • Some sections recur (e.g. two Export-card blocks, several Responsive
+     blocks): these are distinct components/breakpoints, not duplicates.
+   ============================================================================ */
+
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 1 · RESET & TOKENS
+   Reset, design tokens (dark/light theme variables)
+   ══════════════════════════════════════════════════════════════════════════════ */
 *{box-sizing:border-box;margin:0;padding:0}
 
 :root[data-theme="dark"]{
@@ -87,6 +136,11 @@
   --card-border-top:rgba(255,255,255,0.9);
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 2 · BASE
+   Base elements (body, .app, backgrounds)
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Base ── */
 body{
   font-family:'Inter',system-ui,sans-serif;
@@ -114,6 +168,11 @@ body{
 
 .app{max-width:880px;margin:0 auto;padding:20px 16px 40px}
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 3 · HEADER
+   Header: brand, sign-in, control cluster, sync
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Header ── */
 .hdr{
   position:relative;
@@ -353,6 +412,11 @@ body{
 }
 .theme-btn:hover{border-color:var(--border-strong);color:var(--text);transform:scale(1.05)}
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 4 · STATS HERO
+   Stats hero: pay card, mini cards, card tilt/tactility
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Stats Hero ── */
 :root[data-theme="dark"]{ --ring-track:rgba(255,255,255,0.08); }
 :root[data-theme="light"]{ --ring-track:rgba(99,115,177,0.12); }
@@ -688,6 +752,11 @@ body{
   .app{padding:14px 12px 32px}
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 5 · OVERVIEW
+   Overview tab: recent shifts, monthly breakdown, panels
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Calendar legend ── */
 .cal-legend{
   display:flex;gap:14px;margin-bottom:10px;flex-wrap:wrap;
@@ -929,6 +998,11 @@ body{
   .ov-bottom-row .ov-panel{ margin-bottom:0; }
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 6 · NAV & CARDS
+   Tabs, sliding indicator, generic card
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Tabs ── */
 .tab-row{
   display:flex;
@@ -1022,6 +1096,11 @@ body{
   color:var(--danger);
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 7 · CALENDAR
+   Calendar: grid, day cells, week pattern, status surfaces
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Calendar ── */
 .cal-hdr{
   display:grid;
@@ -1412,6 +1491,11 @@ body{
   flex-shrink:0;
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 8 · LOGS & FORMS
+   Logs, info boxes, forms, calc preview
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Logs ── */
 .log-item{
   display:flex;
@@ -1504,6 +1588,11 @@ body{
 }
 .cr.tax{color:var(--danger)}
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 9 · MODALS
+   Modals: base, reset, wage (wm-*), shared chrome, buttons
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Modal ── */
 body.modal-open{overflow:hidden;touch-action:none;}
 .modal-overlay{
@@ -2243,6 +2332,11 @@ body.modal-open{overflow:hidden;touch-action:none;}
 .sexp-bs-back:hover{background:rgba(255,255,255,0.14);color:var(--text);}
 [data-theme="light"] .sexp-bs-back{background:rgba(0,0,0,0.06);}
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 10 · EXPORT & SETTINGS
+   Export presets/ranges, settings, tax, scrollbar, toggles
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Preset list ── */
 .sexp-bs-presets{
   padding:4px 12px 16px;
@@ -2617,6 +2711,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   box-shadow:0 2px 10px rgba(0,210,190,0.15);
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 11 · AUTH & DROPDOWNS
+   Auth UI, header icon buttons, avatar, portal dropdowns
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Auth UI ── */
 .auth-btn{
   padding:7px 10px;
@@ -2807,6 +2906,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 /* ── Remove old lang-group styles that are superseded ── */
 /* .lang-group and .lang-btn are no longer rendered but keep rules harmless */
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 12 · OVERVIEW EXTRAS
+   Overview tab extras, wage history, date input
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Overview tab ─────────────────────────────────────────────────────────── */
 .ov-wrap{
   display:flex;
@@ -2885,6 +2989,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   color-scheme:light;
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 13 · CALENDAR LIGHT THEME
+   Calendar light-theme overrides
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Calendar light theme overrides — white foundation, elevation-based ── */
 [data-theme="light"] .cal-grid{
   background:#f5f6fa;
@@ -3080,6 +3189,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   opacity:0.65;
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 14 · ONBOARDING
+   Onboarding overlay: splash, stages, hero, option cards
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Onboarding overlay ─────────────────────────────────────────────────────── */
 /* ══════════════════════════════════════════════════════════════════════════════
    ONBOARDING — fullscreen first-run experience
@@ -3737,6 +3851,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 .exp-toast span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .exp-toast--visible{opacity:1;transform:translate(-50%, 0);}
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 15 · TOASTS & OFFLINE
+   Undo toast, offline banner, offline sync/auth states
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Interactive undo toast (week-shift flip) ────────────────────────────────
    Mirrors .exp-toast's placement/animation but carries a tappable Undo action.
    Sized and spaced for comfortable thumb use on mobile. */
@@ -3855,6 +3974,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 :root                 { --c-warn: #b45309; }
 [data-theme="light"]  { --c-warn: #92400e; }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 16 · EXPORT CARD (STATBAR)
+   Export card stat bar
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Export card ── */
 /* ── Export stat bar ───────────────────────────────────────────────────────── */
 .exp-stat-bar {
@@ -4006,6 +4130,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 .exp-select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
 .exp-select option { background-color: var(--input-bg); color: var(--text-muted); text-align: left; }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 17 · PROJECTED EARNINGS
+   Projected earnings hero card + embedded chart
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ══════════════════════════════════════════════════════════════════════════════
    OVERVIEW TAB — REDESIGNED LAYOUT
    ══════════════════════════════════════════════════════════════════════════════ */
@@ -4224,6 +4353,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   }
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 18 · STAT4 ROW
+   4-stat card row + responsive variants
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── 4-card stat row ── */
 /* ── 4-stat card row ── */
 .ov-stat4-row{
@@ -4530,6 +4664,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   flex-shrink:0;
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 19 · ALL-SHIFTS MODAL
+   All-shifts modal: panel, toolbar, sort dropdown, rows, pagination
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Panel header with "View all" — kept for other potential uses ── */
 .ov-panel-hdr{
   display:flex;
@@ -5268,6 +5407,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   }
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 20 · DEDUCTION & S3 CARDS
+   Row grids, deduction cards, insurance, s3 base card system
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ══════════════════════════════════════════════════════════════════════════════
    SETTINGS v2 — Exact mockup match
    ══════════════════════════════════════════════════════════════════════════════ */
@@ -5526,6 +5670,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   letter-spacing:0;
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 21 · WAGE TIMELINE & FORM
+   Wage timeline, add button, add/edit form, target/tax rings
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Wage timeline ── */
 .sw-timeline-scroll{
   /* Horizontal inset gives the active dot's glow (left) and the current row's
@@ -5982,6 +6131,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   .ded-body{animation:none;}
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 22 · HOLIDAY CREDIT
+   Holiday credit card
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Holiday Credit card — premium redesign ── */
 
 /* Larger icon badge variant */
@@ -6279,6 +6433,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 /* Legacy compat — .s3-hol-desc used elsewhere */
 .s3-hol-desc{font-size:12.5px;color:var(--text-muted);line-height:1.55;}
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 23 · EXPORT CARD (FULL)
+   Export card: shell, chips, formats, ranges, dropdowns, button
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Export card ── */
 /* ── Export card shell ── */
 .s3-card--export{
@@ -6689,6 +6848,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   color:var(--text-muted);margin-bottom:5px;
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 24 · RULES & DANGER ZONE
+   Wage calc rules card, danger zone, responsive
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Rules card ── */
 /* ── Wage Calc Rules card ── */
 .sr-header{
@@ -6924,6 +7088,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   .s3-hol-onbadge{font-size:9px;padding:2px 7px;}
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 25 · HOLIDAY CREDITS & MODAL
+   Upcoming holiday credits section + all-holidays modal
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ── Upcoming Holiday Credits section ──────────────────────────────────────── */
 .s3-hol-upc-section{
   margin-bottom:20px;
@@ -7214,6 +7383,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   .hol-modal-date{width:62px;}
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 26 · WORK-LOG MODAL v2
+   Work-log modal v2 (day-entry experience)
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ══ Work-log modal v2 — refined day-entry experience ═════════════════════════
    Reuses the app's glass vocabulary: existing .modal shell, .info-box, .mbadge,
    .s3-toggle, .btn-* stay untouched. Everything below is additive (wm2-). */
@@ -7232,7 +7406,7 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 /* When the overtime field is the only hours input (double shift), it spans full width */
 .wm2-hours-row--solo{grid-template-columns:1fr;}
 /* Overtime spans full width when it's the only hours input (double shift) */
-.wm2-hours-row{}
+.wm2-hours-row
 
 /* Reg-hours field collapses (rather than snapping via display:none) when the
    Double shift is selected, so the modal can resize smoothly around it. */
@@ -7487,6 +7661,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 }
 .wm2-note+.wm2-note{margin-top:2px;}
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PART 27 · OVERVIEW MOTION
+   Overview entrance choreography, tactility, reduced-motion
+   ══════════════════════════════════════════════════════════════════════════════ */
 /* ══════════════════════════════════════════════════════════════════════════
    Overview motion & micro-interactions
    One coordinated entrance (hero → stat cards → bottom panels), count-up

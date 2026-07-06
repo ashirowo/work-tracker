@@ -1456,6 +1456,19 @@ body{
   color:var(--warning);
   border-color:rgba(255,201,77,0.2);
 }
+/* Purple-accent variant — for informational notes that aren't actual warnings
+   (e.g. "you can log extra Sunday hours"). Uses the same purple as the button
+   gradients (--primary-2) instead of the yellow warning tint, which read as
+   too alarming/bright, especially in light mode. */
+.info-box.accent{
+  background:rgba(167,139,250,0.12);
+  color:var(--primary-2);
+  border-color:rgba(167,139,250,0.25);
+}
+:root[data-theme="light"] .info-box.accent{
+  background:rgba(139,92,246,0.08);
+  border-color:rgba(139,92,246,0.22);
+}
 
 /* ── Form ── */
 .fg{margin-bottom:12px}

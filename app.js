@@ -3626,7 +3626,7 @@ function buildModal(){
   if(sun){
     const autoSunQual=allWeekdaysLogged(date);
     bodyHTML=`<div class="info-box">${autoSunQual?t('sunAuto'):t('sunNotYet')}</div>
-    <div class="info-box warn" style="margin-top:0;">${t('sunWorkedInfo')}</div>
+    <div class="info-box accent" style="margin-top:0;">${t('sunWorkedInfo')}</div>
     ${buildRegOtRows(ms.shift)}
     ${previewHTMLShell}`;
   }else if(holDay){

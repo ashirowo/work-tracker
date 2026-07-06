@@ -1636,18 +1636,36 @@ body.modal-open{overflow:hidden;touch-action:none;}
 .modal--glass{
   position:relative;
   max-width:440px;
-  padding:22px 22px 20px;
+  padding:0;
   border-radius:24px;
-  /* overflow-y must stay scrollable — .modal already sets max-height:88vh +
-     overflow-y:auto, and this rule shares an element with .modal on every
-     wm-* dialog. A plain `overflow:hidden` here previously won the cascade
-     (later in the file, equal specificity) and clipped tall modals on small
-     screens instead of letting them scroll. overflow-x stays hidden so the
-     glow layer below still gets clipped to the rounded corners. */
-  overflow-x:hidden;
-  overflow-y:auto;
-  -webkit-overflow-scrolling:touch;
+  /* This element hosts the glow (.wm-glow) and glass highlight (::before) as
+     absolutely-positioned inset:0 layers. Those layers size themselves to
+     THIS box's own height — if this box scrolled its own content, the box's
+     "own height" would stay pinned to the visible viewport (max-height:88vh)
+     while content taller than that scrolled underneath, leaving the glow
+     covering only the first screenful and plain background behind the rest.
+     So this frame stays fixed-height and non-scrolling (mirrors .asm-modal),
+     and the actual scrolling happens one level down, in .wm-scroll — that
+     way the glow always spans the full visible card no matter how long the
+     content is or how far it's scrolled. */
+  max-height:88vh;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
   isolation:isolate;
+}
+/* The scrollable body — everything visible (header, divider, fields, actions)
+   lives in here, as a sibling after .wm-glow, so the glow/border chrome on
+   the fixed outer frame is unaffected by scroll position. Padding moved here
+   from .wm-modal so the glow/highlight layers can bleed edge-to-edge while
+   the actual content keeps its original inset. */
+.wm-scroll{
+  flex:1 1 auto;
+  min-height:0; /* let a flex child actually shrink & scroll instead of overflowing the column */
+  padding:22px 22px 20px;
+  overflow-y:auto;
+  overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
 }
 /* Layered radial lighting so the dialog reads as glass, not a flat rectangle */
 .wm-glow,
@@ -1916,8 +1934,9 @@ body.modal-open{overflow:hidden;touch-action:none;}
 }
 
 @media(max-width:560px){
-  .wm-modal{padding:20px 20px 18px;border-radius:22px;}
-  .wm-modal .wm-divider{margin-left:-20px;margin-right:-20px;}
+  .wm-scroll{padding:16px 14px 16px;}
+  .wm-modal{border-radius:22px;}
+  .wm-modal .wm-divider{margin-left:-14px;margin-right:-14px;}
   .wm-title{font-size:18px;}
   .wm-header-badge{width:42px;height:42px;}
   .wm-actions{flex-direction:column-reverse;}
@@ -1925,9 +1944,9 @@ body.modal-open{overflow:hidden;touch-action:none;}
 }
 
 /* ── Redesigned reset confirmation modal (rm-*) ── */
-.rm-modal{max-width:440px;padding:22px 22px 20px;}
+.rm-modal{max-width:440px;}
 @media(max-width:560px){
-  .rm-modal{padding:20px 20px 18px;border-radius:22px;}
+  .rm-modal{border-radius:22px;}
   .rm-panel,.rm-cloud-panel{padding:14px;}
   .rm-panel-intro{font-size:11.5px;margin-bottom:11px;}
   .rm-list{gap:9px;}

@@ -4,6 +4,10 @@
 // the call is a no-op and localStorage continues working as usual.
 import { signInWithGoogle, signOutUser, scheduleSync, getSyncStatus, deleteCloudData } from './firebase.js';
 import { TR, nightWeekdayEff, satNightEff, satDayEff } from './translations.js';
+import { calcWage as calcWageCore, buildRulesRows, calcDay as calcDayCore, classifyDay as classifyDayCore } from './calc.js';
+import { compileProfile, PRESET_ANSWERS, compileProfileV2, PRESET_ANSWERS_V2 } from './compile.js';
+import { DEFAULT_PROFILE, isUsableProfile } from './profile.js';
+import { needsNightSchedule, nightHoursOf } from './profile-v2.js';
 import { buildExportCard, wireExportCard, buildRows, exportCSV, exportPDF, showExportToast, monthsWithData as expMonthsWithData } from './export.js';
 
 // ── Auth state (global, set by firebase.js) ─────────────────────────────────
@@ -581,121 +585,968 @@ function allWeekdaysLogged(s){
 }
 
 // ── Wage calculation ──────────────────────────────────────────────────────────
-// calcSatLike: used for Saturday, Holidays (worked), and Sundays (worked).
-// mode: 'saturday' | 'holiday' | 'sunday' — controls display labels only, not formulas.
-function calcSatLike(shift,regHrs,otHrs,tr,mode){
-  let eff=0,notes=[];
-  // Pick label functions based on mode — formulas are identical regardless
-  const labelBase = mode==='holiday' ? (shift==='day'?tr.nHolDay:tr.nHolNight)
-                  : mode==='sunday'  ? (shift==='day'?tr.nSunDay:tr.nSunNight)
-                  :                    (shift==='day'?tr.nSatDay:tr.nSatNight);
-  const labelOT   = mode==='holiday' ? (shift==='day'?tr.nHolDayOT:tr.nHolNightOT)
-                  : mode==='sunday'  ? (shift==='day'?tr.nSunDayOT:tr.nSunNightOT)
-                  :                    (shift==='day'?tr.nSatDayOT:tr.nSatNightOT);
-  if(shift==='day'){
-    eff=satDayEff(regHrs);notes.push(labelBase(regHrs));
-    if(otHrs>0){const e=+(otHrs*1.5).toFixed(2);eff=+(eff+e).toFixed(2);notes.push(labelOT(otHrs));}
-  }else{
-    eff=satNightEff(regHrs);notes.push(labelBase(regHrs));
-    if(otHrs>0){const e=+(otHrs*2).toFixed(2);eff=+(eff+e).toFixed(2);notes.push(labelOT(otHrs));}
-  }
-  return{eff,notes};
+// Phase 1: the calculator moved VERBATIM to calc.js (single source of truth,
+// shared with export.js). This adapter keeps the original call signature so
+// every existing call site is untouched; it packages the app-side environment
+// (language, holiday set, shift inference, holAuto, active deduction) into the
+// explicit ctx that calc.js's pure implementation requires.
+// Phase 2a: the calculator is profile-driven. getProfile() reads wt4_profile
+// and falls back WHOLESALE to the default (today's rulebook) when absent or
+// unrecognized — every existing user is grandfathered with zero change.
+// wt4_profile does not sync yet; it joins SYNC_KEYS a release after the
+// merge:true fix in firebase.js has rolled out (see that file).
+function getProfile(){
+  const p = ld('wt4_profile', null);
+  return isUsableProfile(p) ? p : DEFAULT_PROFILE;
+}
+// Phase 4: projection primitives — every number the Overview projections use
+// now comes from an engine probe of the ACTIVE profile. The last hardcoded
+// rule constants (21.16/25.16/33.16/9.16) leave app.js with this change.
+// The representative day length is the profile's composite part hours.
+function probeHours(){
+  const p=getProfile();
+  return (p.composites&&p.composites.double&&p.composites.double.parts[0].hours)||8;
+}
+function engineDayClass(ds){ return classifyDayCore(ds, isHol(ds), getProfile()); }
+// Plain-base effective hours for a day (OT excluded), for the overtime split:
+// doubles use the full composite for the day's class; single shifts use the
+// WEEKDAY table regardless of day class — deliberately preserving the
+// historical definition of "base pay" the OT split has always used.
+function baseEffFor(ds, sh){
+  const profile=getProfile();
+  if(sh==='double')
+    return calcDayCore(profile,{dayClass:engineDayClass(ds),shift:'double',regHrs:0,otHrs:0,holCredit:isHolAuto()}).eff;
+  return calcDayCore(profile,{dayClass:'weekday',shift:sh,regHrs:probeHours(),otHrs:0,holCredit:false}).eff;
+}
+// Projection buckets: one per (shift × own-table class) + restday + holiday.
+// Aliased classes (workedAs) pool into their target's buckets — same formula,
+// same statistics. The default profile yields the historical six buckets.
+function bucketKeys(){
+  const p=getProfile(); const keys=[];
+  for(const cls of ['weekday','saturday']) if(!p.rates[cls].workedAs)
+    for(const sh of p.shifts) keys.push(sh+'|'+cls);
+  keys.push('restday','holiday'); return keys;
+}
+function bucketFor(ds){
+  const p=getProfile(); const cls=engineDayClass(ds);
+  if(cls==='restday'||cls==='holiday') return cls;
+  const pooled=(p.rates[cls].workedAs)||cls;
+  return shiftFor(ds)+'|'+pooled;
+}
+// Deterministic projection floor: a representative plain day of this bucket.
+function bucketDeterministicEff(bucket){
+  const profile=getProfile();
+  if(bucket==='restday')
+    return calcDayCore(profile,{dayClass:'restday',shift:profile.shifts[0],regHrs:0,otHrs:0,holCredit:false}).eff;
+  if(bucket==='holiday')
+    return calcDayCore(profile,{dayClass:'holiday',shift:profile.shifts[0],regHrs:0,otHrs:0,holCredit:isHolAuto()}).eff;
+  const i=bucket.indexOf('|');
+  return calcDayCore(profile,{dayClass:bucket.slice(i+1),shift:bucket.slice(0,i),regHrs:probeHours(),otHrs:0,holCredit:true}).eff;
 }
 
-function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride,holCreditOverride){
-  const shift=shiftOverride||shiftFor(dateStr);
-  const holDay=isHol(dateStr),sun=isSun(dateStr)&&!isHol(dateStr),sat=isSat(dateStr)&&!isHol(dateStr);
-  const tr=TR[S.lang];
-  let eff=0,notes=[];
-  // Resolve whether this holiday gets the 8h auto-base:
-  // Priority: per-day override (holCreditOverride) > global setting (isHolAuto())
-  const holCredit = holCreditOverride !== undefined ? holCreditOverride : isHolAuto();
+// ═════════════════════════════════════════════════════════════════════════════
+// Phase 5: pay-rules wizard — the authoring UI over compile.js.
+// Pure state → HTML → answers → compiled profile. Shared verbatim between the
+// onboarding step and the Settings "Edit pay rules" editor.
+// ═════════════════════════════════════════════════════════════════════════════
+// wiz strings ship in en+ko; the other locales fall back to English until
+// natively translated (flagged in the Phase 5 report).
+function wizT(lang,k){
+  const w=(TR[lang]&&TR[lang].wiz)||TR.en.wiz;
+  return w[k]!==undefined?w[k]:TR.en.wiz[k];
+}
+function WIZ_DEFAULT_RULES(){ return { preset:'kr-statutory-5plus', night:'idk', sat:'idk', hol:'idk', ot:'idk', rest:'idk' }; }
+// Answers from chip state. "I don't know" → Korean statutory defaults
+// (minimum-leaning, per the wizard answerability audit): night +50%, Saturday
+// same as weekdays, worked holidays ×1.5, OT ×1.5, paid rest day yes.
+function wizardAnswersFrom(rules){
+  if(rules.preset&&PRESET_ANSWERS_V2[rules.preset]){
+    const a=structuredClone(PRESET_ANSWERS_V2[rules.preset]);
+    // User configuration rides on top of preset pay rules:
+    if(rules.window) a.nightWindow={...rules.window};
+    return a;
+  }
+  const pick=(v,d)=>v==='idk'?d:v;
+  // Unanswered rules → Standard Korean workplace defaults (researched): night
+  // +50% (overlap), Saturday 1.5×, worked holiday 1.5×, OT 1.5×, paid rest day.
+  const night=pick(rules.night,1.5), sat=pick(rules.sat,1.5), hol=pick(rules.hol,1.5), ot=pick(rules.ot,1.5);
+  const rest=rules.rest==='idk'?true:!!rules.rest;
+  // Custom night uses OVERLAP mode (statutory-correct, schedule-driven). The
+  // stepper multiplier is the additive night premium (×1.5 → prem 0.5).
+  // Threshold rulebooks (the factory's 5.68h) arrive via presets only.
+  return {
+    v:2, shiftHours:8,
+    nightModel: night>1?'overlap':'none',
+    nightPrem: night>1?+(night-1).toFixed(4):0,
+    nightWindow: rules.window ? {...rules.window} : {start:'22:00',end:'06:00'},
+    saturday: sat>1?{extra:true,mult:sat}:{extra:false},
+    holiday: {paidCredit:true, creditHours:8, workedMult:hol},
+    otDay:ot, otNight:ot,
+    restDay:{dow:0,paidCredit:rest,hours:8},
+  };
+}
+function wizardProfileFrom(rules, pattern){
+  const answers=wizardAnswersFrom(rules);
+  // Attach the user's night schedule (asked once) so overlap mode can compute.
+  if(rules.schedule&&rules.schedule.night) answers.schedule={night:{...rules.schedule.night}};
+  const p=compileProfileV2(answers,{id:rules.preset||'custom'});
+  p.source={kind:rules.preset?'preset':'wizard',...(rules.preset?{presetId:rules.preset}:{}),answers};
+  return p;
+}
+// Reopen the wizard from a stored profile's source.answers (round-trip).
+function rulesStateFromProfile(profile){
+  const src=profile&&profile.source;
+  if(src&&src.kind==='preset'&&PRESET_ANSWERS_V2[src.presetId]){
+    // The Small-workplace and Legal-minimum presets no longer exist as
+    // choices — they weren't workplaces, just answer combinations. Reopen a
+    // profile saved with one of them as Customize with the closest chip values
+    // so the stored rules keep round-tripping.
+    if(src.presetId==='kr-small-under5'||src.presetId==='kr-legal-minimum'){
+      const st={...WIZ_DEFAULT_RULES(),preset:null};
+      if(src.presetId==='kr-small-under5'){ st.night=1;  st.sat=1; st.hol=1;  st.ot=1;  st.rest=true; }
+      else                                { st.night=1.5;st.sat=1; st.hol=1.5;st.ot=1.5;st.rest=true; }
+      if(src.answers&&src.answers.schedule) st.schedule=src.answers.schedule;
+      const w0=src.answers&&src.answers.nightWindow;
+      if(w0&&(w0.start!=='22:00'||w0.end!=='06:00')) st.window={...w0};
+      return st;
+    }
+    const st={...WIZ_DEFAULT_RULES(),preset:src.presetId};
+    if(src.answers&&src.answers.schedule) st.schedule=src.answers.schedule;
+    const w=src.answers&&src.answers.nightWindow;
+    if(w&&(w.start!=='22:00'||w.end!=='06:00')) st.window={...w};
+    return st;
+  }
+  const a=src&&src.answers;
+  if(!a) return WIZ_DEFAULT_RULES(); // grandfathered default profile
+  const isCustomWin=a.nightWindow&&(a.nightWindow.start!=='22:00'||a.nightWindow.end!=='06:00');
+  const st={
+    preset:null,
+    night:(a.nightModel&&a.nightModel!=='none')?+(1+(a.nightPrem||0)).toFixed(2):1,
+    sat:a.saturday&&a.saturday.extra?a.saturday.mult:1,
+    hol:(a.holiday&&a.holiday.workedMult)!==undefined?a.holiday.workedMult:1.5,
+    ot:(a.otDay!=null)?a.otDay:1.5,
+    rest:!!(a.restDay&&a.restDay.paidCredit),
+  };
+  if(a.schedule) st.schedule=a.schedule;
+  if(isCustomWin) st.window={...a.nightWindow};
+  return st;
+}
+// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+// The workplace form \u2014 a configuration panel, not a form. Shared verbatim by
+// onboarding step 3 and the Settings "Edit workplace" modal.
+//
+// RENDERS ONCE. Every interaction after mount is a surgical DOM update: class
+// toggles for selection, textContent swaps for the live preview, and animated
+// grid-row FOLDS for the progressive sections (Customize questions, the night
+// panel, the unpaid break). The form is never re-rendered, so scroll position,
+// focus, and the glass panels never jump.
+//
+// Context-aware: pass {pattern:'day'} and everything night-related \u2014 the night
+// question, the schedule panel, the night preview line \u2014 simply doesn't exist.
+// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+const WZI={
+  factory:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>',
+  std:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>',
+  custom:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>',
+  check:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>',
+  moon:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
+  prem:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
+  info:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+  coffee:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>',
+  spark:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+  cal:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+  sun:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>',
+  clock:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  rest:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 12a11.05 11.05 0 0 0-22 0zm-5 7a3 3 0 0 1-6 0v-7"/></svg>',
+  minus:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  plus:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  // Split-onboarding additions: preset-card + section glyphs
+  users:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  gear:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  restore:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>',
+  office:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/></svg>',
+  shield:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  cycle:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14"/></svg>',
+  lock:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+  arrowR:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>',
+};
+// \u2500\u2500 Rate steppers \u2014 the Customize interaction \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Each pay rule is one row: icon \u00b7 label \u00b7 plain-language caption ("+50%") \u00b7
+// a \u00d7-multiplier stepper that snaps along a \u00d70.25 detent grid. Legacy profiles
+// may hold off-grid multipliers (\u00d71.6), so a step first snaps to the grid in
+// the direction of travel instead of drifting by a fixed increment.
+const WZ_STEP={min:1,max:5,inc:0.25};
+function wzStepNext(v,dir){
+  const q=v/WZ_STEP.inc, eps=1e-9;
+  const n=dir>0?Math.floor(q+eps)+1:Math.ceil(q-eps)-1;
+  return Math.min(WZ_STEP.max,Math.max(WZ_STEP.min,+(n*WZ_STEP.inc).toFixed(2)));
+}
+// Display value: unanswered ('idk') renders \u2014 and saves \u2014 as the Korean
+// standard default, so what the row shows is exactly what saving compiles.
+function wzRuleVal(st,q){ return typeof st[q]==='number'?st[q]:1.5; }
+function wzRestOn(st){ return st.rest==='idk'?true:!!st.rest; }
+function wzFmtMult(v){ return '\u00d7'+(+v.toFixed(2)); }
+function wzCapText(lang,v){ return v>1?`+${Math.round((v-1)*100)}%`:wizT(lang,'cNone'); }
+// Break durations tick within [0, 4h]: the total in 15-minute detents, the
+// night portion in finer 5-minute detents (the overlap is fiddly to get exact).
+// Legacy profiles may hold off-grid minute counts, so a step snaps to the grid
+// in the direction of travel (same rule as the rate steppers).
+const WZ_BRK={min:0,max:240,inc:15,incNight:5};
+function wzDurNext(v,dir,inc){
+  inc=inc||WZ_BRK.inc;
+  const q=v/inc, eps=1e-9;
+  const n=dir>0?Math.floor(q+eps)+1:Math.ceil(q-eps)-1;
+  return Math.min(WZ_BRK.max,Math.max(WZ_BRK.min,Math.round(n*inc)));
+}
+function wzFmtDur(lang,min){ return wizT(lang,'dur')(Math.floor(min/60),min%60); }
+// Current break state, normalized: night portion defaults to "all of it" (a
+// night shift's break usually falls at night) and can never exceed the total.
+function wzBreakOf(n){
+  const tot=Math.max(0,n&&n.breakMin||0);
+  const night=Math.min(tot,(n&&n.breakNightMin!=null)?Math.max(0,n.breakNightMin):tot);
+  return {tot,night};
+}
+// One-time migration of older stored break forms into the duration pair the UI
+// authors, derived through the SAME engine math that priced them \u2014 so the
+// converted numbers reproduce the exact night/plain hours the user was paid:
+//  \u2022 anchored {start,end} \u2192 total minutes inside the shift + minutes that fell
+//    in premium runs;
+//  \u2022 bare breakMin (count-only, plain-first) \u2192 its effective night portion.
+function wzNormBreak(st){
+  const n=st.schedule&&st.schedule.night;
+  if(!n) return;
+  const win=st.window||{start:'22:00',end:'06:00'};
+  const anchored=n.break&&n.break.start&&n.break.end;
+  if(!anchored&&!((n.breakMin||0)>0&&n.breakNightMin==null)) return;
+  const nh0=nightHoursOf({start:n.start,end:n.end},win);
+  const nh1=nightHoursOf(n,win);
+  if(nh0&&nh1){
+    n.breakNightMin=Math.max(0,Math.round((nh0.nightHours-nh1.nightHours)*60));
+    if(anchored)
+      n.breakMin=Math.max(0,Math.round((nh0.nightHours+nh0.plainHours-nh1.nightHours-nh1.plainHours)*60));
+  }
+  delete n.break;
+}
+function wzRuleRowHTML(lang,q,st){
+  const W=k=>wizT(lang,k);
+  if(q==='rest'){
+    const on=wzRestOn(st);
+    return `<div class="wz-rule">
+      <span class="wz-rule-ic">${WZI.rest}</span>
+      <span class="wz-rule-txt"><span class="wz-rule-t" id="wz-rest-label">${W('rRest')}</span><span class="wz-rule-c" data-wcap="rest">${W(on?'cYes':'cNo')}</span></span>
+      <button type="button" class="s3-toggle wz-rule-tog${on?' s3-toggle--on':''}" data-wrest role="switch" aria-checked="${on?'true':'false'}" aria-labelledby="wz-rest-label"><div class="s3-toggle-knob"></div></button>
+    </div>`;
+  }
+  const v=wzRuleVal(st,q);
+  const ic={night:WZI.moon,sat:WZI.cal,hol:WZI.sun,ot:WZI.clock}[q];
+  const t={night:'rNight',sat:'rSat',hol:'rHol',ot:'rOT'}[q];
+  return `<div class="wz-rule">
+    <span class="wz-rule-ic">${ic}</span>
+    <span class="wz-rule-txt"><span class="wz-rule-t" id="wz-rule-${q}">${W(t)}</span><span class="wz-rule-c${v>1?' wz-rule-c--on':''}" data-wcap="${q}">${wzCapText(lang,v)}</span></span>
+    <div class="wz-stp${v>1?' wz-stp--on':''}" data-wstp="${q}" role="group" aria-labelledby="wz-rule-${q}">
+      <button type="button" class="wz-stp-btn" data-wstep="${q}" data-wdir="-1" aria-label="${W('decA')}"${v<=WZ_STEP.min?' disabled':''}>${WZI.minus}</button>
+      <span class="wz-stp-v" data-wval="${q}" aria-live="polite">${wzFmtMult(v)}</span>
+      <button type="button" class="wz-stp-btn" data-wstep="${q}" data-wdir="1" aria-label="${W('incA')}"${v>=WZ_STEP.max?' disabled':''}>${WZI.plus}</button>
+    </div>
+  </div>`;
+}
+// Live preview rows: honest engine probes of the compiled profile — hours only
+// (the wage isn't known yet on the onboarding rules step). Attaches the
+// schedule exactly like wizardProfileFrom so the preview matches what SAVING
+// would produce (overlap-mode premium + break deduction, never a stale guess).
+// Day-pattern users get day-relevant probes instead of a night line.
+function wzPreviewRows(st,lang,pattern){
+  try{
+    const answers=wizardAnswersFrom(st);
+    if(pattern!=='day'&&st.schedule&&st.schedule.night) answers.schedule={night:{...st.schedule.night}};
+    const p=compileProfileV2(answers);
+    const g=(TR[lang]&&TR[lang].seg)||TR.en.seg;
+    const probe=(cls,sh,h,hc)=>g.num(+(calcDayCore(p,{dayClass:cls,shift:sh,regHrs:h,otHrs:0,holCredit:hc!==false}).eff).toFixed(2));
+    const W=k=>wizT(lang,k);
+    // The night probe uses the schedule's PAID hours (shift minus unpaid break)
+    // when overlap rules have one — so editing the times or toggling the break
+    // moves the number, exactly as it will move real pay. Threshold/preset
+    // rulebooks and day patterns keep the plain 8h probe.
+    let nightH=8;
+    if(p.night&&p.night.mode==='overlap'&&p.schedule&&p.schedule.night){
+      const nh=nightHoursOf(p.schedule.night,p.night.window);
+      if(nh) nightH=+((nh.plainHours+nh.nightHours).toFixed(2))||8;
+    }
+    const nightK=W('prevNightK').replace('8',g.num(nightH));
+    // Day-pattern users AND profiles without a night rule (all new Customize
+    // profiles) get day-relevant probes — a night line would just echo 8h→8h.
+    const hasNight=!!(p.night&&p.night.mode&&p.night.mode!=='none'&&p.night.prem);
+    return (pattern==='day'||!hasNight)
+      ?[{cls:'sat',  k:W('prevSatK'),  v:W('prevV')(probe('saturday','day',8))},
+        {cls:'hol',  k:W('prevHolK'),  v:W('prevV')(probe('holiday','day',8,false))}]
+      :[{cls:'night',k:nightK,         v:W('prevV')(probe('weekday','night',nightH))},
+        {cls:'sat',  k:W('prevSatK'),  v:W('prevV')(probe('saturday','day',8))}];
+  }catch(e){ return []; }
+}
+function wzPreviewHTML(st,lang,pattern){
+  const rows=wzPreviewRows(st,lang,pattern);
+  if(!rows.length) return '';
+  return `<div class="wz-pv-head"><span class="wz-pv-spark">${WZI.spark}</span>${wizT(lang,'prevTitle')}</div>
+    ${rows.map(r=>`<div class="wz-pv-row wz-pv-row--${r.cls}"><span class="wz-pv-k">${r.k}</span><span class="wz-pv-v" data-wz-pv="${r.cls}">${r.v}</span></div>`).join('')}`;
+}
+// Does the current chip state compile to an overlap-mode night profile that
+// needs the user's schedule? (Threshold presets like the factory never do.)
+function wizNeedsSchedule(st){
+  try{ return needsNightSchedule(compileProfileV2(wizardAnswersFrom(st))); }
+  catch(e){ return false; }
+}
+// The night panel: shift times, premium window, and the unpaid break.
+// No "do you work nights?" gate: this panel only unfolds when the workplace's
+// rules need a schedule, so it asks the times directly, prefilled with the
+// statutory 22:00–06:00 defaults. st.window stays IMPLICIT while the fields sit
+// at the default (the input handler deletes it when values return to
+// 22:00/06:00), preserving the "default window does not round-trip as custom"
+// invariant. The break is ANCHORED (start/end times, not minutes) so a break
+// overlapping the premium window is excluded from night-premium pay — see
+// nightHoursOf() in profile-v2.js.
+function wzSchedHTML(st,lang){
+  const W=k=>wizT(lang,k);
+  const n=(st.schedule&&st.schedule.night)||{start:'22:00',end:'06:00'};
+  const win=st.window||{start:'22:00',end:'06:00'};
+  const {tot,night:bn}=wzBreakOf(n);
+  const tf=(attr,k,val,label)=>`<label class="wz-tf"><span>${label}</span><input type="time" class="wz-time" data-${attr}="${k}" value="${val}"></label>`;
+  const dstp=(kind,val,min,max,labelId)=>`<div class="wz-stp wz-stp--dur" role="group" aria-labelledby="${labelId}">
+      <button type="button" class="wz-stp-btn" data-wbrk="${kind}" data-wdir="-1" aria-label="${W('decA')}"${val<=min?' disabled':''}>${WZI.minus}</button>
+      <span class="wz-stp-v" data-wbrk-val="${kind}" aria-live="polite">${wzFmtDur(lang,val)}</span>
+      <button type="button" class="wz-stp-btn" data-wbrk="${kind}" data-wdir="1" aria-label="${W('incA')}"${val>=max?' disabled':''}>${WZI.plus}</button>
+    </div>`;
+  return `<div class="wz-sched">
+      <div class="wz-sched-grid">
+        <div class="wz-sched-sec">
+          <div class="wz-sched-head"><span class="wz-sched-ic">${WZI.moon}</span><span>${W('schedWhen')}</span></div>
+          <div class="wz-times">${tf('wz-sched','start',n.start,W('schedStart'))}${tf('wz-sched','end',n.end,W('schedEnd'))}</div>
+        </div>
+        <div class="wz-sched-sec">
+          <div class="wz-sched-head"><span class="wz-sched-ic">${WZI.prem}</span><span>${W('windowQ')}</span></div>
+          <div class="wz-times">${tf('wz-win','start',win.start,W('schedStart'))}${tf('wz-win','end',win.end,W('schedEnd'))}</div>
+        </div>
+      </div>
+      <div class="wz-break">
+        <div class="wz-rule wz-rule--sched">
+          <span class="wz-sched-ic">${WZI.coffee}</span>
+          <span class="wz-rule-txt"><span class="wz-rule-t wz-rule-t--sched" id="wz-brk-tot-l">${W('brkTot')}</span><span class="wz-rule-c">${W('brkTotSub')}</span></span>
+          ${dstp('tot',tot,WZ_BRK.min,WZ_BRK.max,'wz-brk-tot-l')}
+        </div>
+        <div class="wz-fold${tot>0?' wz-fold--open':''}" data-wz-fold="brknight">
+          <div class="wz-fold-in"><div class="wz-brk-night">
+            <div class="wz-rule wz-rule--sched">
+              <span class="wz-sched-ic">${WZI.moon}</span>
+              <span class="wz-rule-txt"><span class="wz-rule-t wz-rule-t--sched" id="wz-brk-n-l">${W('brkNight')}</span><span class="wz-rule-c">${W('brkNightSub')}</span></span>
+              ${dstp('night',bn,0,tot,'wz-brk-n-l')}
+            </div>
+            <div class="wz-brk-meter" aria-hidden="true"><div class="wz-brk-meter-fill" data-wbrk-meter style="width:${tot?Math.round(bn/tot*100):0}%"></div></div>
+          </div></div>
+        </div>
+      </div>
+      <div class="wz-sched-note"><span class="wz-sched-ic wz-sched-ic--hint">${WZI.info}</span><span>${W('schedHint')}</span></div>
+    </div>`;
+}
 
-  // ── Double shift ────────────────────────────────────────────────────────────
-  // Fixed formula regardless of day type — no regHrs/otHrs inputs.
-  // Weekday : 8 day  + nightWeekdayEff(8) night = 8 + 9.16 = 17.16... wait,
-  // per spec: weekday=21.16, sat=25.16, sun/hol=33.16 (holAuto ON) or 25.16 (holAuto OFF)
-  // 21.16 = 8 (day weekday) + 13.16 (sat night eff of 8) = correct
-  // 25.16 = 12 (sat day eff of 8) + 13.16 = correct
-  // 33.16 = 8 (auto) + 12 + 13.16 = correct (holAuto ON or Sunday)
-  // 25.16 on holiday with holAuto OFF = 12 + 13.16 (no auto base)
-  if(shift==='double'){
-    const nightEff=+(satNightEff(8)).toFixed(2); // 13.16
-    const dayWeekdayEff=8;
-    const daySatEff=+(8/8*12).toFixed(2);        // 12
-    if(sun||holDay){
-      // Sunday always gets 8h auto-credit (separate from holAuto setting).
-      // Holidays get 8h auto-credit only when holAuto is ON.
-      const hasAutoBase = sun || (holDay && holCredit);
-      if(hasAutoBase){
-        eff=+(8+daySatEff+nightEff).toFixed(2);  // 8+12+13.16=33.16
-        notes.push(tr.nDoubleHolSun);
+// ── Shared surgical-update helpers ───────────────────────────────────────────
+// Used by BOTH homes of the wizard state (the Settings all-in-one form and the
+// split onboarding screens): the animated fold + inert, the value pop, and the
+// row-sync routines that repaint steppers/captions/toggles from state.
+function wzFoldEl(el,open){
+  if(!el) return;
+  el.classList.toggle('wz-fold--open',!!open);
+  el.setAttribute('aria-hidden',open?'false':'true');
+  if(el.firstElementChild) el.firstElementChild.inert=!open;
+}
+function wzPopEl(el){ if(!el) return; el.classList.remove('wz-pop'); void el.offsetWidth; el.classList.add('wz-pop'); }
+function wzSyncRules(root,st,lang,animate){
+  ['night','sat','hol','ot'].forEach(q=>{
+    const v=wzRuleVal(st,q), txt=wzFmtMult(v);
+    const val=root.querySelector(`[data-wval="${q}"]`);
+    if(val&&val.textContent!==txt){ val.textContent=txt; if(animate) wzPopEl(val); }
+    const cap=root.querySelector(`[data-wcap="${q}"]`);
+    if(cap){ cap.textContent=wzCapText(lang,v); cap.classList.toggle('wz-rule-c--on',v>1); }
+    const stp=root.querySelector(`[data-wstp="${q}"]`);
+    if(stp) stp.classList.toggle('wz-stp--on',v>1);
+    root.querySelectorAll(`[data-wstep="${q}"]`).forEach(b=>{
+      b.disabled=+b.dataset.wdir<0?v<=WZ_STEP.min:v>=WZ_STEP.max;
+    });
+  });
+  const on=wzRestOn(st);
+  const tog=root.querySelector('[data-wrest]');
+  if(tog){ tog.classList.toggle('s3-toggle--on',on); tog.setAttribute('aria-checked',on?'true':'false'); }
+  const rc=root.querySelector('[data-wcap="rest"]');
+  if(rc) rc.textContent=wizT(lang,on?'cYes':'cNo');
+}
+function wzSyncBreak(root,st,lang,animate){
+  const {tot,night:bn}=wzBreakOf(st.schedule&&st.schedule.night);
+  const set=(kind,val,min,max)=>{
+    const el=root.querySelector(`[data-wbrk-val="${kind}"]`);
+    const txt=wzFmtDur(lang,val);
+    if(el&&el.textContent!==txt){ el.textContent=txt; if(animate) wzPopEl(el); }
+    root.querySelectorAll(`[data-wbrk="${kind}"]`).forEach(b=>{
+      b.disabled=+b.dataset.wdir<0?val<=min:val>=max;
+    });
+  };
+  set('tot',tot,WZ_BRK.min,WZ_BRK.max);
+  set('night',bn,0,tot);
+  const m=root.querySelector('[data-wbrk-meter]');
+  if(m) m.style.width=(tot?Math.round(bn/tot*100):0)+'%';
+  wzFoldEl(root.querySelector('[data-wz-fold="brknight"]'),tot>0);
+}
+
+function workplaceFormHTML(st,lang,opts){
+  const W=k=>wizT(lang,k);
+  const pattern=opts&&opts.pattern;
+  const isDay=pattern==='day';
+  // Top-level choices: Standard workplace, Iljitech (recommended), Customize.
+  // Customize opens the rate steppers directly — no sub-presets: "Small
+  // workplace" and "Legal minimum" aren't workplaces, they're answer combos.
+  // Same identity glyphs as the onboarding preset cards (office / users /
+  // sliders) so the modal reads as the same three choices.
+  const presets=[
+    {id:'kr-statutory-5plus',t:W('pStatutory'),s:W('pStatutorySub'),ic:WZI.office},
+    {id:'kr-factory-2shift', t:W('pFactory'),  s:W('pFactorySub'),  ic:WZI.users},
+    {id:null,                t:W('pCustom'),   s:W('pCustomSub'),   ic:WZI.custom},
+  ];
+  const choices=presets.map(p=>{
+    const active=p.id===null?!st.preset:st.preset===p.id;
+    return `<button type="button" class="wz-choice${active?' wz-choice--active':''}" data-wz-preset="${p.id??''}" role="radio" aria-checked="${active}">
+        <span class="wz-choice-ic">${p.ic}</span>
+        <span class="wz-choice-txt"><span class="wz-choice-t">${p.t}</span><span class="wz-choice-s">${p.s}</span></span>
+        <span class="wz-choice-check">${WZI.check}</span>
+      </button>`;
+  }).join('');
+  const customOpen=!st.preset;
+  // Day-pattern users never see the night rule (they can't earn it); everyone
+  // else gets it back as a stepper — the break panel below collects the two
+  // values that make the premium computable (total break + its night portion).
+  const qs=['night','sat','hol','ot','rest'].filter(q=>!(isDay&&q==='night'));
+  // Steppers show concrete values; materialize the defaults into the state so
+  // the rows display exactly what saving will compile (never a silent drift).
+  if(customOpen){
+    qs.forEach(q=>{ if(q!=='rest'&&typeof st[q]!=='number') st[q]=wzRuleVal(st,q); });
+    if(st.rest==='idk') st.rest=true;
+  }
+  // Older stored breaks (anchored times / bare counts) become the duration
+  // pair the panel edits — converted through the engine so pay is unchanged.
+  wzNormBreak(st);
+  const needSched=!isDay&&wizNeedsSchedule(st);
+  // The user is never asked WHETHER they work nights — the workplace's own pay
+  // rules (overlap-mode night premium) already say whether shift times are
+  // needed. Materialize the statutory default schedule into the state so the
+  // fields display exactly what saving will compile (never a silent mismatch).
+  if(needSched&&!(st.schedule&&st.schedule.night))
+    st.schedule={night:{start:'22:00',end:'06:00',breakMin:0}};
+  return `<div class="wz">
+    <div class="wz-choices" role="radiogroup" aria-label="${W('title')}">${choices}</div>
+    <div class="wz-fold${customOpen?' wz-fold--open':''}" data-wz-fold="custom">
+      <div class="wz-fold-in"><div class="wz-rules">
+        <div class="wz-rules-head">
+          <span class="wz-rules-eyebrow">${W('secRules')}</span>
+          <button type="button" class="wz-std" data-wz-std>${W('stdReset')}</button>
+        </div>
+        ${qs.map(q=>wzRuleRowHTML(lang,q,st)).join('')}
+      </div></div>
+    </div>
+    <div class="wz-fold${needSched?' wz-fold--open':''}" data-wz-fold="sched">
+      <div class="wz-fold-in">${wzSchedHTML(st,lang)}</div>
+    </div>
+    <div class="wz-preview" data-wz-preview aria-live="polite">${wzPreviewHTML(st,lang,pattern)}</div>
+  </div>`;
+}
+
+// Delegated wiring on a stable container. opts = { lang, pattern, onChange }.
+// onChange() fires after every state mutation (onboarding persists the session
+// there); ALL visual updates happen here, surgically — never a re-render.
+function wireWorkplaceForm(root,st,opts){
+  const lang=(opts&&opts.lang)||S.lang;
+  const pattern=opts&&opts.pattern;
+  const isDay=pattern==='day';
+  const changed=()=>{ if(opts&&opts.onChange) opts.onChange(); };
+  const foldByName=name=>root.querySelector(`[data-wz-fold="${name}"]`);
+  // Animated disclosure: grid-row fold + inert, so nothing inside a closed
+  // fold is focusable or clickable while it's visually collapsed.
+  const fold=wzFoldEl;
+  root.querySelectorAll('.wz-fold').forEach(f=>fold(f,f.classList.contains('wz-fold--open')));
+
+  const updatePreview=()=>{
+    const box=root.querySelector('[data-wz-preview]');
+    if(!box) return;
+    const rows=wzPreviewRows(st,lang,pattern);
+    // The row set is fixed per pattern — swap values in place with a soft pop.
+    let structural=!rows.length&&box.innerHTML!=='';
+    rows.forEach(r=>{
+      const v=box.querySelector(`[data-wz-pv="${r.cls}"]`);
+      if(!v){ structural=true; return; }
+      const k=v.previousElementSibling;
+      if(k&&k.textContent!==r.k) k.textContent=r.k;  // e.g. "8h night shift" → "7h…"
+      if(v.textContent!==r.v){ v.textContent=r.v; wzPopEl(v); }
+    });
+    if(structural) box.innerHTML=wzPreviewHTML(st,lang,pattern);
+  };
+  const syncSched=()=>{
+    const need=!isDay&&wizNeedsSchedule(st);
+    if(need&&!(st.schedule&&st.schedule.night)){
+      st.schedule={night:{start:'22:00',end:'06:00',breakMin:0}};
+      root.querySelectorAll('[data-wz-sched]').forEach(i=>{
+        i.value=st.schedule.night[i.dataset.wzSched]||'';
+      });
+    }
+    fold(foldByName('sched'),need);
+  };
+  const syncRules=animate=>wzSyncRules(root,st,lang,animate);
+  const syncBreak=animate=>wzSyncBreak(root,st,lang,animate);
+
+  root.addEventListener('click',e=>{
+    // Workplace choice rows
+    const pv=e.target.closest('[data-wz-preset]');
+    if(pv&&root.contains(pv)){
+      const id=pv.dataset.wzPreset||null;
+      if((st.preset||null)===id) return;            // reselect → no-op, no flash
+      st.preset=id;
+      // Customize opens seeded with the Korean standard rates, ready to be
+      // nudged from there.
+      if(!id){ st.night=1.5;st.sat=1.5;st.hol=1.5;st.ot=1.5;st.rest=true; syncRules(false); }
+      root.querySelectorAll('[data-wz-preset]').forEach(b=>{
+        const on=(b.dataset.wzPreset||null)===id;
+        b.classList.toggle('wz-choice--active',on);
+        b.setAttribute('aria-checked',on?'true':'false');
+      });
+      fold(foldByName('custom'),!id);
+      syncSched(); updatePreview(); changed();
+      return;
+    }
+    // Rate steppers — snap one detent along the ×0.25 grid. The night rule
+    // can summon/dismiss the schedule panel, so re-check the sched fold.
+    const sb=e.target.closest('[data-wstep]');
+    if(sb&&root.contains(sb)){
+      const q=sb.dataset.wstep;
+      const v=wzStepNext(wzRuleVal(st,q),+sb.dataset.wdir);
+      if(v===wzRuleVal(st,q)) return;
+      st[q]=v;
+      syncRules(true); syncSched(); updatePreview(); changed();
+      return;
+    }
+    // Paid weekly rest day switch
+    const rt=e.target.closest('[data-wrest]');
+    if(rt&&root.contains(rt)){
+      st.rest=!wzRestOn(st);
+      syncRules(false); updatePreview(); changed();
+      return;
+    }
+    // "Reset to Korean standard" — every row springs back to the default
+    // (the break stays: it's a fact about the user's shift, not a pay rule)
+    const std=e.target.closest('[data-wz-std]');
+    if(std&&root.contains(std)){
+      if(!isDay) st.night=1.5;
+      st.sat=1.5;st.hol=1.5;st.ot=1.5;st.rest=true;
+      syncRules(true); syncSched(); updatePreview(); changed();
+      return;
+    }
+    // Break duration steppers — the total, and the portion inside the window
+    const bb=e.target.closest('[data-wbrk]');
+    if(bb&&root.contains(bb)){
+      if(!(st.schedule&&st.schedule.night)) st.schedule={night:{start:'22:00',end:'06:00',breakMin:0}};
+      const n=st.schedule.night;
+      const {tot,night:bn}=wzBreakOf(n);
+      const dir=+bb.dataset.wdir;
+      if(bb.dataset.wbrk==='tot'){
+        const nt=wzDurNext(tot,dir);
+        if(nt===tot) return;
+        n.breakMin=nt;
+        // "All of it at night" is sticky: the night portion tracks the total
+        // until the user explicitly lowers it — after that it only clamps.
+        n.breakNightMin=(bn===tot)?nt:Math.min(bn,nt);
       }else{
-        // holAuto OFF on a holiday (not a plain sunday): no 8h auto base
-        eff=+(daySatEff+nightEff).toFixed(2);    // 12+13.16=25.16
-        notes.push(tr.nDoubleHolSunNoAuto||tr.nDoubleSat);
+        const nn=Math.min(wzDurNext(bn,dir,WZ_BRK.incNight),tot);
+        if(nn===bn) return;
+        n.breakNightMin=nn;
       }
-    }else if(sat){
-      eff=+(daySatEff+nightEff).toFixed(2);      // 12+13.16=25.16
-      notes.push(tr.nDoubleSat);
+      syncBreak(true); updatePreview(); changed();
+      return;
+    }
+  });
+
+  root.addEventListener('input',e=>{
+    const t=e.target;
+    if(t.matches('[data-wz-win]')){
+      if(!st.window) st.window={start:'22:00',end:'06:00'};
+      if(t.value) st.window[t.dataset.wzWin]=t.value;
+      // Back at the statutory default → drop the custom marker so the default
+      // window stays implicit (it must never round-trip as "custom").
+      if(st.window.start==='22:00'&&st.window.end==='06:00') delete st.window;
+      updatePreview(); changed(); return;
+    }
+    if(t.matches('[data-wz-sched]')){
+      if(!(st.schedule&&st.schedule.night)) st.schedule={night:{start:'22:00',end:'06:00',breakMin:0}};
+      if(t.value) st.schedule.night[t.dataset.wzSched]=t.value;
+      updatePreview(); changed(); return;
+    }
+  });
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Split onboarding screens — the wizard state authored across TWO focused pages
+// instead of the Settings modal's all-in-one panel.
+//   • Workplace & Pay Rules (obxWorkplaceHTML/obxWireWorkplace): WHAT the
+//     workplace pays — preset cards, and the rate steppers under Customize.
+//   • Night Schedule (obxNightHTML/obxWireNight): WHEN those rules apply —
+//     shift times, premium window, unpaid breaks, and a live timeline preview.
+// Both mutate the SAME rules state the Settings form edits, through the same
+// helpers, so a profile authored here round-trips into "Edit workplace" intact.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// Does this rules state make the Night Schedule page worth showing? Only
+// overlap-mode night premiums are schedule-driven — day patterns, threshold
+// rulebooks (the factory preset) and ×1 night rates have nothing to ask.
+function obxNeedsSchedPage(st,pattern){
+  return pattern!=='day' && wizNeedsSchedule(st);
+}
+
+function obxWorkplaceHTML(st,lang,pattern){
+  const W=k=>wizT(lang,k);
+  const isDay=pattern==='day';
+  // Three distinct workplace PROFILES, not settings rows: each card carries an
+  // accent-tinted identity tile, a short pitch, and exactly THREE concrete
+  // feature badges so the differences read at a glance (one compact row on
+  // mobile). Order everywhere: Standard, Iljitech, Customize.
+  const cards=[
+    {id:'kr-statutory-5plus',cls:' wpx-card--std',   ic:WZI.office,t:W('pStatutory'),s:W('pStatutorySub'),
+     feats:[[WZI.shield,W('fStd1')],[WZI.cal,W('fStd2')],[WZI.rest,W('fStd3')]]},
+    {id:'kr-factory-2shift', cls:' wpx-card--rec',   ic:WZI.users, t:W('pFactory'),  s:W('pFactorySub'),
+     feats:[[WZI.moon,W('fFac1')],[WZI.cal,W('fFac2')],[WZI.sun,W('fFac4')]]},
+    {id:null,                cls:' wpx-card--custom',ic:WZI.custom,t:W('pCustom'),   s:W('pCustomSub'),
+     feats:[[WZI.custom,W('fCus1')],[WZI.clock,W('fCus2')],[WZI.gear,W('fCus3')]]},
+  ];
+  const customOpen=!st.preset;
+  const qs=['night','sat','hol','ot','rest'].filter(q=>!(isDay&&q==='night'));
+  // Steppers show concrete values; materialize the defaults into the state so
+  // the rows display exactly what saving will compile (never a silent drift).
+  if(customOpen){
+    qs.forEach(q=>{ if(q!=='rest'&&typeof st[q]!=='number') st[q]=wzRuleVal(st,q); });
+    if(st.rest==='idk') st.rest=true;
+  }
+  return `<div class="wpx" id="ob-wpx">
+    <div class="wpx-choices" role="radiogroup" aria-label="${W('title')}">
+      ${cards.map(c=>{
+        const active=c.id===null?!st.preset:st.preset===c.id;
+        return `<button type="button" class="wpx-card${c.cls}${active?' wpx-card--active':''}" data-wz-preset="${c.id??''}" role="radio" aria-checked="${active}">
+          <span class="wpx-radio" aria-hidden="true">${WZI.check}</span>
+          <span class="wpx-card-head">
+            <span class="wpx-card-ic">${c.ic}</span>
+            <span class="wpx-card-txt">
+              <span class="wpx-card-t">${c.t}</span>
+              <span class="wpx-card-s">${c.s}</span>
+            </span>
+          </span>
+          <span class="wpx-feats">
+            ${c.feats.map(([ic,txt])=>`<span class="wpx-feat">${ic}<span>${txt}</span></span>`).join('')}
+          </span>
+        </button>`;
+      }).join('')}
+    </div>
+    <div class="wz-fold${customOpen?' wz-fold--open':''}" data-wz-fold="custom">
+      <div class="wz-fold-in">
+        <div class="obs-sec wpx-rules">
+          <div class="obs-sec-head">
+            <span class="obs-sec-ic">${WZI.custom}</span>
+            <span class="obs-sec-t">${W('secRules')}</span>
+            <button type="button" class="wpx-restore" data-wz-std>${WZI.restore}<span>${W('restoreDefaults')}</span></button>
+          </div>
+          ${qs.map(q=>wzRuleRowHTML(lang,q,st)).join('')}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// Wiring for the Workplace & Pay Rules page. opts = { lang, pattern, onChange }.
+// Same render-once philosophy as wireWorkplaceForm: every interaction is a
+// class toggle, a textContent swap, or a fold — never a re-render.
+function obxWireWorkplace(root,st,opts){
+  const lang=(opts&&opts.lang)||S.lang;
+  const pattern=opts&&opts.pattern;
+  const isDay=pattern==='day';
+  const changed=()=>{ if(opts&&opts.onChange) opts.onChange(); };
+  root.querySelectorAll('.wz-fold').forEach(f=>wzFoldEl(f,f.classList.contains('wz-fold--open')));
+
+  root.addEventListener('click',e=>{
+    // Preset cards
+    const pv=e.target.closest('[data-wz-preset]');
+    if(pv&&root.contains(pv)){
+      const id=pv.dataset.wzPreset||null;
+      if((st.preset||null)===id) return;            // reselect → no-op, no flash
+      st.preset=id;
+      // Customize opens seeded with the Korean standard rates
+      if(!id){ st.night=1.5;st.sat=1.5;st.hol=1.5;st.ot=1.5;st.rest=true; wzSyncRules(root,st,lang,false); }
+      root.querySelectorAll('[data-wz-preset]').forEach(b=>{
+        const on=(b.dataset.wzPreset||null)===id;
+        b.classList.toggle('wpx-card--active',on);
+        b.setAttribute('aria-checked',on?'true':'false');
+      });
+      wzFoldEl(root.querySelector('[data-wz-fold="custom"]'),!id);
+      changed();
+      return;
+    }
+    // Rate steppers
+    const sb=e.target.closest('[data-wstep]');
+    if(sb&&root.contains(sb)){
+      const q=sb.dataset.wstep;
+      const v=wzStepNext(wzRuleVal(st,q),+sb.dataset.wdir);
+      if(v===wzRuleVal(st,q)) return;
+      st[q]=v;
+      wzSyncRules(root,st,lang,true); changed();
+      return;
+    }
+    // Paid weekly rest day switch
+    const rt=e.target.closest('[data-wrest]');
+    if(rt&&root.contains(rt)){
+      st.rest=!wzRestOn(st);
+      wzSyncRules(root,st,lang,false); changed();
+      return;
+    }
+    // Restore defaults
+    const std=e.target.closest('[data-wz-std]');
+    if(std&&root.contains(std)){
+      if(!isDay) st.night=1.5;
+      st.sat=1.5;st.hol=1.5;st.ot=1.5;st.rest=true;
+      wzSyncRules(root,st,lang,true); changed();
+      return;
+    }
+  });
+}
+
+// ── Night Schedule page — data + markup + wiring ─────────────────────────────
+// Everything the preview shows is engine truth: hours via nightHoursOf() (the
+// exact function that prices real shifts) and the effective total via a
+// calcDayCore probe of the compiled profile — never a hand-rolled estimate.
+function obxNightData(st){
+  const n=st.schedule&&st.schedule.night;
+  if(!n) return null;
+  const win=st.window||{start:'22:00',end:'06:00'};
+  const P=t=>{ const m=/^(\d{1,2}):(\d{2})$/.exec(t||''); return m?+m[1]*60+ +m[2]:null; };
+  const s=P(n.start),e0=P(n.end),ws=P(win.start),we0=P(win.end);
+  if(s==null||e0==null||ws==null||we0==null) return null;
+  let e=e0; if(e<=s)e+=1440;
+  let we=we0; if(we<=ws)we+=1440;
+  // Premium/plain runs over the shift timeline — same sweep as nightHoursOf.
+  const spans=[];
+  for(const off of [-1440,0,1440]){
+    const a=Math.max(s,ws+off),b=Math.min(e,we+off);
+    if(b>a) spans.push([a,b]);
+  }
+  spans.sort((x,y)=>x[0]-y[0]);
+  const runs=[]; let cur=s;
+  for(const [a,b] of spans){
+    if(a>cur) runs.push({prem:false,a:cur,b:a});
+    runs.push({prem:true,a,b}); cur=b;
+  }
+  if(cur<e) runs.push({prem:false,a:cur,b:e});
+  // Carve the unpaid break out of the tail of its runs (night portion from
+  // premium, remainder from plain, spill mirrors the engine's eat() order) so
+  // the bar shows break slices where the deduction actually lands.
+  const {tot,night:bn}=wzBreakOf(n);
+  const segs=runs.map(r=>({kind:r.prem?'prem':'plain',min:r.b-r.a}));
+  const carve=(kind,amt)=>{
+    for(let i=segs.length-1;i>=0&&amt>0;i--){
+      if(segs[i].kind!==kind||!segs[i].min) continue;
+      const take=Math.min(segs[i].min,amt);
+      segs[i].min-=take; amt-=take;
+      segs.splice(i+1,0,{kind:'brk',min:take});
+    }
+    return amt;
+  };
+  const nMin=Math.min(bn,tot);
+  let rem=carve('prem',nMin);
+  rem+=carve('plain',tot-nMin);
+  if(rem>0) carve('prem',carve('plain',rem));
+  const dur=e-s;
+  const fmt=m=>{ const mm=((m%1440)+1440)%1440; return String(Math.floor(mm/60)).padStart(2,'0')+':'+String(mm%60).padStart(2,'0'); };
+  // Clock labels at the run boundaries (positions are % of the shift).
+  let labels=[{at:0,t:fmt(s)}];
+  runs.forEach(r=>labels.push({at:(r.b-s)/dur*100,t:fmt(r.b)}));
+  labels=labels.filter((l,i)=>i===0||l.at-labels[i-1].at>=0.5);
+  // Prune middles that crowd the edges or each other (first/last always stay).
+  labels=labels.filter((l,i)=>i===0||i===labels.length-1||(l.at>=10&&l.at<=90));
+  const nh=nightHoursOf(n,win)||{plainHours:0,nightHours:0};
+  const paidH=+(nh.plainHours+nh.nightHours).toFixed(2);
+  let eff=paidH, mult=1;
+  try{
+    const answers=wizardAnswersFrom(st);
+    answers.schedule={night:{...n}};
+    const p=compileProfileV2(answers);
+    mult=1+((p.night&&p.night.prem)||0);
+    eff=+(calcDayCore(p,{dayClass:'weekday',shift:'night',regHrs:paidH,otHrs:0,holCredit:true}).eff).toFixed(2);
+  }catch(err){}
+  return {
+    segs:segs.filter(x=>x.min>0), dur, labels, tot, bn,
+    plainH:nh.plainHours, nightH:nh.nightHours,
+    paidH, eff, bonus:Math.max(0,+(eff-paidH).toFixed(2)), mult,
+    shiftTxt:`${n.start} – ${n.end}`,
+  };
+}
+function obxNightPreviewHTML(st,lang){
+  const W=k=>wizT(lang,k);
+  const d=obxNightData(st);
+  if(!d) return '';
+  const hU=v=>W('hUnit')(v);
+  return `
+    <div class="nsx-pv-shift">
+      <span class="nsx-pv-shift-k">${W('pvShift')}</span>
+      <span class="nsx-pv-shift-v">${d.shiftTxt}</span>
+      ${d.tot>0?`<span class="nsx-pv-shift-m">${W('brkTot')}: ${wzFmtDur(lang,d.tot)} · ${W('pvOverlap')}: ${wzFmtDur(lang,d.bn)}</span>`:''}
+    </div>
+    <div class="nsx-tl" aria-hidden="true">
+      <div class="nsx-tl-bar">
+        ${d.segs.map(sg=>`<i class="nsx-tl-seg nsx-tl-seg--${sg.kind}" style="width:${(sg.min/d.dur*100).toFixed(2)}%"></i>`).join('')}
+      </div>
+      <div class="nsx-tl-labels">
+        ${d.labels.map((l,i)=>`<span style="left:${l.at.toFixed(2)}%"${i===0?' data-edge="l"':i===d.labels.length-1?' data-edge="r"':''}>${l.t}</span>`).join('')}
+      </div>
+    </div>
+    <div class="nsx-leg">
+      <span><i class="nsx-leg-i nsx-leg-i--prem"></i>${W('legPrem')} (${hU(d.nightH)})</span>
+      <span><i class="nsx-leg-i nsx-leg-i--plain"></i>${W('legReg')} (${hU(d.plainH)})</span>
+      ${d.tot>0?`<span><i class="nsx-leg-i nsx-leg-i--brk"></i>${W('legBrk')} (${wzFmtDur(lang,d.tot)})</span>`:''}
+    </div>
+    <div class="nsx-earn">
+      <div class="nsx-earn-h">${W('earnTitle')}</div>
+      <div class="nsx-earn-r"><span class="nsx-earn-k nsx-earn-k--reg">${W('legReg')}</span><span class="nsx-earn-v">${hU(d.paidH)}</span></div>
+      <div class="nsx-earn-r"><span class="nsx-earn-k nsx-earn-k--night">${W('legPrem')}${d.mult>1?` <i class="nsx-earn-pct">+${Math.round((d.mult-1)*100)}%</i>`:''}</span><span class="nsx-earn-v">+${hU(d.bonus)}</span></div>
+      <div class="nsx-earn-total"><span>${W('earnTotal')}</span><span class="nsx-earn-big">${hU(d.eff)}</span></div>
+    </div>`;
+}
+function obxNightHTML(st,lang){
+  const W=k=>wizT(lang,k);
+  if(!(st.schedule&&st.schedule.night)) st.schedule={night:{start:'22:00',end:'06:00',breakMin:0}};
+  wzNormBreak(st);
+  const n=st.schedule.night;
+  const win=st.window||{start:'22:00',end:'06:00'};
+  const {tot,night:bn}=wzBreakOf(n);
+  const tfield=(attr,k,val,label)=>`<input type="time" class="wz-time" data-${attr}="${k}" value="${val}" aria-label="${label}">`;
+  const dstp=(kind,val,min,max,labelId)=>`<div class="wz-stp wz-stp--dur" role="group" aria-labelledby="${labelId}">
+      <button type="button" class="wz-stp-btn" data-wbrk="${kind}" data-wdir="-1" aria-label="${W('decA')}"${val<=min?' disabled':''}>${WZI.minus}</button>
+      <span class="wz-stp-v" data-wbrk-val="${kind}" aria-live="polite">${wzFmtDur(lang,val)}</span>
+      <button type="button" class="wz-stp-btn" data-wbrk="${kind}" data-wdir="1" aria-label="${W('incA')}"${val>=max?' disabled':''}>${WZI.plus}</button>
+    </div>`;
+  return `<div class="nsx" id="ob-nsx">
+    <div class="obs-sec obs-sec--night">
+      <div class="obs-sec-head">
+        <span class="obs-sec-ic obs-sec-ic--night">${WZI.moon}</span>
+        <span class="obs-sec-t">${W('secSched')}</span>
+      </div>
+      <div class="nsx-grid">
+        <div class="nsx-fgroup">
+          <span class="nsx-q">${W('schedWhen')}</span>
+          <div class="nsx-times">
+            ${tfield('wz-sched','start',n.start,W('schedStart'))}
+            <span class="nsx-times-sep">${WZI.arrowR}</span>
+            ${tfield('wz-sched','end',n.end,W('schedEnd'))}
+          </div>
+        </div>
+        <div class="nsx-fgroup">
+          <span class="nsx-q">${W('windowQ')}</span>
+          <div class="nsx-times">
+            ${tfield('wz-win','start',win.start,W('schedStart'))}
+            <span class="nsx-times-sep nsx-times-sep--dash">–</span>
+            ${tfield('wz-win','end',win.end,W('schedEnd'))}
+          </div>
+        </div>
+      </div>
+      <div class="nsx-note"><span class="wz-sched-ic wz-sched-ic--hint">${WZI.info}</span><span>${W('premNote')}</span></div>
+    </div>
+    <div class="obs-sec">
+      <div class="obs-sec-head">
+        <span class="obs-sec-ic">${WZI.coffee}</span>
+        <span class="obs-sec-t">${W('secBreaks')}</span>
+      </div>
+      <div class="wz-rule wz-rule--nsx">
+        <span class="wz-rule-txt"><span class="wz-rule-t" id="nsx-brk-tot-l">${W('brkTot')}</span><span class="wz-rule-c">${W('brkTotSub')}</span></span>
+        ${dstp('tot',tot,WZ_BRK.min,WZ_BRK.max,'nsx-brk-tot-l')}
+      </div>
+      <div class="wz-fold${tot>0?' wz-fold--open':''}" data-wz-fold="brknight">
+        <div class="wz-fold-in"><div class="nsx-brk-night">
+          <div class="wz-rule wz-rule--nsx">
+            <span class="wz-rule-txt"><span class="wz-rule-t" id="nsx-brk-n-l">${W('brkNight')}</span><span class="wz-rule-c">${W('brkNightSub')}</span></span>
+            ${dstp('night',bn,0,tot,'nsx-brk-n-l')}
+          </div>
+          <div class="wz-brk-meter" aria-hidden="true"><div class="wz-brk-meter-fill" data-wbrk-meter style="width:${tot?Math.round(bn/tot*100):0}%"></div></div>
+        </div></div>
+      </div>
+    </div>
+    <div class="obs-sec nsx-pv">
+      <div class="obs-sec-head">
+        <span class="obs-sec-ic">${WZI.spark}</span>
+        <span class="obs-sec-t">${W('prevTitle')}</span>
+        <span class="nsx-pv-tag">${W('pvTag')}</span>
+      </div>
+      <div class="nsx-pv-body" data-nsx-pv aria-live="polite">${obxNightPreviewHTML(st,lang)}</div>
+    </div>
+  </div>`;
+}
+
+// Wiring for the Night Schedule page. opts = { lang, onChange }.
+function obxWireNight(root,st,opts){
+  const lang=(opts&&opts.lang)||S.lang;
+  const changed=()=>{ if(opts&&opts.onChange) opts.onChange(); };
+  root.querySelectorAll('.wz-fold').forEach(f=>wzFoldEl(f,f.classList.contains('wz-fold--open')));
+  const refreshPreview=()=>{
+    const box=root.querySelector('[data-nsx-pv]');
+    if(box) box.innerHTML=obxNightPreviewHTML(st,lang);
+  };
+
+  root.addEventListener('click',e=>{
+    const bb=e.target.closest('[data-wbrk]');
+    if(!bb||!root.contains(bb)) return;
+    if(!(st.schedule&&st.schedule.night)) st.schedule={night:{start:'22:00',end:'06:00',breakMin:0}};
+    const n=st.schedule.night;
+    const {tot,night:bn}=wzBreakOf(n);
+    const dir=+bb.dataset.wdir;
+    if(bb.dataset.wbrk==='tot'){
+      const nt=wzDurNext(tot,dir);
+      if(nt===tot) return;
+      n.breakMin=nt;
+      // "All of it at night" is sticky: the night portion tracks the total
+      // until the user explicitly lowers it — after that it only clamps.
+      n.breakNightMin=(bn===tot)?nt:Math.min(bn,nt);
     }else{
-      eff=+(dayWeekdayEff+nightEff).toFixed(2);  // 8+13.16=21.16
-      notes.push(tr.nDoubleWeekday);
+      const nn=Math.min(wzDurNext(bn,dir,WZ_BRK.incNight),tot);
+      if(nn===bn) return;
+      n.breakNightMin=nn;
     }
-    // Extra hours worked after the double shift: 2× multiplier
-    if(otHrs>0){const e=+(otHrs*2).toFixed(2);eff=+(eff+e).toFixed(2);notes.push(tr.nNightOT(otHrs));}
-    const g=Math.round(eff*wage);return{gross:g,net:applyTax(g),eff,notes};
-  }
+    wzSyncBreak(root,st,lang,true); refreshPreview(); changed();
+  });
 
-  // Sunday: auto 8h base always; if worked (regHrs>0 or otHrs>0), calc like Saturday
-  if(sun){
-    const hasWork=(regHrs>0||otHrs>0);
-    if(hasWork){
-      // 8h auto-base + worked hours calculated like Saturday
-      notes.push(tr.nHolBase);// reuse "8h auto-credited" note
-      eff=8;
-      const worked=calcSatLike(shift,regHrs,otHrs,tr,'sunday');
-      // Sunday worked: the worked portion is on top of the 8h base
-      eff=+(8+worked.eff).toFixed(2);
-      notes.push(...worked.notes);
-    }else{
-      notes.push(tr.nSun);
-      eff=8;
+  root.addEventListener('input',e=>{
+    const t=e.target;
+    if(t.matches('[data-wz-win]')){
+      if(!st.window) st.window={start:'22:00',end:'06:00'};
+      if(t.value) st.window[t.dataset.wzWin]=t.value;
+      // Back at the statutory default → drop the custom marker so the default
+      // window stays implicit (it must never round-trip as "custom").
+      if(st.window.start==='22:00'&&st.window.end==='06:00') delete st.window;
+      refreshPreview(); changed(); return;
     }
-    const g=Math.round(eff*wage);return{gross:g,net:applyTax(g),eff,notes};
-  }
-
-  // Public Holiday: auto 8h base only when holCredit is true; worked hours always calc like Saturday
-  if(holDay){
-    if(holCredit){
-      notes.push(tr.nHolBase);
-      eff=8;
+    if(t.matches('[data-wz-sched]')){
+      if(!(st.schedule&&st.schedule.night)) st.schedule={night:{start:'22:00',end:'06:00',breakMin:0}};
+      if(t.value) st.schedule.night[t.dataset.wzSched]=t.value;
+      refreshPreview(); changed(); return;
     }
-    if(regHrs>0||otHrs>0){
-      const worked=calcSatLike(shift,regHrs,otHrs,tr,'holiday');
-      eff=+(eff+worked.eff).toFixed(2);
-      notes.push(...worked.notes);
-    }
-    const g=Math.round(eff*wage);return{gross:g,net:applyTax(g),eff,notes};
-  }
+  });
+}
 
-  // Saturday
-  if(sat){
-    const r=calcSatLike(shift,regHrs,otHrs,tr,'saturday');
-    eff=r.eff;notes=r.notes;
-    const g=Math.round(eff*wage);return{gross:g,net:applyTax(g),eff,notes};
-  }
-
-  // Normal weekday
-  if(shift==='day'){
-    eff=regHrs;notes.push(tr.nDay(regHrs));
-    if(otHrs>0){const e=+(otHrs*1.5).toFixed(2);eff=+(eff+e).toFixed(2);notes.push(tr.nDayOT(otHrs));}
-  }else{
-    // Night weekday: 5.68+(H-5.68)*1.5 when H>5.68
-    eff=nightWeekdayEff(regHrs);notes.push(tr.nNight(regHrs));
-    if(otHrs>0){const e=+(otHrs*2).toFixed(2);eff=+(eff+e).toFixed(2);notes.push(tr.nNightOT(otHrs));}
-  }
-  const g=Math.round(eff*wage);return{gross:g,net:applyTax(g),eff,notes};
+// Phase 3b: the "Wage Calculation Rules" card is generated from the ACTIVE
+// profile via engine probes — correct for any custom profile, not just the
+// factory default (verified against the legacy table by tests/rules-replay).
+function rulesRows(){
+  return buildRulesRows(getProfile(), TR[S.lang].seg,
+    { holAuto: isHolAuto(), dedPct: getActiveDeductionPct(), dedNoun: getDeductionNoun() });
+}
+function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride,holCreditOverride){
+  return calcWageCore(
+    { tr: TR[S.lang], holAuto: isHolAuto(), isHol, shiftFor, applyTax, profile: getProfile() },
+    dateStr, regHrs, otHrs, wage, shiftOverride, holCreditOverride
+  );
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -1644,7 +2495,7 @@ function buildCal(){
 function buildOverview(){
   const logs=getLogs(),todayStr=today();
   const allEntries=Object.entries(logs);
-  if(!allEntries.length) return`<div class="ov-empty">${t('ovNoData')}</div>`;
+  if(!allEntries.length) return buildOverviewEmpty();
 
   // ── Per-month aggregation ──────────────────────────────────────────────────
   // Mirrors buildStats() exactly: iterate every calendar day up to today,
@@ -1679,9 +2530,7 @@ function buildOverview(){
         // Overtime = earnings beyond the plain base for that day type
         const l=logs[ds];
         const sh=(l&&l.shiftOverride)||shiftFor(ds);
-        const baseEff=sh==='double'
-          ? ((isSun(ds)||isHol(ds)) ? (isHolAuto()||isSun(ds)?33.16:25.16) : isSat(ds) ? 25.16 : 21.16)
-          : sh==='night'?nightWeekdayEff(8):8;  // 9.16 derived, not hardcoded
+        const baseEff=baseEffFor(ds, sh); // engine probe of the active profile
         const basePay=applyTax(Math.round(Math.min(e,baseEff)*wageFor(ds)));
         m.overtimeNet+=Math.max(0,net-basePay);
         if(!m.topDay||net>m.topDay.net) m.topDay={ds,net,hrs:e};
@@ -1704,19 +2553,11 @@ function buildOverview(){
   //   'nightSat'     — Saturday, night shift, not a public holiday
   //   'sun'          — plain Sunday (always auto-credited)
   //   'holiday'      — public holiday (any day of week; auto-credit depends on holAuto)
-  // This mirrors how calcWage() actually branches, so each bucket's average
-  // reflects a single, internally-consistent pay formula. Saturdays are split
-  // by shift just like weekdays — satDayEff(8)=12 vs satNightEff(8)=13.16 are
-  // different formulas and must not be averaged together.
-  const BUCKET_KEYS=['dayWeekday','nightWeekday','daySat','nightSat','sun','holiday'];
-
-  function classifyDay(ds){
-    if(isHol(ds)) return 'holiday';
-    if(isSun(ds)) return 'sun';
-    const night=shiftFor(ds)==='night';
-    if(isSat(ds)) return night ? 'nightSat' : 'daySat';
-    return night ? 'nightWeekday' : 'dayWeekday';
-  }
+  // Buckets mirror the engine's rate cells, so each bucket's average reflects
+  // a single, internally-consistent pay formula (classes with their own tables
+  // split by shift; aliased classes pool with their target; rest days and
+  // holidays stand alone). See bucketKeys()/bucketFor() at top level.
+  const BUCKET_KEYS=bucketKeys(); // derived from the active profile (Phase 4)
 
   // Exponential-decay weighted average: more recent entries count more.
   // weight(daysAgo) = DECAY^daysAgo, normalized so weights sum to 1.
@@ -1750,7 +2591,7 @@ function buildOverview(){
     for(let d=1;d<=daysInMo;d++){
       const ds=mkds(y,mo,d);
       if(ds>cutoff) break;
-      const cls=classifyDay(ds);
+      const cls=bucketFor(ds);
       // Always use liveGross so projection averages reflect current wage history
       const g=autoGross(ds,logs);
       // Exclude double-shift days from the average — they're outliers that would
@@ -1796,16 +2637,7 @@ function buildOverview(){
   // that only applied to the combined sunhol bucket — now every bucket has a
   // deterministic floor.
   function deterministicEstimate(bucket, dateStr){
-    const w=wageFor(dateStr);
-    switch(bucket){
-      case 'dayWeekday':   return applyTax(Math.round(8*w));
-      case 'nightWeekday': return applyTax(Math.round(nightWeekdayEff(8)*w));
-      case 'daySat':       return applyTax(Math.round(satDayEff(8)*w));
-      case 'nightSat':     return applyTax(Math.round(satNightEff(8)*w));
-      case 'sun':          return applyTax(Math.round(8*w));
-      case 'holiday':      return applyTax(Math.round((isHolAuto()?8:0)*w));
-      default:             return 0;
-    }
+    return applyTax(Math.round(bucketDeterministicEff(bucket)*wageFor(dateStr)));
   }
 
   // Blend per-bucket averages: (confidence × current) + ((1-confidence) × previous),
@@ -1853,7 +2685,7 @@ function buildOverview(){
     const ds=mkds(curY,curMo,d);
     if(ds<=todayStr) continue;      // past/today already in curData.net
     if(logs[ds]) continue;          // manually logged future day already in curData.net
-    const cls=classifyDay(ds);
+    const cls=bucketFor(ds);
     const {avg,low,high}=blendAvg(cls, ds);
     remainder+=avg; remainderLow+=low; remainderHigh+=high;
   }
@@ -1870,6 +2702,14 @@ function buildOverview(){
   let bestYM=null,bestNet=0;
   months.forEach(ym=>{ if(monthData[ym].net>bestNet){bestNet=monthData[ym].net;bestYM=ym;} });
   const pastBestYM = bestYM===curYM ? (months.length>1?months.slice(0,-1).reduce((a,b)=>monthData[a].net>monthData[b].net?a:b):null) : bestYM;
+
+  // When the current month is the ONLY month with earnings there is no "past
+  // best" to compare against — but the Best Month card should still celebrate
+  // it rather than sit empty behind dashes. Treat the sole month as the current
+  // leader and badge it (below) so the missing comparison reads as intentional
+  // and the card promises the comparison becomes meaningful with more data.
+  const soleBestMonth = !pastBestYM && curData.net>0;
+  const bestMonthYM = pastBestYM || (soleBestMonth ? curYM : null);
 
   const mnames=t('mn');
   function fmtYM(ym){ const[y,m]=ym.split('-'); return`${mnames[parseInt(m)-1]} ${y}`; }
@@ -1983,8 +2823,8 @@ function buildOverview(){
       .reduce((best,m)=>monthData[m].net>best?monthData[m].net:best,0);
     if(_runnerUp>0) bestMonthDeltaPct=((_bestNet-_runnerUp)/_runnerUp*100);
   }
-  const bestMonthHrs=pastBestYM?monthData[pastBestYM].hrs:null;
-  const bestMonthDays=pastBestYM?monthData[pastBestYM].days:null;
+  const bestMonthHrs=bestMonthYM?monthData[bestMonthYM].hrs:null;
+  const bestMonthDays=bestMonthYM?monthData[bestMonthYM].days:null;
 
   // Best Single Day: hours worked on that day (captured in topDay above),
   // plus how far it sits above a typical working day, all-time.
@@ -2023,7 +2863,7 @@ function buildOverview(){
   // Signature of everything the count-ups display — initOverviewMotion() uses
   // it to tell "same data re-rendered" (snap, no motion) from "data changed".
   const ovSig=[curYM,projection,curData.net,curData.overtimeNet,curData.days,hrsWorked,hrsProgress,avgPerDay,
-    pastBestYM?monthData[pastBestYM].net:0,allTimeTopDay?allTimeTopDay.net:0,hrsRemaining.toFixed(1)].join('|');
+    bestMonthYM?monthData[bestMonthYM].net:0,allTimeTopDay?allTimeTopDay.net:0,hrsRemaining.toFixed(1)].join('|');
 
   // Animated-number span: renders the FINAL formatted value (so no-JS, reduced
   // motion, and prerender all read correctly) and stamps the numeric target +
@@ -2037,6 +2877,12 @@ function buildOverview(){
     const txt=pre+(dp?value.toFixed(dp):Math.round(value).toLocaleString())+suf;
     return`<span class="ov-num" data-k="${key}" data-t="${value}" data-dp="${dp}" data-pre="${pre}" data-suf="${suf}" data-delay="${o.delay||0}">${txt}</span>`;
   }
+
+  // Whether only the current month has been logged. In that case the trend chart
+  // keeps its exact layout but renders a "not enough history yet" state — one real
+  // point trailing into ghosted future months — instead of a normal multi-month
+  // line (see renderTrendChart). A caption over the empty region explains it.
+  const soloTrend = chartMonths.length < 2;
 
   return`<div class="ov-wrap${ovEnter?' ov-enter':''}" data-ovsig="${ovSig}">
 
@@ -2054,7 +2900,7 @@ function buildOverview(){
           const sign=pct>=0?'▲':'▼';
           const cls=pct>=0?'ov-proj-delta--up':'ov-proj-delta--down';
           const prevLabel=fmtYM(months[prevIdx]);
-          return`<div class="ov-proj-delta ${cls}">${sign} ${Math.abs(pct).toFixed(1)}% vs ${prevLabel}</div>`;
+          return`<div class="ov-proj-delta ${cls}">${sign} ${Math.abs(pct).toFixed(1)}% ${t('deltaFrom', prevLabel)}</div>`;
         })()}
         ${projectionHigh>projectionLow?`<div class="ov-proj-range">${t('ovEstRange',projectionLow,projectionHigh)}</div>`:''}
         <div class="ov-proj-stat-cards">
@@ -2074,15 +2920,16 @@ function buildOverview(){
           </div>
         </div>
       </div>
-      <!-- Right: chart panel -->
+      <!-- Right: chart panel — same component whatever the data volume -->
       <div class="ov-proj-chart-panel">
         <div class="ov-proj-chart-glow"></div>
         ${rangeOpts.length>1?`<div class="ov-chart-range ov-chart-range--floating">
           ${rangeOpts.map(o=>`<button class="ov-range-btn${S.chartRange===o.k?' ov-range-btn--active':''}" data-range="${o.k}">${o.label}</button>`).join('')}
         </div>`:''}
-        <div class="ov-proj-chart-wrap">
+        <div class="ov-proj-chart-wrap${soloTrend?' ov-proj-chart-wrap--solo':''}">
           <canvas id="ov-trend-chart"></canvas>
         </div>
+        ${soloTrend?`<div class="ov-chart-empty-note"><span class="ov-chart-empty-pill"><i class="fa-solid fa-arrow-trend-up"></i><span>${t('ovTrendLocked')}</span></span></div>`:''}
       </div>
     </div>
 
@@ -2131,22 +2978,24 @@ function buildOverview(){
       </div>
 
       <!-- Best Month -->
-      <div class="ov-stat4-card${pastBestYM?'':' ov-stat4-card--empty'} ov-stat4-card--gold">
+      <div class="ov-stat4-card${bestMonthYM?'':' ov-stat4-card--empty'} ov-stat4-card--gold">
         <div class="ov-stat4-header">
           <div class="ov-stat4-icon ov-stat4-icon--gold"><i class="fa-solid fa-trophy"></i></div>
           <div class="ov-stat4-header-text">
             <span class="ov-stat4-label">${t('ovBestMonth')}</span>
-            <span class="ov-stat4-header-sub">${pastBestYM?fmtYM(pastBestYM):'—'}</span>
+            <span class="ov-stat4-header-sub">${bestMonthYM?fmtYM(bestMonthYM):'—'}</span>
           </div>
         </div>
-        <div class="ov-stat4-val ov-stat4-val--gold">${pastBestYM?ovNum('bestm',monthData[pastBestYM].net,{pre:'₩',delay:400}):'—'}</div>
-        ${pastBestYM?`<div class="ov-stat4-foot ov-stat4-foot--stack">
+        <div class="ov-stat4-val ov-stat4-val--gold">${bestMonthYM?ovNum('bestm',monthData[bestMonthYM].net,{pre:'₩',delay:400}):'—'}</div>
+        ${bestMonthYM?`<div class="ov-stat4-foot ov-stat4-foot--stack">
           ${bestMonthHrs!=null?`<div class="ov-stat4-secondary">${fmtHrs(bestMonthHrs)}${t('hoursUnit')} ${t('ovHoursWorkedShort')}</div>`:''}
           ${bestMonthDays!=null?`<div class="ov-stat4-secondary">${t('dayCount',bestMonthDays)}</div>`:''}
           ${
-            bestMonthDeltaPct!=null
-              ? deltaChip(bestMonthDeltaPct,t('ovVsPrevBest'))
-              : `<div class="ov-stat4-secondary">${t('ovVsPrevBest')}</div>`
+            soleBestMonth
+              ? `<div class="ov-stat4-badge ov-stat4-badge--gold"><i class="fa-solid fa-crown"></i> ${t('ovSoleMonth')}</div>`
+              : bestMonthDeltaPct!=null
+                ? deltaChip(bestMonthDeltaPct,t('ovVsPrevBest'))
+                : `<div class="ov-stat4-secondary">${t('ovVsPrevBest')}</div>`
           }
         </div>`:''}
       </div>
@@ -2180,9 +3029,9 @@ function buildOverview(){
         <div class="rs-list">${recentHTML}</div>
       </div>
 
-      <!-- Monthly Breakdown -->
+      <!-- Daily Breakdown -->
       <div class="ov-panel card">
-        <div class="ov-panel-title">${t('monthlyBreakdown')||'MONTHLY BREAKDOWN'}</div>
+        <div class="ov-panel-title">${t('monthlyBreakdown')||'DAILY BREAKDOWN'} · ${fmtYM(curYM)}</div>
         <div class="tm-chart-wrap">
           <canvas id="ov-month-bar-chart" height="180"></canvas>
         </div>
@@ -2210,6 +3059,297 @@ function buildOverview(){
   </div>
   <div style="font-size:11px;color:var(--text-hint);text-align:center;margin-top:-6px;">${t('calHint')}</div>`;
   // Charts rendered after DOM injection — see renderTrendChart() called from attachListeners
+}
+
+// ── Overview EMPTY STATE — the real dashboard, waiting for data ──────────────
+// Shown to brand-new users with zero logged days. It renders the FIRST viewport
+// of the real Overview (reusing the exact ov-* card classes) as a ghosted, inert
+// skeleton — reduced opacity, desaturated, softly blurred, with shimmering
+// skeleton loaders where figures will land. The stage is height-capped and
+// fades out at the bottom, implying more analytics unlock below the fold. A
+// lightweight hero (headline + CTA, no card/badge/scrim) floats over it so the
+// dashboard, not a modal, stays the focus. When the first shift is logged the
+// live buildOverview() renders the identical shell — it simply fills in.
+// The root deliberately avoids the `.ov-wrap` class so initOverviewMotion()
+// no-ops, and includes no <canvas> so the chart renderers no-op too.
+function buildOverviewEmpty(){
+  const oLang=getLang();
+  // Onboarding-specific copy only — a lightweight hero, not a modal. Every
+  // DASHBOARD label below is pulled from the SAME t() keys the live Overview
+  // uses, so this reads as the real dashboard waiting for data, not a preview.
+  const OV={
+    en:{title:'Your dashboard is ready.',
+      sub:'Log your first shift and this fills with live pay, overtime and trends.',
+      cta:'Log your first shift'},
+    ko:{title:'대시보드가 준비됐어요',
+      sub:'첫 근무를 기록하면 실시간 급여·초과근무·추세로 채워져요.',
+      cta:'첫 근무 기록하기'},
+    id:{title:'Dasbor Anda sudah siap.',
+      sub:'Catat shift pertama, dan ini terisi gaji, lembur, dan tren langsung.',
+      cta:'Catat shift pertama'},
+    th:{title:'แดชบอร์ดของคุณพร้อมแล้ว',
+      sub:'บันทึกกะแรก แล้วหน้านี้จะเต็มไปด้วยค่าจ้าง ล่วงเวลา และแนวโน้มแบบสด',
+      cta:'บันทึกกะแรก'},
+    ru:{title:'Ваш дашборд готов.',
+      sub:'Отметьте первую смену — и он заполнится зарплатой, переработками и трендами.',
+      cta:'Отметить первую смену'},
+    zh:{title:'你的仪表盘已就绪。',
+      sub:'记录第一次班次，这里就会填满实时工资、加班与趋势。',
+      cta:'记录第一次班次'},
+    fr:{title:'Votre tableau de bord est prêt.',
+      sub:'Enregistrez votre premier service et tout se remplit : paie, heures supp., tendances.',
+      cta:'Enregistrer mon premier service'},
+    ne:{title:'तपाईंको ड्यासबोर्ड तयार छ।',
+      sub:'पहिलो शिफ्ट रेकर्ड गर्नुहोस्, यो प्रत्यक्ष तलब, ओभरटाइम र प्रवृत्तिले भरिन्छ।',
+      cta:'पहिलो शिफ्ट रेकर्ड गर्नुहोस्'},
+  };
+  const ot=k=>(OV[oLang]||OV.en)[k]||OV.en[k];
+
+  const hu=t('hoursUnit');
+  // Skeleton value — a shimmering placeholder where a real figure will land.
+  // Reads as "loading / waiting for data", not fake data. Labels and structure
+  // around it stay intact so every card is instantly recognizable.
+  const sk=(w,h)=>`<span class="ovb-sk" style="width:${w};height:${h}"></span>`;
+
+  // Month labels for the sample period, pulled from the live month names so the
+  // replica's card subheaders match what the real Overview would show.
+  const mn=t('mn')||[];
+  const _now=new Date();
+  const sampleMonth=`${mn[_now.getMonth()]||''} ${_now.getFullYear()}`;
+  const _prev=new Date(_now.getFullYear(),_now.getMonth()-1,1);
+  const prevMonth=`${mn[_prev.getMonth()]||''} ${_prev.getFullYear()}`;
+  const _best=new Date(_now.getFullYear(),_now.getMonth()-2,1);
+  const bestMonth=`${mn[_best.getMonth()]||''} ${_best.getFullYear()}`;
+
+  // Sample "best single day" date, shown raw like the live card does.
+  const _bd=pd(today()); _bd.setDate(_bd.getDate()-9);
+  const bestDayDs=mkds(_bd.getFullYear(),_bd.getMonth(),_bd.getDate());
+
+  // ── Recent-shift placeholders — real rs-item markup, dates relative to today ──
+  const shiftMeta={
+    day:{cls:'rs-shift--day',label:`<i class="fa-solid fa-sun"></i> ${t('dayShift')}`},
+    night:{cls:'rs-shift--night',label:`<i class="fa-solid fa-moon"></i> ${t('nightShift')}`},
+    double:{cls:'rs-shift--double',label:`<i class="fa-solid fa-rotate"></i> ${t('doubleShift')}`},
+  };
+  const sampleShifts=[
+    {off:0,sh:'night',h:9,today:true},
+    {off:1,sh:'day',h:8},
+    {off:3,sh:'day',h:8.5},
+    {off:5,sh:'double',h:16},
+    {off:6,sh:'night',h:9},
+  ];
+  const recentHTML=sampleShifts.map(s=>{
+    const d=pd(today()); d.setDate(d.getDate()-s.off);
+    const label=`${mn[d.getMonth()]||''} ${d.getDate()}`;
+    const m=shiftMeta[s.sh];
+    return`<div class="rs-item">
+      <div class="rs-left">
+        ${s.today?`<span class="rs-today-badge">${t('todayBadge')}</span>`:''}
+        <span class="rs-date">${label}</span>
+        <span class="rs-shift ${m.cls}">${m.label}</span>
+      </div>
+      <div class="rs-right">
+        <span class="rs-hrs">${s.h}${hu}</span>
+        <span class="rs-pay">${sk('58px','13px')}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Monthly-breakdown skeleton bars (no <canvas>, so renderMonthBarChart no-ops).
+  const skelBars=[42,68,54,88,72,96,60].map(h=>`<span class="ovb-skel-bar" style="height:${h}%"></span>`).join('');
+
+  // NOTE: the stage deliberately does NOT use the .ov-wrap class and includes no
+  // <canvas>, so initOverviewMotion() / renderTrendChart() / renderMonthBarChart()
+  // all no-op — nothing here animates counters or instantiates Chart.js.
+  return`<div class="ov-onboard" id="ov-onboard">
+    <div class="ovb-stage-wrap">
+
+      <!-- Locked replica of the REAL Overview: identical ov-* cards & layout -->
+      <div class="ovb-stage" aria-hidden="true">
+
+        <!-- Projected Earnings — same left-KPI + right-chart split -->
+        <div class="ov-proj-card">
+          <div class="ov-proj-kpi">
+            <div class="ov-proj-kpi-header">${t('ovEstTotal')} <span class="ov-proj-period">• ${sampleMonth}</span></div>
+            <div class="ov-proj-value">${sk('152px','30px')}</div>
+            <div class="ov-proj-delta ov-proj-delta--up">${sk('118px','13px')}</div>
+            <div class="ov-proj-stat-cards">
+              <div class="ov-proj-stat">
+                <div class="ov-proj-stat-icon ov-proj-stat-icon--base"><i class="fa-solid fa-shield-halved"></i></div>
+                <div class="ov-proj-stat-body">
+                  <div class="ov-proj-stat-label">${t('ovBaseEarnings')}</div>
+                  <div class="ov-proj-stat-val">${sk('90px','15px')}</div>
+                </div>
+              </div>
+              <div class="ov-proj-stat">
+                <div class="ov-proj-stat-icon ov-proj-stat-icon--ot"><i class="fa-solid fa-gem"></i></div>
+                <div class="ov-proj-stat-body">
+                  <div class="ov-proj-stat-label">${t('ovOvertimeDesc')}</div>
+                  <div class="ov-proj-stat-val">${sk('74px','15px')}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="ov-proj-chart-panel ovb-chart">
+            <div class="ov-chart-range ov-chart-range--floating">
+              <span class="ov-range-btn ov-range-btn--active">${t('chartRange3m')}</span>
+              <span class="ov-range-btn">${t('chartRange6m')}</span>
+              <span class="ov-range-btn">${t('chartRange1y')}</span>
+            </div>
+            <svg class="ovb-chart-svg" viewBox="0 0 300 150" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="ovbArea" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="var(--primary)" stop-opacity="0.24"/>
+                  <stop offset="100%" stop-color="var(--primary)" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <line x1="0" y1="112" x2="300" y2="112" stroke="var(--border)" stroke-width="1"/>
+              <line x1="0" y1="74" x2="300" y2="74" stroke="var(--border)" stroke-width="1"/>
+              <line x1="0" y1="36" x2="300" y2="36" stroke="var(--border)" stroke-width="1"/>
+              <path d="M0,118 C36,104 60,110 96,80 C130,52 156,66 190,44 C222,24 256,34 300,16 L300,150 L0,150 Z" fill="url(#ovbArea)"/>
+              <path d="M0,118 C36,104 60,110 96,80 C130,52 156,66 190,44 C222,24 256,34 300,16" fill="none" stroke="var(--primary)" stroke-width="2.4" stroke-linecap="round" stroke-opacity="0.55"/>
+              <circle cx="300" cy="16" r="3.5" fill="var(--primary)" fill-opacity="0.6"/>
+            </svg>
+          </div>
+        </div>
+
+        <!-- 4 stat cards — identical to the live Overview -->
+        <div class="ov-stat4-row">
+
+          <!-- Hours Worked -->
+          <div class="ov-stat4-card ov-stat4-card--blue">
+            <div class="ov-stat4-header">
+              <div class="ov-stat4-icon ov-stat4-icon--blue"><i class="fa-solid fa-clock"></i></div>
+              <div class="ov-stat4-header-text">
+                <span class="ov-stat4-label">${t('hoursWorked')}</span>
+                <span class="ov-stat4-header-sub">${sampleMonth}</span>
+              </div>
+            </div>
+            <div class="ov-stat4-hrs-row">
+              <span class="ov-stat4-hrs-val">${sk('76px','20px')}</span>
+              <span class="ov-stat4-hrs-target">/ 250${hu}</span>
+            </div>
+            <div class="ov-stat4-bar-wrap">
+              <div class="ov-stat4-bar-track"><div class="ov-stat4-bar-fill ov-stat4-bar-fill--blue" style="width:57%"></div></div>
+              <span class="ov-stat4-bar-pct">57%</span>
+            </div>
+            <div class="ov-stat4-foot">
+              <div class="ov-stat4-secondary">${t('dayCount',18)}</div>
+              <div class="ov-stat4-secondary ov-stat4-secondary--accent">108${hu} ${t('remainingLabel').toLowerCase()}</div>
+            </div>
+          </div>
+
+          <!-- Avg Per Day -->
+          <div class="ov-stat4-card ov-stat4-card--purple">
+            <div class="ov-stat4-header">
+              <div class="ov-stat4-icon ov-stat4-icon--purple"><i class="fa-solid fa-chart-line"></i></div>
+              <div class="ov-stat4-header-text">
+                <span class="ov-stat4-label">${t('ovAvgPerDay')}</span>
+                <span class="ov-stat4-header-sub">${sampleMonth}</span>
+              </div>
+            </div>
+            <div class="ov-stat4-val ov-stat4-val--white">${sk('96px','22px')}</div>
+            <div class="ov-stat4-foot ov-stat4-foot--stack">
+              <div class="ov-stat4-secondary">7.9${hu} ${t('hoursWorked').toLowerCase()}</div>
+              <div class="ov-stat4-delta ov-stat4-delta--up">▲ 6% ${t('ovVsLastMonth')}</div>
+            </div>
+          </div>
+
+          <!-- Best Month -->
+          <div class="ov-stat4-card ov-stat4-card--gold">
+            <div class="ov-stat4-header">
+              <div class="ov-stat4-icon ov-stat4-icon--gold"><i class="fa-solid fa-trophy"></i></div>
+              <div class="ov-stat4-header-text">
+                <span class="ov-stat4-label">${t('ovBestMonth')}</span>
+                <span class="ov-stat4-header-sub">${bestMonth}</span>
+              </div>
+            </div>
+            <div class="ov-stat4-val ov-stat4-val--gold">${sk('104px','22px')}</div>
+            <div class="ov-stat4-foot ov-stat4-foot--stack">
+              <div class="ov-stat4-secondary">168${hu} ${t('ovHoursWorkedShort')}</div>
+              <div class="ov-stat4-secondary">${t('dayCount',21)}</div>
+              <div class="ov-stat4-delta ov-stat4-delta--up">▲ 12% ${t('ovVsPrevBest')}</div>
+            </div>
+          </div>
+
+          <!-- Best Single Day -->
+          <div class="ov-stat4-card ov-stat4-card--teal">
+            <div class="ov-stat4-header">
+              <div class="ov-stat4-icon ov-stat4-icon--teal"><i class="fa-solid fa-gem"></i></div>
+              <div class="ov-stat4-header-text">
+                <span class="ov-stat4-label">${t('ovHighestDay')}</span>
+                <span class="ov-stat4-header-sub">${bestDayDs}</span>
+              </div>
+            </div>
+            <div class="ov-stat4-val ov-stat4-val--teal">${sk('92px','22px')}</div>
+            <div class="ov-stat4-foot ov-stat4-foot--stack">
+              <div class="ov-stat4-secondary">13.5${hu} ${t('ovHoursWorkedShort')}</div>
+              <div class="ov-stat4-delta ov-stat4-delta--up">▲ 64% ${t('ovAboveAvg')}</div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Recent Shifts + Monthly Breakdown — same bottom row as the live view -->
+        <div class="ov-bottom-row">
+          <div class="ov-panel card">
+            <div class="ov-panel-hdr">
+              <div class="ov-panel-title">${t('recentShifts')}</div>
+              <span class="ov-view-all-link">${t('viewAll')}</span>
+            </div>
+            <div class="rs-list">${recentHTML}</div>
+          </div>
+          <div class="ov-panel card">
+            <div class="ov-panel-title">${t('monthlyBreakdown')||'DAILY BREAKDOWN'} · ${t('mn')[new Date().getMonth()]} ${new Date().getFullYear()}</div>
+            <div class="tm-chart-wrap"><div class="ovb-skel-bars">${skelBars}</div></div>
+            <div class="ov-breakdown-footer">
+              <div class="ov-breakdown-stat">
+                <span class="ov-breakdown-stat-label">${t('hoursWorked')}</span>
+                <span class="ov-breakdown-stat-val">${sk('56px','16px')}</span>
+              </div>
+              <div class="ov-breakdown-stat">
+                <span class="ov-breakdown-stat-label">${t('targetHours')}</span>
+                <span class="ov-breakdown-stat-val">250${hu}</span>
+              </div>
+              <div class="ov-breakdown-stat">
+                <span class="ov-breakdown-stat-label">${t('daysWorkedLabel')}</span>
+                <span class="ov-breakdown-stat-val">${t('dayCount',18)}</span>
+              </div>
+              <div class="ov-breakdown-stat">
+                <span class="ov-breakdown-stat-label">${t('remainingLabel')}</span>
+                <span class="ov-breakdown-stat-val ov-breakdown-stat-val--blue">${sk('56px','16px')}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lightweight hero — no card chrome, no badge, no scrim. It sits within
+         the page over the ghosted dashboard; the dashboard stays the star. -->
+    <div class="ovb-hero">
+      <h2 class="ovb-title">${ot('title')}</h2>
+      <p class="ovb-sub">${ot('sub')}</p>
+      <button class="ovb-cta" id="ov-onboard-cta">
+        <span class="ovb-cta-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+        <span>${ot('cta')}</span>
+        <svg class="ovb-cta-arr" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+  </div>`;
+}
+
+// Wire the first-run Overview hero: the primary CTA opens today's log entry,
+// routing through the Calendar so closing the modal lands on a usable view.
+function wireOverviewEmpty(){
+  const root=document.getElementById('ov-onboard');
+  if(!root) return;
+  document.getElementById('ov-onboard-cta')?.addEventListener('click',()=>{
+    switchTab('calendar');
+    const ds=today();
+    S.modal={date:ds,existing:getLogs()[ds]||null};
+    buildModal();
+  });
 }
 
 // ── Overview number choreography ─────────────────────────────────────────────
@@ -2431,7 +3571,101 @@ async function renderTrendChart(){
   // This guarantees chart bars match the Calendar tab totals exactly.
   if(!_trendChartData) return;
   const {months: allMonths, values: allValues, mnames} = _trendChartData;
-  if(allMonths.length<2) return;
+
+  // ── Single-month state ──────────────────────────────────────────────────────
+  // With only one month logged there's no trend to draw yet, but we keep the SAME
+  // line/area chart so users always recognise this component: the one real month
+  // is a solid point + area fill, then a faint dashed line trails off into a few
+  // ghosted future-month slots (hollow markers). A caption in the panel explains
+  // the state. This reads as an early version of the chart, not a different widget.
+  if(allMonths.length<2){
+    const isDark=S.theme==='dark';
+    const lineColor = isDark?'#7c93ff':'rgba(58,95,255,1)';
+    const lastColor = isDark?'#a78bfa':'#7c69d4';
+    const labelColor= isDark?'rgba(107,117,153,0.85)':'rgba(99,112,160,0.9)';
+    const gridColor = isDark?'rgba(255,255,255,0.04)':'rgba(99,115,177,0.06)';
+    const ghostColor= isDark?'rgba(124,147,255,0.30)':'rgba(99,115,177,0.32)';
+
+    const realYM=allMonths[0]||`${new Date().getFullYear()}-${pad(new Date().getMonth()+1)}`;
+    const realVal=allValues[0]||0;
+    const [ry,rm]=realYM.split('-').map(Number);
+    // Ghost future months continue the timeline so the axis reads as "waiting to
+    // fill", not a lone dot floating in space.
+    const GHOST=3;
+    const labels=[mnames[rm-1]];
+    for(let i=1;i<=GHOST;i++){ const d=new Date(ry,rm-1+i,1); labels.push(mnames[d.getMonth()]); }
+
+    const ctx=canvas.getContext('2d');
+    const h=canvas.offsetHeight||200;
+    const grad=ctx.createLinearGradient(0,0,0,h);
+    if(isDark){ grad.addColorStop(0,'rgba(124,147,255,0.35)'); grad.addColorStop(1,'rgba(124,147,255,0)'); }
+    else{ grad.addColorStop(0,'rgba(58,95,255,0.16)'); grad.addColorStop(1,'rgba(58,95,255,0)'); }
+
+    function fmtYAxisWonSolo(v){
+      if(Math.abs(v)>=1000000) return '₩'+(v/1000000).toFixed(1)+(t('millionSuffix')||'M');
+      if(Math.abs(v)>=1000)    return '₩'+(v/1000).toFixed(0)+(t('thousandSuffix')||'K');
+      return '₩'+v;
+    }
+
+    _trendChart = new window.Chart(ctx,{
+      type:'line',
+      data:{
+        labels,
+        datasets:[
+          // Ghost trail — a gently curved dashed line trailing off into the future
+          // month slots, with faint hollow markers. Values follow a subtle wave (not
+          // flat) so the curve reads as a placeholder timeline, not a real forecast.
+          {
+            data:[realVal, realVal*1.20, realVal*0.95, realVal*1.18],
+            borderColor:ghostColor,
+            borderWidth:1.5,
+            borderDash:[5,5],
+            pointBackgroundColor:'transparent',
+            pointBorderColor:ghostColor,
+            pointBorderWidth:1.5,
+            pointRadius:[0,3.5,3.5,3.5],
+            pointHoverRadius:[0,3.5,3.5,3.5],
+            tension:0.45,
+            fill:false,
+          },
+          // The one real month — solid point + area fill, exactly like live data.
+          {
+            data:[realVal,null,null,null],
+            borderColor:lineColor,
+            borderWidth:2.5,
+            pointBackgroundColor:[lastColor],
+            pointBorderColor:[lastColor],
+            pointRadius:[7,0,0,0],
+            pointHoverRadius:[9,0,0,0],
+            pointBorderWidth:0,
+            tension:0,
+            fill:true,
+            backgroundColor:grad,
+          },
+        ]
+      },
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        animation:{ duration:700, easing:'easeInOutQuart' },
+        layout:{ padding:{ top:20, left:4, right:16, bottom:10 } },
+        plugins:{ legend:{ display:false }, tooltip:{ enabled:false } },
+        scales:{
+          x:{ grid:{ display:false }, border:{ display:false }, ticks:{ color:labelColor, font:{ size:11, weight:'600' }, maxRotation:0 } },
+          y:{
+            display:true, position:'left',
+            grid:{ color:gridColor, drawBorder:false },
+            border:{ display:false, dash:[3,3] },
+            ticks:{ color:labelColor, font:{ size:10, weight:'500' }, maxTicksLimit:5, callback:v=>fmtYAxisWonSolo(v) },
+            min:0,
+            suggestedMax: realVal>0 ? realVal*1.5 : 100000,
+          }
+        },
+        interaction:{ intersect:false, mode:'index' },
+      }
+    });
+    return;
+  }
 
   // Slice to the selected range
   const sliceCount = S.chartRange==='1y' ? 12 : S.chartRange==='6m' ? 6 : 3;
@@ -2711,7 +3945,7 @@ async function renderMonthBarChart(){
 function buildSettings(){
   const wages=getWages();
   const taxPct=getTaxPct();
-  const rules=typeof TR[S.lang].rules==='function'?TR[S.lang].rules(isHolAuto(),getActiveDeductionPct(),getDeductionNoun()):TR[S.lang].rules;
+  const rules=rulesRows();
   const holA=isHolAuto();
   const currentWage=getWage();
 
@@ -2765,30 +3999,25 @@ function buildSettings(){
   const tgDash=Math.round((tgtPct/100)*tgCirc);
 
   // ── Rules rows ────────────────────────────────────────────────────────────
-  const ruleIconDefs=[
-    // Day Weekday — gold sun (matches the app's day-shift ☀ convention)
-    {color:'#fbbf24',glow:'rgba(251,191,36,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`},
-    // Day Saturday — gold sun
-    {color:'#fbbf24',glow:'rgba(251,191,36,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`},
-    // Night Weekday — purple moon (matches the app's night-shift convention)
-    {color:'#a78bfa',glow:'rgba(138,100,255,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`},
-    // Night Saturday — purple moon
-    {color:'#a78bfa',glow:'rgba(138,100,255,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`},
-    // Double Weekday — teal rotate (matches the app's double-shift convention)
-    {color:'#00d2be',glow:'rgba(0,210,190,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`},
-    // Double Saturday — teal rotate
-    {color:'#00d2be',glow:'rgba(0,210,190,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`},
-    // Double Sun/Holiday — teal rotate
-    {color:'#00d2be',glow:'rgba(0,210,190,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`},
-    // Sunday — pink sun
-    {color:'#f472b6',glow:'rgba(244,114,182,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`},
-    // Holiday — red circle
-    {color:'#f87171',glow:'rgba(248,113,113,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`},
-    // Tax — yellow tag
-    {color:'#fbbf24',glow:'rgba(251,191,36,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>`},
-  ];
-  const rulesHTML=rules.map(([type,rule],i)=>{
-    const ic=ruleIconDefs[i]||ruleIconDefs[ruleIconDefs.length-1];
+  // Icons are keyed by the rule KIND buildRulesRows tags each row with — never
+  // by row position, which shifts as optional rules (Saturday, Sunday credit…)
+  // drop out of the profile.
+  const RULE_ICONS={
+    // Day — gold sun (matches the app's day-shift ☀ convention)
+    day:    {color:'#fbbf24',glow:'rgba(251,191,36,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`},
+    // Night — purple moon (matches the app's night-shift convention)
+    night:  {color:'#a78bfa',glow:'rgba(138,100,255,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`},
+    // Double — teal rotate (matches the app's double-shift convention)
+    double: {color:'#00d2be',glow:'rgba(0,210,190,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`},
+    // Sunday rest credit — pink sparkle
+    sunday: {color:'#f472b6',glow:'rgba(244,114,182,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></svg>`},
+    // Holiday credit — red alert circle
+    holiday:{color:'#f87171',glow:'rgba(248,113,113,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`},
+    // Tax/deduction — yellow percent
+    tax:    {color:'#fbbf24',glow:'rgba(251,191,36,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>`},
+  };
+  const rulesHTML=rules.map(([type,rule,kind])=>{
+    const ic=RULE_ICONS[kind]||RULE_ICONS.tax;
     return`<div class="sr-row">
       <div class="sr-icon-wrap" style="--ic:${ic.color};--ig:${ic.glow};">${ic.svg}</div>
       <div class="sr-name">${type}</div>
@@ -2860,7 +4089,7 @@ function buildSettings(){
 
       <!-- Custom input: full-width below the 3 presets -->
       <div class="s3-custom-row--full s3-custom-row" style="margin-bottom:10px;">
-        <input class="s3-inp s3-inp--full" id="target-hrs-in" type="number" value="${tgt}" min="1" max="800" step="1" placeholder="${t('monthlyTargetCustom')}">
+        <input class="s3-inp s3-inp--full" id="target-hrs-in" type="number" value="${tgt}" min="1" max="500" step="1" placeholder="${t('monthlyTargetCustom')}">
         <span class="s3-inp-unit">${t('hoursUnit')}</span>
       </div>
 
@@ -3127,7 +4356,12 @@ function buildSettings(){
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
       </button>
     </div>
-    <div class="sr-list" id="sr-list">${rulesHTML}</div>
+    <div class="sr-list" id="sr-list">${rulesHTML}
+      <button type="button" class="sw-add-btn" id="pr-edit-btn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        ${wizT(S.lang,'edit')}
+      </button>
+    </div>
   </div>
 
   <!-- ── Row 4: Danger Zone ── -->
@@ -3161,13 +4395,190 @@ function buildExportCardInline(){
   const prevYM=now.getMonth()===0?`${now.getFullYear()-1}-12`:`${now.getFullYear()}-${pad(now.getMonth())}`;
 
   if(!months.length){
-    return`<div class="s3-eyebrow">
-      <div class="s3-icon-badge s3-icon-badge--blue">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    // ── Premium onboarding empty state ──────────────────────────────────────
+    // Shown to first-run users with no logged shifts. A layered-glass hero with
+    // a document-stack illustration, an inline explanation of what becomes
+    // exportable, and three intentional actions: Start logging (primary),
+    // a locked Export affordance, and a "What you can export" disclosure.
+    const eLang=getLang();
+    const EE={
+      en:{
+        head:'Your export starts here',
+        desc:'Log a few shifts and Shiftr turns your hours, pay and holidays into a clean spreadsheet or a polished PDF — ready to download or share.',
+        start:'Start logging work',
+        locked:'Export',
+        lockedHint:'Locked',
+        learn:'What you can export',
+        earnT:'Earnings',        earnS:'Gross, deductions & net pay, day by day',
+        holT:'Public holidays',  holS:'Auto-credited holiday pay included',
+        monthT:'Monthly summary', monthS:'Totals and hours rolled up per month',
+        formats:'Arrives as CSV & PDF — 100% private, generated on your device',
+      },
+      ko:{
+        head:'내보내기가 여기서 시작돼요',
+        desc:'근무를 몇 번만 기록하면 근무 시간·급여·공휴일이 깔끔한 스프레드시트나 세련된 PDF로 정리돼 언제든 내보내거나 공유할 수 있어요.',
+        start:'근무 기록 시작하기',
+        locked:'내보내기',
+        lockedHint:'잠김',
+        learn:'무엇을 내보낼 수 있나요',
+        earnT:'급여',          earnS:'일별 총급여·공제·실수령액',
+        holT:'공휴일',          holS:'자동 반영된 공휴일 수당 포함',
+        monthT:'월별 요약',      monthS:'월 단위 합계와 근무 시간',
+        formats:'CSV와 PDF로 제공 — 기기에서 생성되는 100% 비공개 파일',
+      },
+      id:{
+        head:'Ekspor Anda dimulai di sini',
+        desc:'Catat beberapa shift dan Shiftr mengubah jam kerja, gaji, dan hari libur Anda menjadi spreadsheet yang rapi atau PDF yang elegan — siap diunduh atau dibagikan.',
+        start:'Mulai catat kerja',
+        locked:'Ekspor',
+        lockedHint:'Terkunci',
+        learn:'Yang bisa diekspor',
+        earnT:'Penghasilan',       earnS:'Kotor, potongan & gaji bersih per hari',
+        holT:'Hari libur nasional', holS:'Termasuk upah libur otomatis',
+        monthT:'Ringkasan bulanan', monthS:'Total dan jam kerja per bulan',
+        formats:'Tersedia dalam CSV & PDF — 100% privat, dibuat di perangkat Anda',
+      },
+      th:{
+        head:'การส่งออกของคุณเริ่มต้นที่นี่',
+        desc:'บันทึกกะการทำงานสักสองสามครั้ง แล้ว Shiftr จะเปลี่ยนชั่วโมงทำงาน ค่าจ้าง และวันหยุดของคุณให้เป็นสเปรดชีตที่เป็นระเบียบหรือรายงาน PDF ที่สวยงาม — พร้อมดาวน์โหลดหรือแชร์',
+        start:'เริ่มบันทึกงาน',
+        locked:'ส่งออก',
+        lockedHint:'ล็อก',
+        learn:'สิ่งที่ส่งออกได้',
+        earnT:'รายได้',            earnS:'ค่าจ้างรวม รายการหัก และสุทธิ รายวัน',
+        holT:'วันหยุดราชการ',       holS:'รวมค่าจ้างวันหยุดอัตโนมัติ',
+        monthT:'สรุปรายเดือน',      monthS:'ยอดรวมและชั่วโมงต่อเดือน',
+        formats:'มีให้ในรูปแบบ CSV และ PDF — เป็นส่วนตัว 100% สร้างบนอุปกรณ์ของคุณ',
+      },
+      ru:{
+        head:'Ваш экспорт начинается здесь',
+        desc:'Отметьте несколько смен, и Shiftr превратит ваши часы, зарплату и праздники в аккуратную таблицу или изящный PDF-отчёт — готовый к загрузке или отправке.',
+        start:'Начать учёт работы',
+        locked:'Экспорт',
+        lockedHint:'Заблокировано',
+        learn:'Что можно экспортировать',
+        earnT:'Заработок',          earnS:'Начисления, вычеты и «на руки» по дням',
+        holT:'Государственные праздники', holS:'С автоначислением за праздники',
+        monthT:'Сводка по месяцам', monthS:'Итоги и часы по каждому месяцу',
+        formats:'Доступно в CSV и PDF — на 100% приватно, создаётся на вашем устройстве',
+      },
+      zh:{
+        head:'你的导出从这里开始',
+        desc:'记录几次班次，Shiftr 就会把你的工时、工资和假日整理成清晰的表格或精美的 PDF 报告——随时可下载或分享。',
+        start:'开始记录工作',
+        locked:'导出',
+        lockedHint:'已锁定',
+        learn:'可导出的内容',
+        earnT:'收入',              earnS:'每日的税前、扣除与实发工资',
+        holT:'法定节假日',          holS:'含自动计入的节假日工资',
+        monthT:'月度汇总',          monthS:'按月汇总的合计与工时',
+        formats:'提供 CSV 和 PDF 格式——100% 私密，在你的设备上生成',
+      },
+      fr:{
+        head:'Votre export commence ici',
+        desc:'Enregistrez quelques services et Shiftr transforme vos heures, votre salaire et vos jours fériés en un tableur soigné ou un PDF élégant — prêt à télécharger ou à partager.',
+        start:'Commencer le suivi',
+        locked:'Exporter',
+        lockedHint:'Verrouillé',
+        learn:'Ce que vous pouvez exporter',
+        earnT:'Revenus',            earnS:'Brut, déductions et net, jour par jour',
+        holT:'Jours fériés',        holS:'Paie des jours fériés incluse automatiquement',
+        monthT:'Récapitulatif mensuel', monthS:'Totaux et heures regroupés par mois',
+        formats:'Disponible en CSV et PDF — 100 % privé, généré sur votre appareil',
+      },
+      ne:{
+        head:'तपाईंको निर्यात यहाँबाट सुरु हुन्छ',
+        desc:'केही शिफ्टहरू रेकर्ड गर्नुहोस्, अनि Shiftr ले तपाईंको काम गरेको घण्टा, तलब र बिदाहरूलाई सफा स्प्रेडसिट वा राम्रो PDF रिपोर्टमा बदल्छ — डाउनलोड वा सेयर गर्न तयार।',
+        start:'काम रेकर्ड सुरु गर्नुहोस्',
+        locked:'निर्यात',
+        lockedHint:'बन्द',
+        learn:'के निर्यात गर्न सकिन्छ',
+        earnT:'कमाइ',              earnS:'दैनिक कुल, कटौती र खुद तलब',
+        holT:'सार्वजनिक बिदा',      holS:'स्वतः गणना गरिएको बिदा तलब समावेश',
+        monthT:'मासिक सारांश',      monthS:'महिना अनुसार जम्मा र घण्टा',
+        formats:'CSV र PDF मा उपलब्ध — १००% निजी, तपाईंकै यन्त्रमा बनाइन्छ',
+      },
+    };
+    const et=k=>(EE[eLang]||EE.en)[k]||EE.en[k];
+    const eItem=(icon,title,sub)=>`
+      <div class="sexp-empty-item">
+        <div class="sexp-empty-item-ico">${icon}</div>
+        <div class="sexp-empty-item-txt">
+          <div class="sexp-empty-item-t">${title}</div>
+          <div class="sexp-empty-item-s">${sub}</div>
+        </div>
+        <svg class="sexp-empty-item-chk" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>`;
+    return`<div class="sexp-empty" id="sexp-empty">
+      <div class="sexp-header">
+        <div class="s3-eyebrow" style="margin-bottom:0;">
+          <div class="s3-icon-badge s3-icon-badge--blue s3-icon-badge--lg">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </div>
+          <span class="sexp-title">${t('exportTitle').toUpperCase()}</span>
+        </div>
+        <div class="sexp-privacy-badge">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          ${t('expPrivate')}
+        </div>
       </div>
-      <span>${t('exportTitle').toUpperCase()}</span>
-    </div>
-    <div class="s3-sub-label" style="margin-top:16px;color:var(--text-hint);">No data to export yet.</div>`;
+
+      <div class="s3-hol-divider"></div>
+
+      <div class="sexp-empty-hero">
+        <div class="sexp-empty-art" aria-hidden="true">
+          <span class="sexp-art-glow"></span>
+          <span class="sexp-art-doc sexp-art-doc--b"></span>
+          <span class="sexp-art-doc sexp-art-doc--m"></span>
+          <span class="sexp-art-doc sexp-art-doc--f">
+            <span class="sexp-art-bar"></span>
+            <span class="sexp-art-line"></span>
+            <span class="sexp-art-line sexp-art-line--short"></span>
+            <span class="sexp-art-line"></span>
+            <span class="sexp-art-line sexp-art-line--short"></span>
+          </span>
+          <span class="sexp-art-badge">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg>
+          </span>
+        </div>
+        <div class="sexp-empty-title">${et('head')}</div>
+        <p class="sexp-empty-desc">${et('desc')}</p>
+      </div>
+
+      <button class="sexp-empty-cta" id="sexp-empty-start">
+        <span class="sexp-empty-cta-ico">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </span>
+        <span>${et('start')}</span>
+        <svg class="sexp-empty-cta-arr" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+
+      <div class="sexp-empty-foot">
+        <div class="sexp-empty-locked" title="${et('lockedHint')}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span>${et('locked')}</span>
+          <span class="sexp-empty-locked-tag">${et('lockedHint')}</span>
+        </div>
+        <button class="sexp-empty-learn" id="sexp-empty-learn" aria-expanded="false" aria-controls="sexp-empty-more">
+          <span>${et('learn')}</span>
+          <svg class="sexp-empty-learn-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
+
+      <div class="sexp-empty-more" id="sexp-empty-more">
+        <div class="sexp-empty-more-inner">
+          <div class="sexp-empty-list">
+            ${eItem('<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',et('earnT'),et('earnS'))}
+            ${eItem('<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',et('holT'),et('holS'))}
+            ${eItem('<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',et('monthT'),et('monthS'))}
+          </div>
+          <div class="sexp-empty-formats">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+            <span>${et('formats')}</span>
+          </div>
+        </div>
+      </div>
+    </div>`;
   }
 
   const firstM=months[0],lastM=months[months.length-1];
@@ -3885,6 +5296,75 @@ function closeWageModal(changed){
     S.wageModal=null;
     if(changed) render();
   });
+}
+
+// ── Workplace modal (Settings → Edit workplace) ──────────────────────────────
+// A premium configuration panel: pinned glass header + footer with the shared
+// workplace form scrolling between them, over the app's standard blurred
+// backdrop. Settings underneath never re-renders or shifts while it's open.
+// Fixed-day users (every shift anchor is 'day') get the day-pattern form:
+// no night question, no night panel, day-relevant preview probes.
+function storedPatternIsFixedDay(){
+  // Mirrors shiftFor()'s fixed-mode rule for the current week: the two most
+  // recent anchors share a value → fixed pattern. A single anchor is rotation
+  // parity (its value alone says nothing about the pattern).
+  const sh=ld('wt4_shifts',{});
+  const keys=Object.keys(sh).filter(k=>k<=getMonday(today())).sort();
+  if(keys.length<2) return false;
+  return sh[keys[keys.length-1]]==='day'&&sh[keys[keys.length-2]]==='day';
+}
+function closeWorkplaceModal(){
+  animateModalClose('#wp-modal-ov',()=>{document.body.classList.remove('modal-open');});
+}
+function buildWorkplaceModal(){
+  document.querySelectorAll('#wp-modal-ov').forEach(el=>el.remove());
+  const W=k=>wizT(S.lang,k);
+  const st=rulesStateFromProfile(getProfile());
+  const pattern=storedPatternIsFixedDay()?'day':null;
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';ov.id='wp-modal-ov';
+  document.body.classList.add('modal-open');
+  ov.innerHTML=`<div class="modal wpm-modal" role="dialog" aria-modal="true" aria-label="${W('edit')}">
+    <div class="wm-glow" aria-hidden="true"></div>
+    <div class="wm-header wpm-header">
+      <div class="wm-header-badge wpm-badge">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+      </div>
+      <div class="wm-header-text">
+        <h3 class="wm2-title wpm-title">${W('edit')}</h3>
+        <div class="wpm-sub">${W('sub')}</div>
+      </div>
+      <button class="asm-close-btn wm-close" id="wp-close" aria-label="${W('cancel')}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="wpm-body" id="wp-form">${workplaceFormHTML(st,S.lang,{pattern})}</div>
+    <div class="wpm-actions">
+      <button class="btn-sec" id="wp-cancel">${W('cancel')}</button>
+      <button class="btn-pri wpm-save" id="wp-save"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>${W('save')}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  wireWorkplaceForm(document.getElementById('wp-form'),st,{lang:S.lang,pattern});
+  ov.addEventListener('click',e=>{if(e.target===ov)closeWorkplaceModal();});
+  ov.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();closeWorkplaceModal();}});
+  document.getElementById('wp-close').addEventListener('click',closeWorkplaceModal);
+  document.getElementById('wp-cancel').addEventListener('click',closeWorkplaceModal);
+  document.getElementById('wp-save').addEventListener('click',()=>{
+    try{
+      sv('wt4_profile',wizardProfileFrom(st,null));
+      scheduleSync();
+    }catch(err){ console.warn('[wiz] profile save failed',err); return; }
+    animateModalClose('#wp-modal-ov',()=>{
+      document.body.classList.remove('modal-open');
+      render();               // rules card reflects the new profile
+      showExportToast(W('saved'));
+    });
+  });
+  // Focus the panel so Escape works immediately, without scrolling the page.
+  const panel=ov.querySelector('.wpm-modal');
+  panel.tabIndex=-1;
+  panel.focus({preventScroll:true});
 }
 
 function buildWageModal(){
@@ -4614,7 +6094,7 @@ function attachListeners(){
   // animated number to its zero state synchronously (before the browser paints
   // the freshly injected DOM, so finals never flash) and arms an
   // IntersectionObserver that reveals each card as it scrolls into view.
-  if(S.tab==='overview'){ initOverviewMotion(); renderTrendChart(); renderMonthBarChart(); }
+  if(S.tab==='overview'){ initOverviewMotion(); renderTrendChart(); renderMonthBarChart(); wireOverviewEmpty(); }
   updateHolSeps();
 
   // Animate the net-pay hero (amount count-up + ring sweep + % count), but only
@@ -4939,6 +6419,14 @@ function attachContentListeners(){
 
     btn?.addEventListener('click',e=>{e.stopPropagation();toggle();});
     header.addEventListener('click',toggle);
+
+    // Phase 6: "Edit workplace" opens the workplace configuration modal —
+    // no inline expansion, no page reflow underneath.
+    const editBtn=card.querySelector('#pr-edit-btn');
+    if(editBtn) editBtn.addEventListener('click',e=>{
+      e.stopPropagation();
+      buildWorkplaceModal();
+    });
     header.addEventListener('keydown',e=>{
       if(e.key==='Enter'||e.key===' '){e.preventDefault();toggle();}
     });
@@ -5111,9 +6599,7 @@ function attachContentListeners(){
       const srList=document.getElementById('sr-list');
       const lastRow=srList?.querySelector('.sr-row:last-child');
       if(lastRow){
-        const freshRules=typeof TR[S.lang].rules==='function'
-          ?TR[S.lang].rules(isHolAuto(),getActiveDeductionPct(),getDeductionNoun())
-          :TR[S.lang].rules;
+        const freshRules=rulesRows();
         const [dedType,dedRule]=freshRules[freshRules.length-1];
         const nameEl=lastRow.querySelector('.sr-name');
         const descEl=lastRow.querySelector('.sr-desc');
@@ -5201,7 +6687,7 @@ function attachContentListeners(){
     if(!inp)return;
     let v=parseInt(inp.value);
     if(isNaN(v)||v<1)return;
-    v=Math.min(800,Math.max(1,v));
+    v=Math.min(500,Math.max(1,v));
     inp.value=v;
     previewTargetHrs(v);
     S.targetHrs=v;sv('wt4_target_hrs',v);scheduleSync();showSuccess('targetHrs');
@@ -5219,7 +6705,7 @@ function attachContentListeners(){
   const targetInp=document.getElementById('target-hrs-in');
   if(targetInp)targetInp.addEventListener('input',()=>{
     const v=parseInt(targetInp.value);
-    if(isNaN(v)||v<1||v>800)return;
+    if(isNaN(v)||v<1||v>500)return;
     previewTargetHrs(v);
   });
   document.getElementById('hol-view-all-btn')?.addEventListener('click', () => { buildAllHolidaysModal(); });
@@ -5317,6 +6803,20 @@ function attachContentListeners(){
 
     const card=document.getElementById('export-card');
     if(!card)return;
+
+    // ── Empty state (no logged shifts yet) ───────────────────────────────────
+    // The onboarding empty state has its own actions and none of the export
+    // controls below, so wire it and bail before the populated-card refs.
+    const emptyRoot=document.getElementById('sexp-empty');
+    if(emptyRoot){
+      document.getElementById('sexp-empty-start')?.addEventListener('click',()=>switchTab('calendar'));
+      const learnBtn=document.getElementById('sexp-empty-learn');
+      learnBtn?.addEventListener('click',()=>{
+        const open=emptyRoot.classList.toggle('sexp-empty--open');
+        learnBtn.setAttribute('aria-expanded',open?'true':'false');
+      });
+      return;
+    }
 
     // ── Gather DOM refs ──────────────────────────────────────────────────────
     const csvTile   =document.getElementById('exp-csv');
@@ -5730,13 +7230,16 @@ applyTheme();
 // Fullscreen first-run experience. Shown only to genuinely new users; existing
 // users (any saved data) are auto-flagged as onboarded so they never see it.
 //
-// Flow (4 screens):
-//   1 Welcome  — brand hero, language, and a "restore from Google" fast path
-//   2 Pattern  — rotation / fixed day / fixed night (+ inline "which week?")
-//   3 Pay      — wage + tax + holiday auto-credit, with a live net-pay preview
-//   4 Finish   — celebration, optional cloud backup, enter the app
+// Flow (6 screens; the Night Schedule one is conditional):
+//   1 Welcome   — brand hero, language, and a "restore from Google" fast path
+//   2 Pattern   — rotation / fixed day / fixed night (+ inline "which week?")
+//   3 Workplace — preset picker + pay-rule steppers under Customize (the WHAT)
+//   4 Night     — shift times, premium window, breaks, live preview (the WHEN);
+//                 skipped for day-only users and non-schedule-driven rules
+//   5 Pay       — wage + tax + holiday auto-credit, with a live net-pay preview
+//   6 Finish    — celebration, optional cloud backup, enter the app
 //
-// A returning user who restores on screen 1 jumps straight to screen 4 —
+// A returning user who restores on screen 1 jumps straight to screen 6 —
 // zero setup questions. Their cloud pull already rehydrated localStorage.
 (function initOnboarding(){
   // Backward-compat: if user already has data BUT onboarding was never explicitly
@@ -5773,11 +7276,24 @@ applyTheme();
       if(!raw) return null;
       const s=JSON.parse(raw);
       // Migrate a session saved by the previous 8-step flow (it had no version
-      // field): 1→welcome, 2–3→pattern, 4–6→pay, 7–8→finish.
-      if(s && s.v !== 2){
+      // field): 1→welcome, 2–3→pattern, 4–6→pay, 7–8→finish. Only UNVERSIONED
+      // sessions qualify — matching `v !== 2` also caught current v3 sessions
+      // and silently regressed a mid-flow refresh by one step.
+      if(s && s.v === undefined){
         const map=[,1,2,2,3,3,3,4,4];
         s.step = map[s.step] || 1;
         s.v = 2;
+      }
+      // v2 → v3: the pay-rules step was inserted at position 3.
+      if(s && s.v === 2){
+        if(s.step >= 3) s.step += 1;
+        s.v = 3;
+      }
+      // v3 → v4: the workplace step was split in two — the Night Schedule
+      // screen now lives at position 4, pushing pay/finish to 5/6.
+      if(s && s.v === 3){
+        if(s.step >= 4) s.step += 1;
+        s.v = 4;
       }
       return s;
     }catch(e){}
@@ -5786,8 +7302,9 @@ applyTheme();
   function saveOBState(){
     try{
       localStorage.setItem('wt4_ob_state', JSON.stringify({
-        v:2,
+        v:4,
         step: OB.step,
+        rules: OB.rules,
         lang: OB.lang,
         pattern: OB.pattern,
         currentShift: OB.currentShift,
@@ -5825,6 +7342,7 @@ applyTheme();
     step:         saved?.step         ?? 1,
     lang:         saved?.lang         ?? (ld('wt4_lang',null) ?? detectLang()),
     pattern:      saved?.pattern      ?? null,
+    rules:        saved?.rules        ?? WIZ_DEFAULT_RULES(),
     currentShift: saved?.currentShift ?? null,
     wage:         saved?.wage         ?? DEFAULT_WAGE,
     taxRate:      saved?.taxRate      !== undefined ? saved.taxRate : DEFAULT_TAX,
@@ -5838,6 +7356,31 @@ applyTheme();
   // Combined employee insurance % (statutory defaults) — for the live preview
   // and the "4 Insurances" total chip. Uses the app's own insuranceRate().
   const OB_INS_PCT = Math.round(insuranceRate(DEFAULT_INSURANCE)*100*100)/100;
+
+  // ── Step sequence ─────────────────────────────────────────────────────────────
+  // Steps: 1 welcome · 2 pattern · 3 workplace & pay rules · 4 night schedule ·
+  // 5 pay · 6 finish. The Night Schedule step exists only when the chosen rules
+  // are schedule-driven (overlap-mode night premium) AND the user isn't
+  // day-only — otherwise the flow runs 2 → 3 → 5 and shows one fewer segment.
+  function obSeq(){
+    return obxNeedsSchedPage(OB.rules,OB.pattern) ? [1,2,3,4,5,6] : [1,2,3,5,6];
+  }
+  function obTotal(){ return obSeq().length-1; }         // displayed setup steps
+  function obStepIdx(step){                              // 1-based display index
+    const i=obSeq().indexOf(step);
+    return i<0?obSeq().indexOf(step+1):i;                // step 4 removed → show as 3's successor
+  }
+  function obNextStep(){
+    const s=obSeq(), i=s.indexOf(OB.step);
+    return i<0 ? 5 : (s[i+1] ?? 6);                      // orphaned step 4 → pay
+  }
+  function obPrevStep(){
+    const s=obSeq(), i=s.indexOf(OB.step);
+    return i<0 ? 3 : s[Math.max(0,i-1)];
+  }
+  // A saved session can sit on step 4 while the rules no longer need it (the
+  // user changed presets and refreshed mid-flow) — resume on the pay step.
+  if(OB.step===4 && !obxNeedsSchedPage(OB.rules,OB.pattern)) OB.step=5;
 
   // Restored sessions: the cloud pull already wrote the user's real language —
   // prefer it over whatever the session captured (covers a refresh mid-finale).
@@ -5937,7 +7480,7 @@ applyTheme();
       ];
       const rotOpen=OB.pattern==='rotation';
       return `
-        <div class="obx-eyebrow" style="--i:0">1 ${ot('obOf')} 3</div>
+        <div class="obx-eyebrow" id="ob-eyebrow" style="--i:0">1 ${ot('obOf')} ${obTotal()}</div>
         <h2 class="obx-title" style="--i:1">${ot('obStep2Title')}</h2>
         <div class="obx-options" style="--i:2" role="group" aria-label="${ot('obStep2Title')}">
           ${opts.map(o=>`
@@ -5964,10 +7507,33 @@ applyTheme();
         <button type="button" class="btn-pri obx-cta obx-next" style="--i:4" ${obCanProceed()?'':'disabled'}>${ot('obNext')} ${OI.arrow}</button>`;
     }
 
+    // Step 3 — Workplace & Pay Rules: WHAT the workplace pays.
     if(OB.step===3){
+      return `
+        <div class="obx-eyebrow" id="ob-eyebrow" style="--i:0">2 ${ot('obOf')} ${obTotal()}</div>
+        <h2 class="obx-title" style="--i:1">${wizT(OB.lang,'title')}</h2>
+        <p class="obx-sub-text" style="--i:2">${wizT(OB.lang,'sub')}</p>
+        <div style="--i:3">${obxWorkplaceHTML(OB.rules, OB.lang, OB.pattern)}</div>
+        <button type="button" class="btn-pri obx-cta obx-next" style="--i:4">${ot('obNext')} ${OI.arrow}</button>
+        <button type="button" class="obx-ghost obx-later" style="--i:5"${OB.rules.preset?' hidden':''}>${wizT(OB.lang,'laterBtn')}</button>
+        <p class="obx-flownote" style="--i:6">${WZI.lock}<span>${wizT(OB.lang,'laterNote')}</span></p>`;
+    }
+
+    // Step 4 — Night Schedule: WHEN those rules apply. Exists only for
+    // schedule-driven rules (see obSeq); day-only users never see it.
+    if(OB.step===4){
+      return `
+        <div class="obx-eyebrow" id="ob-eyebrow" style="--i:0">3 ${ot('obOf')} ${obTotal()}</div>
+        <h2 class="obx-title" style="--i:1">${wizT(OB.lang,'nsTitle')}</h2>
+        <p class="obx-sub-text" style="--i:2">${wizT(OB.lang,'nsSub')}</p>
+        <div style="--i:3">${obxNightHTML(OB.rules, OB.lang)}</div>
+        <button type="button" class="btn-pri obx-cta obx-next" style="--i:4">${ot('obNext')} ${OI.arrow}</button>`;
+    }
+
+    if(OB.step===5){
       const insMode=OB.dedMode==='insurance';
       return `
-        <div class="obx-eyebrow" style="--i:0">2 ${ot('obOf')} 3</div>
+        <div class="obx-eyebrow" id="ob-eyebrow" style="--i:0">${obTotal()-1} ${ot('obOf')} ${obTotal()}</div>
         <h2 class="obx-title" style="--i:1">${ot('obPayTitle')}</h2>
         <p class="obx-sub-text" style="--i:2">${ot('obStep4Sub')}</p>
         <div class="obx-field obx-field--wage" style="--i:3">
@@ -6016,7 +7582,7 @@ applyTheme();
         <button type="button" class="btn-pri obx-cta obx-next" style="--i:7">${ot('obNext')} ${OI.arrow}</button>`;
     }
 
-    // Step 4 — finish (normal or cloud-restored)
+    // Step 6 — finish (normal or cloud-restored)
     const checkSVG=`
       <div class="obx-check" aria-hidden="true">
         <svg viewBox="0 0 64 64">
@@ -6054,7 +7620,7 @@ applyTheme();
           <button type="button" class="obx-google ob-google-signin" ${OB.signingIn?'disabled':''}>${OB.signingIn?OI.spin:OI.google} <span>${ot('obStep5Signin')}</span></button>
         </div>`;
     return `
-      <div class="obx-eyebrow" style="--i:0">3 ${ot('obOf')} 3</div>
+      <div class="obx-eyebrow" style="--i:0">${obTotal()} ${ot('obOf')} ${obTotal()}</div>
       <div class="obx-finale" style="--i:1">
         ${checkSVG}
         <h2 class="obx-title">${ot('obDoneTitle')}</h2>
@@ -6065,22 +7631,42 @@ applyTheme();
   }
 
   // ── Top chrome: back button + tappable progress segments ─────────────────────
+  // Segments mirror the LIVE sequence (4 or 5 setup screens): each maps to an
+  // actual step id, so jumping back lands on the right screen even when the
+  // Night Schedule step doesn't exist for this user.
   function buildChromeHTML(){
     if(OB.step===1 || OB.restored) return '';
-    const pos=OB.step-1; // 1..3 within the 3 setup screens
-    const segs=[1,2,3].map(i=>{
-      const st=i<pos?' obx-seg--done':i===pos?' obx-seg--active':'';
-      return `<button type="button" class="obx-seg${st}" data-goto="${i+1}"${i<pos?'':' disabled tabindex="-1"'} aria-label="${i} ${ot('obOf')} 3"><i></i></button>`;
+    const seq=obSeq(), total=obTotal();
+    const pos=Math.max(1,obStepIdx(OB.step));
+    const segs=seq.slice(1).map((stp,i)=>{
+      const n=i+1;
+      const cls=n<pos?' obx-seg--done':n===pos?' obx-seg--active':'';
+      return `<button type="button" class="obx-seg${cls}" data-goto="${stp}"${n<pos?'':' disabled tabindex="-1"'} aria-label="${n} ${ot('obOf')} ${total}"><i></i></button>`;
     }).join('');
     return `<button type="button" class="obx-back" aria-label="${ot('obBack')}">${OI.back}</button>
-      <div class="obx-progress" role="group" aria-label="${pos} ${ot('obOf')} 3">${segs}</div>
+      <div class="obx-progress" role="group" aria-label="${pos} ${ot('obOf')} ${total}">${segs}</div>
       <span class="obx-chrome-spacer" aria-hidden="true"></span>`;
+  }
+
+  // Refresh the chrome + eyebrow in place. Called when a choice made ON a step
+  // changes the flow's shape (pattern picked, preset/night rule changed) so
+  // the progress bar and "2 of 5" never lag behind the sequence.
+  function syncFlowChrome(){
+    const chrome=document.getElementById('ob-chrome');
+    if(chrome){ chrome.innerHTML=buildChromeHTML(); wireChromeEvents(); }
+    const eb=document.getElementById('ob-eyebrow');
+    if(eb){
+      const idx=OB.step===2?1:OB.step===3?2:OB.step===4?3:obTotal()-1;
+      eb.textContent=`${idx} ${ot('obOf')} ${obTotal()}`;
+    }
   }
 
   // ── Initial mount ─────────────────────────────────────────────────────────────
   function mountOB(){
     const ov=document.createElement('div');
-    ov.className='ob-overlay';
+    // The two configuration screens get a wider column (the preset grid and
+    // the schedule panels breathe at 620px); every other screen keeps 470px.
+    ov.className='ob-overlay'+(OB.step===3||OB.step===4?' ob-overlay--wide':'');
     ov.id='ob-overlay';
     ov.innerHTML=`
       <div class="obx-ambient" aria-hidden="true"><i class="obx-orb obx-orb--a"></i><i class="obx-orb obx-orb--b"></i></div>
@@ -6102,6 +7688,7 @@ applyTheme();
     saveOBState();
     if(!body){ mountOB(); return; }
     const swap=()=>{
+      document.getElementById('ob-overlay')?.classList.toggle('ob-overlay--wide',OB.step===3||OB.step===4);
       const chrome=document.getElementById('ob-chrome');
       if(chrome) chrome.innerHTML=buildChromeHTML();
       body.innerHTML=buildStepHTML();
@@ -6159,7 +7746,7 @@ applyTheme();
       S.lang=OB.lang;
       OB.restored=true;
       saveOBState();
-      transitionTo(4,1);
+      transitionTo(6,1); // straight to the welcome-back finale — zero questions
     }else{
       // Signed in but nothing to restore — continue setup; choices back up automatically.
       transitionTo(2,1);
@@ -6171,7 +7758,7 @@ applyTheme();
     const chrome=document.getElementById('ob-chrome');
     if(!chrome) return;
     chrome.querySelector('.obx-back')?.addEventListener('click',()=>{
-      transitionTo(OB.step-1,-1);
+      transitionTo(obPrevStep(),-1);
     });
     chrome.querySelectorAll('.obx-seg--done').forEach(seg=>{
       seg.addEventListener('click',()=>{
@@ -6225,6 +7812,7 @@ applyTheme();
           });
         }
         syncNext();
+        syncFlowChrome(); // day-only trims the Night Schedule step → "1 of 4"
       });
     });
     body.querySelectorAll('[data-curshift]').forEach(btn=>{
@@ -6238,7 +7826,7 @@ applyTheme();
       });
     });
 
-    // Step 3: wage input — live-sync + preview
+    // Step 5 (pay): wage input — live-sync + preview
     const updatePreview=()=>{
       const el=document.getElementById('ob-preview-val');
       if(!el) return;
@@ -6297,7 +7885,7 @@ applyTheme();
       });
     }
 
-    // Step 4: Google sign-in (backup card)
+    // Step 6 (finish): Google sign-in (backup card)
     body.querySelector('.ob-google-signin')?.addEventListener('click',async()=>{
       if(OB.signingIn) return;
       OB.signingIn=true;
@@ -6310,16 +7898,42 @@ applyTheme();
       wireStepEvents();
     });
 
+    // Step 3 — Workplace & Pay Rules: renders once, updates itself surgically.
+    // Choices here can reshape the flow (preset ↔ customize, night ×1), so the
+    // chrome, eyebrow and the "I'll customize later" escape hatch re-sync too.
+    const wpx=document.getElementById('ob-wpx');
+    if(wpx){
+      obxWireWorkplace(wpx, OB.rules, {lang:OB.lang, pattern:OB.pattern, onChange:()=>{
+        saveOBState();
+        syncFlowChrome();
+        const later=body.querySelector('.obx-later');
+        if(later) later.hidden=!!OB.rules.preset;
+      }});
+      // "I'll customize later" — bail out of Customize back to the standard
+      // preset and move on; everything stays editable in Settings.
+      body.querySelector('.obx-later')?.addEventListener('click',()=>{
+        OB.rules.preset='kr-statutory-5plus';
+        saveOBState();
+        transitionTo(obNextStep(),1);
+      });
+    }
+
+    // Step 4 — Night Schedule: times, window, breaks, live timeline preview.
+    const nsx=document.getElementById('ob-nsx');
+    if(nsx){
+      obxWireNight(nsx, OB.rules, {lang:OB.lang, onChange:saveOBState});
+    }
+
     // Next / continue
     body.querySelector('.obx-next')?.addEventListener('click',()=>{
       if(OB.step===2 && !obCanProceed()) return;
-      if(OB.step===3){
+      if(OB.step===5){
         const wIn=document.getElementById('ob-wage-in');
         if(wIn){ const v=parseInt(wIn.value); if(!isNaN(v)&&v>=0) OB.wage=v; }
         const tIn=document.getElementById('ob-tax-in');
         if(tIn){ let v=parseFloat(tIn.value); if(!isNaN(v)){ v=Math.min(45,Math.max(0,v)); OB.taxRate=v; } }
       }
-      transitionTo(OB.step+1,1);
+      transitionTo(obNextStep(),1);
     });
 
     // Finish
@@ -6381,6 +7995,14 @@ applyTheme();
       // New user: write freshly computed shifts and the onboarding wage.
       sv('wt4_shifts', sh);
       sv('wt4_wages', [{date:'2026-01-01', amount:OB.wage}]);
+    }
+
+    // 3b. Compile and store the pay profile from the wizard answers. Cloud
+    // users keep their existing synced profile; a compile failure falls back
+    // to the default rules and never blocks onboarding.
+    if(!cloudWasPulled || ld('wt4_profile', null) === null){
+      try{ sv('wt4_profile', wizardProfileFrom(OB.rules, OB.pattern)); }
+      catch(e){ console.warn('[wiz] profile compile failed — default rules apply', e); }
     }
 
     // 4. Save tax rate — always (it's the fallback the user can switch back to)
@@ -6452,6 +8074,36 @@ applyTheme();
   mountOB();
   // Return early — normal startup render() below must not fire again.
   return;
+})();
+
+// ── One-time migration: pin existing users to the Iljitech preset ──────────────
+// The selectable preset system ships with this release. Before it, every user's
+// pay math WAS the hardcoded factory rulebook — DEFAULT_PROFILE, id
+// 'kr-factory-2shift', which is exactly the Iljitech preset (compile.js verifies
+// the preset compiles to DEFAULT_PROFILE bit-for-bit). Grandfathered users have
+// no explicit wt4_profile, so on opening the new "Edit pay rules" editor,
+// rulesStateFromProfile() would fall back to WIZ_DEFAULT_RULES() and pre-select
+// the kr-statutory-5plus default — visually wrong, and a save would silently
+// switch their math off Iljitech. Pin the Iljitech preset explicitly so the
+// editor reflects each existing user's actual (unchanged) rules.
+//
+// Runs once (guarded by wt4_mig_factory_default). Only existing users — those
+// who already completed onboarding — are touched; a genuinely new user is still
+// mid-flow (wt4_onboarding !== 'done') and chooses a preset in onboarding itself.
+// Placed AFTER initOnboarding so grandfathered users are already flagged 'done',
+// and BEFORE the startup render() below so the first paint uses the pinned profile.
+(function pinIljitechForExistingUsers(){
+  if(localStorage.getItem('wt4_mig_factory_default') === 'done') return;
+  if(localStorage.getItem('wt4_onboarding') === 'done'){
+    const p = ld('wt4_profile', null);
+    const alreadyPinned = !!(p && p.source && p.source.kind === 'preset'
+                             && p.source.presetId === 'kr-factory-2shift');
+    if(!alreadyPinned){
+      try{ sv('wt4_profile', wizardProfileFrom({ ...WIZ_DEFAULT_RULES(), preset:'kr-factory-2shift' }, null)); }
+      catch(e){ console.warn('[mig] Iljitech-default pin failed — grandfathered rules apply', e); }
+    }
+  }
+  localStorage.setItem('wt4_mig_factory_default', 'done');
 })();
 
 // Normal startup (only reached if onboarding is already done)

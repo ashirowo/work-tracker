@@ -75,6 +75,8 @@ const SYNC_KEYS = {
   taxRate:  'wt4_tax_rate',
   dedMode:  'wt4_deduction_mode',
   insurance:'wt4_insurance',
+  profile:   'wt4_profile',   // pay profile — joined AFTER merge:true rollout (v46+)
+  targetHrs: 'wt4_target_hrs', // monthly target hours
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -129,6 +131,8 @@ async function pullFromCloud(uid) {
       if (cloud.taxRate !== undefined) lsSet(SYNC_KEYS.taxRate, cloud.taxRate);
       if (cloud.dedMode !== undefined) lsSet(SYNC_KEYS.dedMode, cloud.dedMode);
       if (cloud.insurance !== undefined) lsSet(SYNC_KEYS.insurance, cloud.insurance);
+      if (cloud.profile !== undefined && cloud.profile !== null) lsSet(SYNC_KEYS.profile, cloud.profile);
+      if (cloud.targetHrs !== undefined) lsSet(SYNC_KEYS.targetHrs, cloud.targetHrs);
       lsSet('wt4_syncedAt', cloudTs);
       // Signal to completeOnboarding() that cloud data is now in localStorage,
       // so it should not overwrite wages/shifts with fresh onboarding defaults.
@@ -175,11 +179,18 @@ async function pushToCloud(uid) {
     taxRate:   lsGet(SYNC_KEYS.taxRate, 3.3),
     dedMode:   lsGet(SYNC_KEYS.dedMode, 'tax'),
     insurance: lsGet(SYNC_KEYS.insurance, {}),
+    profile:   lsGet(SYNC_KEYS.profile, null),
+    targetHrs: lsGet(SYNC_KEYS.targetHrs, 250),
     updatedAt: serverTimestamp(),
   };
 
   try {
-    await setDoc(userDoc(targetUid), payload);
+    // merge:true — payload always writes every SYNC_KEYS field, so this is
+    // behavior-identical today; it exists so that FUTURE synced fields (e.g.
+    // the pay profile) can never be silently erased from the cloud doc by a
+    // client running this older version. Must be deployed at least one
+    // release before any new field joins SYNC_KEYS.
+    await setDoc(userDoc(targetUid), payload, { merge: true });
     lsSet('wt4_syncedAt', Date.now());
     console.log('[firebase] Pushed to cloud.');
     _setSyncStatus('synced');

@@ -74,9 +74,9 @@
   --night-text:#6040c8;
   --night-bg:rgba(96,64,200,0.07);
   --night-border:rgba(96,64,200,0.25);
-  --day-text:#c8860a;
-  --day-bg:rgba(200,134,10,0.08);
-  --day-border:rgba(200,134,10,0.3);
+  --day-text:#d98e00;
+  --day-bg:rgba(225,155,10,0.10);
+  --day-border:rgba(225,155,10,0.32);
   --tab-active-bg:#ffffff;
   --input-bg:#ffffff;
   --shadow-sm:0 2px 8px rgba(20,30,80,0.06);
@@ -2861,6 +2861,130 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   font-size:14px;
   font-weight:500;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Overview — first-run EMPTY STATE (the real dashboard, waiting for data)
+   The first viewport of the live Overview (same ov-* cards, layout, spacing and
+   hierarchy) rendered as a ghosted, inert skeleton — reduced opacity, gently
+   desaturated and softly blurred, with shimmering skeleton loaders where the
+   figures will land. The stage is height-capped and fades into the background
+   at the bottom, implying more analytics unlock below the fold. A lightweight
+   hero (headline + CTA, no card / badge / scrim) floats over it, so the
+   dashboard — not a modal — stays the star. Logging the first shift simply
+   fills it in; nothing transforms.
+   ══════════════════════════════════════════════════════════════════════════ */
+/* overflow-x:clip contains the hero's soft spotlight (a pseudo-element that
+   bleeds well past the hero box) so it can never push horizontal page scroll on
+   narrow screens; vertical layout is untouched. */
+.ov-onboard{ position:relative; padding-bottom:22px; overflow-x:clip; }
+
+/* Stage wrapper — caps the preview to ~1 viewport and dissolves the lower edge
+   into the page, so users never scroll through screens of placeholders. */
+.ovb-stage-wrap{
+  position:relative;
+  max-height:min(720px,74vh);
+  overflow:hidden;
+  -webkit-mask-image:linear-gradient(180deg,#000 0%,#000 52%,rgba(0,0,0,0.4) 82%,transparent 100%);
+  mask-image:linear-gradient(180deg,#000 0%,#000 52%,rgba(0,0,0,0.4) 82%,transparent 100%);
+}
+
+/* ── The ghosted dashboard — recognizable but clearly inactive ── */
+.ovb-stage{
+  display:flex;flex-direction:column;gap:12px;padding-bottom:24px;
+  pointer-events:none;user-select:none;
+  opacity:0.7;filter:saturate(0.78) blur(1px);
+  transition:opacity 0.45s ease,filter 0.45s ease;
+}
+.ovb-stage .ov-range-btn,
+.ovb-stage .ov-view-all-link{ cursor:default; }
+
+/* ── Skeleton loader — a shimmering placeholder where a figure will appear.
+   Lighter-touch than a Gaussian blur, and reads as "loading", not fake data. */
+.ovb-sk{
+  display:inline-block;vertical-align:middle;border-radius:7px;
+  background:linear-gradient(90deg,rgba(255,255,255,0.05) 25%,rgba(255,255,255,0.13) 37%,rgba(255,255,255,0.05) 63%);
+  background-size:400% 100%;
+  animation:ovbSk 1.9s ease-in-out infinite;
+}
+[data-theme="light"] .ovb-sk{
+  background:linear-gradient(90deg,rgba(20,30,80,0.05) 25%,rgba(20,30,80,0.12) 37%,rgba(20,30,80,0.05) 63%);
+  background-size:400% 100%;
+}
+@keyframes ovbSk{ 0%{background-position:100% 0;} 100%{background-position:0 0;} }
+
+/* Skeleton trend line — muted */
+.ovb-chart{ position:relative;overflow:hidden; }
+.ovb-chart-svg{ position:absolute;inset:0;width:100%;height:100%;opacity:0.5; }
+
+/* Monthly-breakdown skeleton bars — fill the same 180px canvas slot */
+.ovb-skel-bars{ display:flex;align-items:flex-end;gap:8px;height:100%;padding-top:6px; }
+.ovb-skel-bar{
+  flex:1;min-height:10px;border-radius:6px 6px 3px 3px;
+  background:linear-gradient(180deg,var(--primary) 0%,transparent 128%);
+  opacity:0.22;
+}
+
+/* ── Lightweight hero — floats over the ghosted dashboard, no card chrome.
+   A soft radial spotlight (not a panel) lifts the copy for legibility. ── */
+.ovb-hero{
+  position:absolute;z-index:3;
+  left:50%;top:40%;transform:translate(-50%,-50%);
+  width:min(400px,90%);
+  text-align:center;
+}
+.ovb-hero::before{
+  content:'';position:absolute;inset:-78px -104px;z-index:-1;pointer-events:none;
+  background:radial-gradient(ellipse 72% 76% at 50% 46%,rgba(9,10,17,0.9) 0%,rgba(9,10,17,0.66) 44%,rgba(9,10,17,0.28) 66%,transparent 82%);
+}
+[data-theme="light"] .ovb-hero::before{
+  background:radial-gradient(ellipse 72% 76% at 50% 46%,rgba(244,246,251,0.94) 0%,rgba(244,246,251,0.72) 44%,rgba(244,246,251,0.32) 66%,transparent 82%);
+}
+.ovb-title{
+  font-size:clamp(20px,3vw,25px);font-weight:800;letter-spacing:-0.03em;
+  line-height:1.14;color:var(--text);text-wrap:balance;
+  max-width:19ch;margin:0 auto 8px;
+}
+.ovb-sub{
+  font-size:13px;line-height:1.55;color:var(--text-muted);
+  max-width:320px;margin:0 auto 16px;
+}
+
+/* CTA — the one bright, tactile element */
+.ovb-cta{
+  display:inline-flex;align-items:center;gap:9px;
+  padding:11px 17px 11px 13px;border:none;border-radius:13px;
+  background:var(--grad-primary);color:#fff;
+  font-size:13.5px;font-weight:700;letter-spacing:-0.01em;cursor:pointer;
+  position:relative;overflow:hidden;
+  box-shadow:0 1px 0 rgba(255,255,255,0.22) inset,0 10px 24px -8px rgba(108,134,255,0.7),0 0 0 1px rgba(124,147,255,0.2);
+  transition:transform 0.2s cubic-bezier(0.34,1.56,0.64,1),box-shadow 0.2s;
+}
+.ovb-cta::before{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(255,255,255,0.2) 0%,transparent 46%);
+}
+.ovb-cta:hover{ transform:translateY(-2px);
+  box-shadow:0 1px 0 rgba(255,255,255,0.26) inset,0 16px 30px -8px rgba(108,134,255,0.85),0 0 0 1px rgba(124,147,255,0.32); }
+.ovb-cta:active{ transform:translateY(0); }
+.ovb-cta-ico{
+  display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;flex-shrink:0;
+  background:rgba(255,255,255,0.2);box-shadow:inset 0 1px 0 rgba(255,255,255,0.28);
+}
+.ovb-cta-arr{ opacity:0.85;transition:transform 0.2s; }
+.ovb-cta:hover .ovb-cta-arr{ transform:translateX(3px); }
+
+/* Hovering the CTA previews the unlock — the dashboard brightens toward life */
+.ov-onboard:has(#ov-onboard-cta:hover) .ovb-stage{ opacity:0.9;filter:saturate(0.95) blur(0.3px); }
+
+@media(prefers-reduced-motion:reduce){
+  .ovb-sk{ animation:none; }
+}
+@media(max-width:600px){
+  .ovb-stage-wrap{ max-height:min(560px,70vh); }
+  .ovb-hero{ width:min(360px,92%);top:38%; }
+  .ovb-sub{ font-size:12.5px; }
+}
+
 /* Hero card */
 .ov-hero-label{
   font-size:11px;
@@ -3014,7 +3138,7 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   box-shadow:0 0 3px rgba(232,41,74,0.25);
 }
 /* Shift icon colors for light */
-[data-theme="light"] .dc-shift--day{ color:#c8860a; }
+[data-theme="light"] .dc-shift--day{ color:#d98e00; }
 [data-theme="light"] .dc-shift--night{ color:rgba(96,64,200,0.80); }
 [data-theme="light"] .dc-shift--double{ color:rgba(0,150,135,0.85); }
 [data-theme="light"] .cal-leg-item--double{ color:rgba(0,150,135,0.85); }
@@ -3023,9 +3147,9 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 [data-theme="light"] .dc-shift--off{ color:rgba(99,115,177,0.30); }
 /* Eff-hour pill — light */
 [data-theme="light"] .dc-eff-pill--day{
-  background:rgba(200,134,10,0.10);
-  color:#c8860a;
-  border-color:rgba(200,134,10,0.22);
+  background:rgba(225,155,10,0.12);
+  color:#d98e00;
+  border-color:rgba(225,155,10,0.24);
 }
 [data-theme="light"] .dc-eff-pill--night{
   background:rgba(96,64,200,0.10);
@@ -3081,9 +3205,9 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 }
 /* Day shift badge — override color in light mode to match Best Month card gold */
 [data-theme="light"] .rs-shift--day{
-  background:rgba(210,155,0,0.13);
-  color:#b07800;
-  border-color:rgba(210,155,0,0.28);
+  background:rgba(235,170,0,0.15);
+  color:#c98400;
+  border-color:rgba(235,170,0,0.30);
 }
 [data-theme="light"] .cal-month{
   background:linear-gradient(90deg,#4977fd 0%,#8b5cf6 100%);
@@ -4236,6 +4360,46 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   height:100%!important;
 }
 
+/* Single-month empty state: a caption floats over the empty region of the trend
+   chart while it renders one real point trailing into ghosted future months. It
+   stays the same chart component — this is just an explanatory label on top. */
+.ov-chart-empty-note{
+  /* Full-panel overlay that dead-centres the pill both axes, independent of the
+     chart's internal padding/axis offsets. */
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0 18px;
+  z-index:2;
+  pointer-events:none;
+}
+.ov-chart-empty-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 14px;
+  border-radius:999px;
+  background:var(--bg-card2);
+  border:1px solid var(--border);
+  box-shadow:0 6px 20px rgba(0,0,0,0.20);
+  backdrop-filter:blur(10px) saturate(140%);
+  -webkit-backdrop-filter:blur(10px) saturate(140%);
+  font-size:11.5px;
+  font-weight:600;
+  line-height:1.35;
+  color:var(--text-muted);
+  letter-spacing:0.01em;
+  max-width:272px;
+  text-align:left;
+}
+.ov-chart-empty-pill i{
+  color:var(--primary);
+  font-size:13px;
+  flex-shrink:0;
+}
+
 /* Responsive: stack on mobile */
 @media(max-width:640px){
   .ov-proj-card{
@@ -4319,6 +4483,27 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 }
 .ov-stat4-delta--up{color:var(--success);background:var(--success-bg);}
 .ov-stat4-delta--down{color:var(--danger);background:var(--danger-bg);}
+/* Sole-month badge — shown on the Best Month card when the current month is the
+   only one logged. Subtle gold pill that marks it as the current leader without
+   faking a comparison. */
+.ov-stat4-badge{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:10.5px;font-weight:700;letter-spacing:0.01em;
+  padding:3px 9px;border-radius:999px;white-space:nowrap;flex-shrink:0;
+  line-height:1.3;
+}
+.ov-stat4-badge i{ font-size:9px; }
+.ov-stat4-badge--gold{
+  color:#ffc94d;
+  background:rgba(255,201,77,0.12);
+  border:1px solid rgba(255,201,77,0.28);
+  box-shadow:0 0 10px rgba(255,201,77,0.10) inset;
+}
+[data-theme="light"] .ov-stat4-badge--gold{
+  color:#c68a10;
+  background:rgba(225,168,0,0.14);
+  border-color:rgba(225,168,0,0.30);
+}
 [data-theme="light"] .ov-stat4-card{
   background:rgba(255,255,255,0.82);
   border-color:rgba(99,115,177,0.13);
@@ -4350,7 +4535,7 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   opacity:1;
 }
 [data-theme="light"] .ov-stat4-card--gold:hover::before{
-  background:radial-gradient(ellipse 90% 60% at 10% 0%,rgba(200,150,0,0.11) 0%,transparent 70%);
+  background:radial-gradient(ellipse 90% 60% at 10% 0%,rgba(230,172,0,0.14) 0%,transparent 70%);
   opacity:1;
 }
 [data-theme="light"] .ov-stat4-card--teal:hover::before{
@@ -4435,6 +4620,12 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   color:#ffc94d;
   box-shadow:0 0 10px rgba(255,201,77,0.12);
 }
+[data-theme="light"] .ov-stat4-icon--gold{
+  background:rgba(225,168,0,0.15);
+  border-color:rgba(225,168,0,0.30);
+  color:#c68a10;
+  box-shadow:0 0 10px rgba(225,168,0,0.12);
+}
 .ov-stat4-icon--teal{
   background:rgba(0,210,190,0.13);
   border:1px solid rgba(0,210,190,0.25);
@@ -4502,6 +4693,10 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 .ov-stat4-val--gold{
   color:#ffc94d;
   text-shadow:0 0 18px rgba(255,201,77,0.25);
+}
+[data-theme="light"] .ov-stat4-val--gold{
+  color:#d98e00;
+  text-shadow:0 0 18px rgba(225,168,0,0.18);
 }
 .ov-stat4-val--teal{
   color:#00d2be;
@@ -6438,6 +6633,247 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 }
 .sexp-section-label:first-of-type{margin-top:0;}
 
+/* ══════════════════════════════════════════════════════════════════════════
+   Export card — premium onboarding EMPTY STATE
+   A layered-glass hero that fills the card (which grid-stretches to match the
+   tall Holiday card beside it), a document-stack illustration, an inline
+   explanation of what becomes exportable, and three intentional actions.
+   ══════════════════════════════════════════════════════════════════════════ */
+.sexp-empty{
+  flex:1;
+  display:flex;flex-direction:column;
+  position:relative;z-index:1;
+}
+
+/* ── Hero (vertically centered within the available height) ── */
+.sexp-empty-hero{
+  flex:1;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;
+  padding:18px 6px 22px;
+}
+
+/* Layered document-stack illustration */
+.sexp-empty-art{
+  position:relative;
+  width:150px;height:116px;
+  margin:0 auto 20px;
+}
+.sexp-art-glow{
+  position:absolute;left:50%;top:52%;
+  width:150px;height:150px;
+  transform:translate(-50%,-50%);
+  background:radial-gradient(circle,var(--primary-glow) 0%,transparent 68%);
+  filter:blur(6px);
+  opacity:0.9;pointer-events:none;
+}
+.sexp-art-doc{
+  position:absolute;
+  width:74px;height:94px;
+  left:50%;top:50%;
+  border-radius:11px;
+  background:linear-gradient(160deg,rgba(255,255,255,0.11) 0%,rgba(255,255,255,0.045) 100%);
+  border:1px solid rgba(255,255,255,0.14);
+  border-top-color:rgba(255,255,255,0.22);
+  box-shadow:0 10px 26px -10px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.10);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+}
+.sexp-art-doc--b{
+  transform:translate(-50%,-50%) rotate(-13deg) translate(-24px,4px) scale(0.9);
+  opacity:0.5;
+  filter:saturate(0.8);
+}
+.sexp-art-doc--m{
+  transform:translate(-50%,-50%) rotate(8deg) translate(20px,2px) scale(0.95);
+  opacity:0.75;
+}
+.sexp-art-doc--f{
+  transform:translate(-50%,-52%) rotate(-2deg);
+  display:flex;flex-direction:column;gap:7px;
+  padding:13px 11px;
+  background:linear-gradient(160deg,rgba(255,255,255,0.15) 0%,rgba(255,255,255,0.06) 100%);
+  border-color:rgba(255,255,255,0.20);
+  box-shadow:0 18px 34px -14px rgba(0,0,0,0.7),0 0 0 1px rgba(124,147,255,0.08),inset 0 1px 0 rgba(255,255,255,0.16);
+  animation:sexpDocFloat 5.5s ease-in-out infinite;
+}
+.sexp-art-bar{
+  height:9px;width:34px;border-radius:3px;
+  background:var(--grad-primary);
+  box-shadow:0 0 10px var(--primary-glow);
+  margin-bottom:2px;
+}
+.sexp-art-line{
+  height:5px;border-radius:3px;
+  background:rgba(255,255,255,0.20);
+}
+.sexp-art-line--short{width:60%;background:rgba(255,255,255,0.12);}
+.sexp-art-badge{
+  position:absolute;right:16px;bottom:-4px;
+  width:42px;height:42px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;
+  background:var(--grad-primary);
+  border:1px solid rgba(255,255,255,0.28);
+  box-shadow:0 0 0 4px rgba(108,134,255,0.14),0 8px 20px -4px rgba(108,134,255,0.6),inset 0 1px 0 rgba(255,255,255,0.4);
+  animation:sexpBadgeBob 5.5s ease-in-out infinite;
+}
+@keyframes sexpDocFloat{
+  0%,100%{transform:translate(-50%,-52%) rotate(-2deg);}
+  50%{transform:translate(-50%,-56%) rotate(-2deg);}
+}
+@keyframes sexpBadgeBob{
+  0%,100%{transform:translateY(0);}
+  50%{transform:translateY(-4px);}
+}
+
+/* Hero copy */
+.sexp-empty-title{
+  font-size:17px;font-weight:800;letter-spacing:-0.02em;
+  color:var(--text);margin-bottom:8px;line-height:1.25;
+}
+.sexp-empty-desc{
+  font-size:12.5px;line-height:1.6;color:var(--text-muted);
+  max-width:300px;opacity:0.85;
+}
+
+/* ── Primary CTA — Start logging work ── */
+.sexp-empty-cta{
+  display:flex;align-items:center;gap:9px;
+  width:100%;
+  padding:12px 16px;
+  border:none;border-radius:13px;
+  background:var(--grad-primary);
+  color:#fff;
+  font-size:13.5px;font-weight:700;letter-spacing:-0.01em;
+  cursor:pointer;
+  position:relative;overflow:hidden;
+  box-shadow:0 1px 0 rgba(255,255,255,0.2) inset,0 8px 22px -8px rgba(108,134,255,0.65),0 0 0 1px rgba(124,147,255,0.18);
+  transition:transform 0.18s cubic-bezier(0.34,1.56,0.64,1),box-shadow 0.2s;
+}
+.sexp-empty-cta::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(255,255,255,0.18) 0%,transparent 45%);
+  pointer-events:none;
+}
+.sexp-empty-cta:hover{
+  transform:translateY(-2px);
+  box-shadow:0 1px 0 rgba(255,255,255,0.24) inset,0 12px 28px -8px rgba(108,134,255,0.8),0 0 0 1px rgba(124,147,255,0.28);
+}
+.sexp-empty-cta:active{transform:translateY(0);}
+.sexp-empty-cta-ico{
+  display:flex;align-items:center;justify-content:center;
+  width:24px;height:24px;border-radius:7px;flex-shrink:0;
+  background:rgba(255,255,255,0.18);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.25);
+}
+.sexp-empty-cta>span:nth-child(2){flex:1;text-align:left;}
+.sexp-empty-cta-arr{opacity:0.85;transition:transform 0.2s;}
+.sexp-empty-cta:hover .sexp-empty-cta-arr{transform:translateX(3px);}
+
+/* ── Footer row: locked Export state + Learn more ── */
+.sexp-empty-foot{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin-top:12px;
+}
+.sexp-empty-locked{
+  display:flex;align-items:center;gap:7px;
+  padding:7px 11px;border-radius:10px;
+  border:1px dashed var(--border-strong);
+  background:rgba(255,255,255,0.02);
+  color:var(--text-hint);
+  font-size:12px;font-weight:600;letter-spacing:-0.01em;
+  cursor:not-allowed;user-select:none;
+}
+.sexp-empty-locked-tag{
+  font-size:8.5px;font-weight:800;letter-spacing:0.07em;text-transform:uppercase;
+  padding:2px 6px;border-radius:20px;
+  background:rgba(255,255,255,0.05);
+  border:1px solid var(--border);
+  color:var(--text-muted);
+}
+.sexp-empty-learn{
+  display:flex;align-items:center;gap:5px;
+  padding:7px 10px;border-radius:10px;
+  background:transparent;border:1px solid transparent;
+  color:var(--primary-2);
+  font-size:12px;font-weight:600;letter-spacing:-0.01em;
+  cursor:pointer;
+  transition:background 0.2s,border-color 0.2s,color 0.2s;
+}
+.sexp-empty-learn:hover{
+  background:rgba(124,100,255,0.08);
+  border-color:rgba(124,100,255,0.20);
+}
+.sexp-empty-learn-chev{transition:transform 0.28s cubic-bezier(0.4,0,0.2,1);opacity:0.7;}
+.sexp-empty--open .sexp-empty-learn-chev{transform:rotate(180deg);}
+
+/* ── Disclosure: what you can export ── */
+.sexp-empty-more{
+  display:grid;grid-template-rows:0fr;
+  opacity:0;
+  transition:grid-template-rows 0.34s cubic-bezier(0.4,0,0.2,1),opacity 0.28s ease,margin-top 0.34s ease;
+  margin-top:0;
+}
+.sexp-empty--open .sexp-empty-more{
+  grid-template-rows:1fr;opacity:1;margin-top:14px;
+}
+.sexp-empty-more-inner{overflow:hidden;min-height:0;}
+.sexp-empty-list{display:flex;flex-direction:column;gap:8px;}
+.sexp-empty-item{
+  display:flex;align-items:center;gap:11px;
+  padding:10px 12px;border-radius:12px;
+  background:rgba(255,255,255,0.03);
+  border:1px solid var(--border);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.sexp-empty-item-ico{
+  flex-shrink:0;width:30px;height:30px;border-radius:9px;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--grad-primary-soft);
+  border:1px solid rgba(124,100,255,0.18);
+  color:var(--primary-2);
+}
+.sexp-empty-item-txt{flex:1;min-width:0;}
+.sexp-empty-item-t{font-size:12.5px;font-weight:700;color:var(--text);letter-spacing:-0.01em;}
+.sexp-empty-item-s{font-size:10.5px;color:var(--text-muted);opacity:0.75;line-height:1.4;margin-top:1px;}
+.sexp-empty-item-chk{color:var(--success);flex-shrink:0;opacity:0.9;}
+.sexp-empty-formats{
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  margin-top:12px;
+  font-size:10.5px;font-weight:500;color:var(--text-muted);opacity:0.7;
+  text-align:center;
+}
+.sexp-empty-formats svg{color:var(--success);flex-shrink:0;}
+
+/* Light-mode refinements for the illustration & locked chip */
+:root[data-theme="light"] .sexp-art-doc{
+  background:linear-gradient(160deg,#ffffff 0%,#eef2ff 100%);
+  border-color:rgba(99,115,177,0.16);
+  box-shadow:0 10px 24px -10px rgba(20,30,80,0.25),inset 0 1px 0 rgba(255,255,255,0.9);
+}
+:root[data-theme="light"] .sexp-art-doc--f{
+  border-color:rgba(73,119,253,0.22);
+  box-shadow:0 16px 30px -14px rgba(20,30,80,0.3),0 0 0 1px rgba(73,119,253,0.08),inset 0 1px 0 rgba(255,255,255,0.9);
+}
+:root[data-theme="light"] .sexp-art-line{background:rgba(20,30,80,0.14);}
+:root[data-theme="light"] .sexp-art-line--short{background:rgba(20,30,80,0.09);}
+:root[data-theme="light"] .sexp-empty-item{
+  background:rgba(73,119,253,0.03);
+  border-color:rgba(99,115,177,0.12);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.8);
+}
+:root[data-theme="light"] .sexp-empty-item-ico{border-color:rgba(73,119,253,0.15);}
+:root[data-theme="light"] .sexp-empty-locked{background:rgba(20,30,80,0.02);}
+
+@media(prefers-reduced-motion:reduce){
+  .sexp-art-doc--f,.sexp-art-badge{animation:none;}
+}
+@media(max-width:600px){
+  .sexp-empty-hero{padding:8px 4px 18px;}
+  .sexp-empty-art{margin-bottom:18px;}
+}
+
 /* ── Format buttons ── */
 .sexp-btns{
   display:grid;grid-template-columns:1fr 1fr;gap:8px;
@@ -7588,6 +8024,9 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 .ov-enter .ov-proj-card.ov-in .ov-proj-stat:nth-child(2){ animation-delay:270ms; }
 .ov-enter .ov-proj-card.ov-in .ov-chart-range--floating{ animation:ovFade 0.5s ease-out 320ms backwards; }
 
+/* Single-month caption fades in after the chart has drawn its point. */
+.ov-enter .ov-proj-card.ov-in .ov-chart-empty-note{ animation:ovFade 0.5s ease-out 700ms backwards; }
+
 /* Status chips pop once their card is revealed. */
 .ov-enter .ov-proj-card.ov-in .ov-proj-delta,
 .ov-enter .ov-stat4-card.ov-in .ov-stat4-delta{
@@ -7721,4 +8160,790 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   .ov-enter .ov-stat4-delta,
   .ov-enter .rs-item,
   .ov-enter .ov-breakdown-footer{ animation:none; }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Workplace configurator (wz-*) + Edit-workplace modal (wpm-*)
+   One component, two homes: onboarding step 3 and the Settings modal. The
+   app's glass language composed as a configuration panel — a preset picker
+   (compact rows that become a 3-up card grid when wide), tactile ×-rate
+   STEPPERS instead of form controls, animated grid-row FOLDS for progressive
+   sections (custom rules, the moonlit night panel, the unpaid break), and a
+   live-preview receipt whose values pop in place. Renders once; every state
+   change is a class toggle or a textContent swap — nothing re-renders.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.wz{display:flex;flex-direction:column;width:100%;text-align:left;container-type:inline-size;}
+/* Rhythm via margins, not flex gap: a CLOSED fold must contribute zero height
+   AND zero spacing. Open folds re-introduce the 12px beat on their content. */
+.wz>*{margin-top:12px;}
+.wz>:first-child{margin-top:0;}
+.wz>.wz-fold{margin-top:0;}
+.wz>.wz-fold>.wz-fold-in>*{margin-top:12px;}
+
+/* ── Folds — animated disclosure (the obx-rotsub pattern, generalized) ─────── */
+.wz-fold{
+  display:grid;grid-template-rows:0fr;opacity:0;
+  transition:grid-template-rows .42s cubic-bezier(.22,1,.36,1),opacity .3s ease;
+}
+.wz-fold--open{grid-template-rows:1fr;opacity:1;}
+.wz-fold-in{overflow:hidden;min-height:0;}
+
+/* ── Workplace picker — compact glass rows; a 3-up card grid when wide ─────── */
+.wz-choices{display:flex;flex-direction:column;gap:8px;}
+.wz-choice{
+  position:relative;display:flex;align-items:center;gap:12px;
+  padding:11px 13px;border-radius:15px;width:100%;text-align:left;cursor:pointer;
+  color:var(--text);
+  font-family:'Inter',system-ui,sans-serif;
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-top-color:var(--card-border-top);
+  box-shadow:var(--shadow-sm);
+  backdrop-filter:blur(16px) saturate(140%);
+  -webkit-backdrop-filter:blur(16px) saturate(140%);
+  transition:transform .2s cubic-bezier(.34,1.4,.5,1),border-color .18s ease,
+             background .2s ease,box-shadow .2s ease;
+}
+.wz-choice:hover{border-color:var(--border-strong);transform:translateY(-1px);}
+.wz-choice:active{transform:scale(.982);}
+.wz-choice:focus-visible{outline:2px solid var(--primary);outline-offset:2px;}
+.wz-choice-ic{
+  width:34px;height:34px;flex:none;display:flex;align-items:center;justify-content:center;
+  border-radius:11px;color:var(--primary);
+  background:var(--primary-bg);
+  border:1px solid color-mix(in srgb,var(--primary) 20%,transparent);
+  transition:transform .25s cubic-bezier(.34,1.56,.64,1),background .2s ease,
+             color .2s ease,border-color .2s ease,box-shadow .2s ease;
+}
+/* The glyphs are shared with the onboarding cards (authored at 15–18px);
+   normalize them so all three tiles carry the same visual weight. */
+.wz-choice-ic svg{width:16px;height:16px;}
+.wz-choice:active .wz-choice-ic{transform:scale(.9);}
+.wz-choice-txt{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
+.wz-choice-t{font-size:13px;font-weight:650;letter-spacing:-0.01em;line-height:1.3;color:var(--text);}
+.wz-choice-s{font-size:11.5px;color:var(--text-muted);font-weight:500;line-height:1.4;}
+.wz-choice-check{
+  width:20px;height:20px;flex:none;display:flex;align-items:center;justify-content:center;
+  border-radius:50%;color:#fff;
+  background:var(--grad-primary);
+  box-shadow:0 3px 10px -2px var(--primary-glow),inset 0 1px 0 rgba(255,255,255,0.3);
+  opacity:0;transform:scale(.4);
+  transition:opacity .18s ease,transform .3s cubic-bezier(.34,1.56,.64,1);
+}
+.wz-choice--active{
+  border-color:rgba(124,147,255,0.4);
+  background:linear-gradient(135deg,rgba(124,147,255,0.10) 0%,rgba(167,139,250,0.05) 100%),var(--bg-card);
+  box-shadow:0 0 0 3px var(--primary-glow),var(--shadow-sm);
+}
+[data-theme="light"] .wz-choice--active{border-color:rgba(73,119,253,0.34);}
+/* Lit left edge on the selected row — the app's edge-lighting motif */
+.wz-choice--active::before{
+  content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:3px;
+  background:var(--grad-primary);box-shadow:0 0 12px var(--primary-glow);
+}
+.wz-choice--active .wz-choice-ic{
+  color:#fff;border-color:transparent;
+  background:var(--grad-primary);
+  box-shadow:0 4px 12px -3px var(--primary-glow),inset 0 1px 0 rgba(255,255,255,0.25);
+}
+.wz-choice--active .wz-choice-check{opacity:1;transform:scale(1);}
+/* Wide containers: the rows stand up into equal-height cards, the check moves
+   to the corner, and the lit edge migrates to the top — same motif, rotated. */
+@container (min-width:500px){
+  .wz-choices{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+  .wz-choice{flex-direction:column;align-items:flex-start;gap:10px;padding:13px 14px 12px;}
+  .wz-choice-check{position:absolute;top:11px;right:11px;}
+  .wz-choice--active::before{
+    top:0;bottom:auto;left:16px;right:16px;width:auto;height:3px;
+    border-radius:0 0 3px 3px;
+  }
+}
+
+/* ── Custom pay rules — borderless frosted group, one tactile row per rule ─── */
+.wz-rules{
+  display:flex;flex-direction:column;
+  margin:2px;padding:12px 14px 7px;border-radius:16px;
+  background:var(--bg-glass);
+  box-shadow:inset 0 1px 0 var(--card-border-top);
+  backdrop-filter:blur(20px) saturate(140%);
+  -webkit-backdrop-filter:blur(20px) saturate(140%);
+}
+[data-theme="light"] .wz-rules{box-shadow:var(--shadow-sm);}
+.wz-rules-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:1px 1px 5px;}
+.wz-rules-eyebrow{
+  font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--text-muted);
+}
+.wz-std{
+  border:none;background:none;cursor:pointer;padding:4px 0;
+  font-family:'Inter',system-ui,sans-serif;font-size:11px;font-weight:600;
+  color:var(--text-muted);
+  text-decoration:underline dotted;text-underline-offset:3px;text-decoration-thickness:1px;
+  transition:color .15s ease;
+}
+.wz-std:hover{color:var(--primary);}
+.wz-std:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:6px;}
+.wz-rule{display:flex;align-items:center;gap:11px;padding:9px 0;}
+.wz-rule-ic{
+  width:30px;height:30px;flex:none;display:flex;align-items:center;justify-content:center;
+  border-radius:10px;color:var(--primary);
+  background:var(--primary-bg);
+}
+.wz-rule-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
+.wz-rule-t{font-size:13px;font-weight:600;letter-spacing:-0.01em;line-height:1.3;color:var(--text);}
+.wz-rule-c{
+  font-size:11px;font-weight:650;color:var(--text-muted);
+  font-variant-numeric:tabular-nums;letter-spacing:0.01em;
+  transition:color .2s ease;
+}
+.wz-rule-c--on{color:var(--primary);}
+.wz-rule-tog{flex:none;}
+
+/* ── Rate stepper — a frosted pill that ticks along ×0.25 detents ──────────── */
+.wz-stp{
+  flex:none;display:flex;align-items:center;gap:1px;
+  padding:3px;border-radius:999px;
+  background:var(--input-bg);
+  border:1px solid var(--border);
+  box-shadow:inset 0 1px 2px rgba(0,0,0,0.18);
+  transition:border-color .2s ease,box-shadow .2s ease;
+}
+[data-theme="light"] .wz-stp{box-shadow:inset 0 1px 2px rgba(20,30,80,0.05);}
+.wz-stp--on{
+  border-color:color-mix(in srgb,var(--primary) 32%,transparent);
+  box-shadow:inset 0 1px 2px rgba(0,0,0,0.18),0 0 14px -4px var(--primary-glow);
+}
+[data-theme="light"] .wz-stp--on{box-shadow:inset 0 1px 2px rgba(20,30,80,0.05),0 0 14px -4px var(--primary-glow);}
+.wz-stp-btn{
+  width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;
+  border:none;border-radius:50%;cursor:pointer;
+  color:var(--text-muted);background:transparent;
+  transition:transform .18s cubic-bezier(.34,1.6,.6,1),background .15s ease,color .15s ease;
+}
+.wz-stp-btn:hover{background:var(--bg-hover);color:var(--text);}
+.wz-stp-btn:active{transform:scale(.8);}
+.wz-stp-btn:focus-visible{outline:2px solid var(--primary);outline-offset:1px;}
+.wz-stp-btn:disabled{opacity:.28;cursor:default;transform:none;background:transparent;}
+.wz-stp-v{
+  min-width:44px;text-align:center;
+  font-size:13px;font-weight:700;letter-spacing:-0.01em;font-variant-numeric:tabular-nums;
+  color:var(--text);
+  transition:color .2s ease;
+}
+.wz-stp--on .wz-stp-v{color:var(--primary);}
+
+/* ── Night panel — shift times · premium window · unpaid break ─────────────── */
+.wz-sched{
+  position:relative;overflow:hidden;
+  display:flex;flex-direction:column;
+  margin:2px;padding:0 16px;border-radius:16px;
+  background:var(--night-bg);
+  border:1px solid var(--night-border);
+  box-shadow:var(--shadow-sm);
+  backdrop-filter:blur(16px) saturate(140%);
+  -webkit-backdrop-filter:blur(16px) saturate(140%);
+}
+/* Moonlit top edge — a luminous hairline fading at both ends */
+.wz-sched::before{
+  content:"";position:absolute;top:0;left:8%;right:8%;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(196,173,255,0.55) 30%,rgba(196,173,255,0.55) 70%,transparent);
+  opacity:.6;pointer-events:none;
+}
+/* Ambient glow pooling in the corner, under the content */
+.wz-sched::after{
+  content:"";position:absolute;top:-40px;right:-30px;width:180px;height:140px;
+  background:radial-gradient(closest-side,rgba(138,100,255,0.16),transparent 70%);
+  pointer-events:none;
+}
+[data-theme="light"] .wz-sched::before{background:linear-gradient(90deg,transparent,rgba(96,64,200,0.3) 30%,rgba(96,64,200,0.3) 70%,transparent);}
+[data-theme="light"] .wz-sched::after{background:radial-gradient(closest-side,rgba(96,64,200,0.08),transparent 70%);}
+
+.wz-sched-grid{display:grid;grid-template-columns:1fr 1fr;position:relative;z-index:1;}
+.wz-sched-sec{display:flex;flex-direction:column;gap:9px;padding:13px 0;}
+.wz-sched-grid .wz-sched-sec:first-child{padding-right:16px;}
+.wz-sched-grid .wz-sched-sec:last-child{
+  padding-left:16px;
+  border-left:1px solid color-mix(in srgb,var(--night-border) 55%,transparent);
+}
+.wz-sched-head{
+  display:flex;align-items:flex-start;gap:8px;min-height:34px;
+  font-size:12.5px;font-weight:650;letter-spacing:-0.01em;line-height:1.35;
+  color:var(--night-text);
+}
+.wz-sched-head>span:last-child{padding-top:3px;}
+.wz-sched-ic{
+  width:22px;height:22px;flex:none;display:flex;align-items:center;justify-content:center;
+  border-radius:7px;color:var(--night-text);
+  background:color-mix(in srgb,var(--night-text) 12%,transparent);
+  border:1px solid color-mix(in srgb,var(--night-text) 20%,transparent);
+  box-shadow:0 0 10px rgba(138,100,255,0.18);
+}
+[data-theme="light"] .wz-sched-ic{box-shadow:none;}
+.wz-times{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
+.wz-tf{
+  display:flex;flex-direction:column;gap:5px;min-width:0;
+  font-size:10.5px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;
+  color:var(--text-muted);
+}
+/* Sized so a full 12-hour value ("10:00 PM" + the picker glyph) fits even in
+   the modal's two-column layout — slim padding, no tracking, tight indicator.
+   Widen with care: the AM/PM suffix is the first thing Chrome clips. */
+.wz-time{
+  width:100%;min-width:0;padding:10px 6px;border-radius:11px;font:inherit;font-size:12.5px;font-weight:600;
+  font-variant-numeric:tabular-nums;
+  color:var(--text);background:var(--input-bg);
+  border:1px solid var(--border);
+  box-shadow:inset 0 1px 2px rgba(0,0,0,0.22);
+  transition:border-color .18s ease,box-shadow .18s ease;
+}
+.wz-time::-webkit-calendar-picker-indicator{margin-inline-start:2px;padding:0;}
+.wz-time:hover{border-color:var(--border-strong);}
+.wz-time:focus{
+  outline:none;border-color:var(--night-border);
+  box-shadow:inset 0 1px 2px rgba(0,0,0,0.22),0 0 0 3px var(--night-bg),0 0 14px -2px rgba(138,100,255,0.35);
+}
+[data-theme="light"] .wz-time{box-shadow:inset 0 1px 2px rgba(20,30,80,0.05);}
+[data-theme="dark"] .wz-time::-webkit-calendar-picker-indicator{filter:invert(0.72) sepia(0.15) saturate(2.4) hue-rotate(212deg);opacity:.7;}
+
+/* Unpaid break — two duration steppers and an overlap meter. Row A is the
+   total; row B (folds open while the total > 0) is the portion inside the
+   premium window, visualized by the slim night-glow meter beneath it. */
+.wz-break{
+  position:relative;z-index:1;
+  padding:4px 0 6px;
+  border-top:1px solid color-mix(in srgb,var(--night-border) 45%,transparent);
+}
+.wz-rule--sched{padding:8px 0;gap:10px;}
+.wz-rule--sched .wz-rule-t{color:var(--night-text);font-size:12.5px;}
+.wz-rule--sched .wz-rule-c{font-size:10.5px;}
+.wz-stp--dur .wz-stp-v{min-width:56px;font-size:12px;white-space:nowrap;padding:0 2px;}
+.wz-brk-night{padding-bottom:8px;}
+.wz-brk-meter{
+  height:4px;border-radius:999px;overflow:hidden;
+  background:color-mix(in srgb,var(--night-border) 30%,transparent);
+}
+.wz-brk-meter-fill{
+  height:100%;border-radius:999px;width:0;
+  background:linear-gradient(90deg,color-mix(in srgb,var(--night-text) 70%,transparent),var(--night-text));
+  box-shadow:0 0 8px rgba(138,100,255,0.5);
+  transition:width .35s cubic-bezier(.22,1,.36,1);
+}
+
+.wz-sched-note{
+  position:relative;z-index:1;
+  display:flex;align-items:flex-start;gap:8px;
+  padding:10px 0 12px;
+  border-top:1px solid color-mix(in srgb,var(--night-border) 45%,transparent);
+  font-size:11.5px;color:var(--text-muted);line-height:1.5;
+}
+.wz-sched-ic--hint{width:18px;height:18px;border-radius:6px;box-shadow:none;margin-top:-1px;}
+
+/* ── Live preview — a glass "receipt" of the compiled rules ────────────────── */
+.wz-preview{
+  display:flex;flex-direction:column;gap:7px;
+  padding:12px 14px 13px;border-radius:15px;
+  background:var(--primary-bg);
+  border:1px solid color-mix(in srgb,var(--primary) 18%,transparent);
+  box-shadow:inset 0 1px 0 var(--card-border-top);
+}
+.wz-preview:empty{display:none;}
+.wz-pv-head{
+  display:flex;align-items:center;gap:7px;
+  font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--text-muted);
+}
+.wz-pv-spark{display:flex;color:var(--primary);filter:drop-shadow(0 0 5px var(--primary-glow));}
+.wz-pv-row{
+  display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  font-size:12.5px;color:var(--text);font-variant-numeric:tabular-nums;
+}
+.wz-pv-k{display:flex;align-items:center;gap:8px;color:var(--text-muted);font-weight:550;min-width:0;}
+.wz-pv-k::before{
+  content:"";width:5px;height:5px;border-radius:50%;flex:none;
+  background:var(--primary);box-shadow:0 0 6px var(--primary-glow);
+}
+.wz-pv-row--night .wz-pv-k::before{background:var(--night-text);box-shadow:0 0 6px rgba(138,100,255,0.5);}
+.wz-pv-row--sat .wz-pv-k::before{background:var(--sat);box-shadow:0 0 6px rgba(122,184,255,0.5);}
+.wz-pv-row--hol .wz-pv-k::before{background:var(--danger);box-shadow:0 0 6px rgba(255,107,133,0.4);}
+.wz-pv-v{font-weight:700;letter-spacing:-0.01em;color:var(--text);white-space:nowrap;}
+.wz-pop{animation:wzPop .38s cubic-bezier(.34,1.56,.64,1) both;}
+@keyframes wzPop{from{opacity:.35;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+
+#ob-wizf .wz{text-align:left;}
+
+/* ── Edit-workplace modal — pinned glass header/footer, scrolling body ─────── */
+.wpm-modal{
+  max-width:560px;
+  padding:0;
+  max-height:min(720px,90vh);
+  display:flex;flex-direction:column;
+  overflow:hidden;isolation:isolate;position:relative;
+}
+.wpm-modal:focus{outline:none;}
+.wpm-header{
+  flex:0 0 auto;position:relative;margin:0;
+  padding:16px 20px 13px;
+}
+.wpm-header::after{
+  content:"";position:absolute;left:20px;right:20px;bottom:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--border-strong) 25%,var(--border-strong) 75%,transparent);
+  opacity:.7;
+}
+.wpm-badge{width:38px;height:38px;border-radius:12px;}
+.wpm-badge svg{width:18px;height:18px;}
+.wpm-title{font-size:16px;}
+.wpm-sub{font-size:12px;color:var(--text-muted);line-height:1.45;margin-top:2px;}
+.wpm-body{
+  flex:1 1 auto;min-height:0;
+  overflow-y:auto;overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+  padding:14px 20px 16px;
+}
+.wpm-actions{
+  flex:0 0 auto;position:relative;
+  display:flex;gap:10px;
+  padding:12px 20px 15px;
+}
+.wpm-actions::before{
+  content:"";position:absolute;left:20px;right:20px;top:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--border-strong) 25%,var(--border-strong) 75%,transparent);
+  opacity:.7;
+}
+.wpm-actions .btn-sec{flex:1;}
+.wpm-actions .btn-pri{flex:1.6;display:flex;align-items:center;justify-content:center;gap:7px;}
+
+/* ── Responsive ────────────────────────────────────────────────────────────── */
+/* The form lives in containers of very different widths (onboarding column vs
+   modal body), so the night panel stacks by CONTAINER width: two columns only
+   when the native time inputs ("10:00 PM") genuinely have room. */
+@container (max-width:479px){
+  .wz-sched-grid{grid-template-columns:1fr;}
+  .wz-sched-grid .wz-sched-sec:first-child{padding-right:0;padding-bottom:14px;}
+  .wz-sched-grid .wz-sched-sec:last-child{
+    padding-left:0;padding-top:14px;
+    border-left:none;
+    border-top:1px solid color-mix(in srgb,var(--night-border) 45%,transparent);
+  }
+  .wz-sched-head{min-height:0;}
+}
+@media (max-width:560px){
+  .wpm-header{padding:14px 16px 12px;}
+  .wpm-header::after,.wpm-actions::before{left:16px;right:16px;}
+  .wpm-body{padding:12px 16px 14px;}
+  .wpm-actions{padding:11px 16px 14px;}
+}
+@media (max-width:380px){
+  .wz-rule{gap:9px;}
+  .wz-rule-ic{width:28px;height:28px;border-radius:9px;}
+  .wz-stp-btn{width:26px;height:26px;}
+  .wz-stp-v{min-width:40px;font-size:12.5px;}
+  .wz-stp--dur .wz-stp-v{min-width:50px;font-size:11.5px;}
+}
+@media (prefers-reduced-motion:reduce){
+  .wz-fold{transition:none;}
+  .wz-choice,.wz-choice-ic,.wz-choice-check,.wz-stp,.wz-stp-btn,.wz-time{transition:border-color .15s ease,background .15s ease;}
+  .wz-pop{animation:none;}
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Split onboarding — Workplace & Pay Rules (wpx-) + Night Schedule (nsx-)
+   The reference design's language rendered in the app's own materials:
+   frosted glass section cards headed by uppercase eyebrows, preset cards with
+   corner radios and a starred recommendation, ×-rate steppers, a moonlit
+   schedule panel, and a live-preview receipt with a proportional shift
+   timeline. Shares the wz-* folds/steppers/rows so behaviour stays identical
+   to the Settings editor.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* The two configuration screens run wider than the rest of the flow so the
+   preset grid and the schedule panels can breathe on desktop. */
+.ob-overlay--wide .obx-chrome{max-width:620px;}
+.ob-overlay--wide .obx-col{width:min(100%,620px);}
+
+/* Internal rhythm — the .wz margin trick: closed folds contribute nothing */
+.wpx,.nsx{display:flex;flex-direction:column;width:100%;text-align:left;container-type:inline-size;}
+.wpx>*,.nsx>*{margin-top:12px;}
+.wpx>:first-child,.nsx>:first-child{margin-top:0;}
+.wpx>.wz-fold{margin-top:0;}
+.wpx>.wz-fold>.wz-fold-in>*{margin-top:12px;}
+
+/* ── Section card: glass panel + eyebrow header (both screens) ─────────────── */
+.obs-sec{
+  position:relative;overflow:hidden;
+  display:flex;flex-direction:column;
+  padding:13px 16px 12px;border-radius:18px;
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-top-color:var(--card-border-top);
+  box-shadow:var(--shadow-sm);
+  backdrop-filter:blur(16px) saturate(140%);
+  -webkit-backdrop-filter:blur(16px) saturate(140%);
+}
+.obs-sec-head{
+  display:flex;align-items:center;gap:9px;
+  padding-bottom:10px;margin-bottom:3px;
+  border-bottom:1px solid color-mix(in srgb,var(--border) 70%,transparent);
+}
+.obs-sec-ic{
+  width:26px;height:26px;flex:none;display:flex;align-items:center;justify-content:center;
+  border-radius:9px;color:var(--primary);
+  background:var(--primary-bg);
+  border:1px solid color-mix(in srgb,var(--primary) 18%,transparent);
+}
+.obs-sec-ic svg{width:13px;height:13px;}
+.obs-sec-t{
+  flex:1;min-width:0;
+  font-size:10.5px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
+  color:var(--text-muted);
+}
+/* Moonlit variant — the night panel's ambience on a section card */
+.obs-sec--night{
+  background:var(--night-bg);
+  border-color:var(--night-border);
+}
+.obs-sec--night::before{
+  content:"";position:absolute;top:0;left:8%;right:8%;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(196,173,255,0.55) 30%,rgba(196,173,255,0.55) 70%,transparent);
+  opacity:.6;pointer-events:none;
+}
+.obs-sec--night::after{
+  content:"";position:absolute;top:-40px;right:-30px;width:180px;height:140px;
+  background:radial-gradient(closest-side,rgba(138,100,255,0.16),transparent 70%);
+  pointer-events:none;
+}
+[data-theme="light"] .obs-sec--night::before{background:linear-gradient(90deg,transparent,rgba(96,64,200,0.3) 30%,rgba(96,64,200,0.3) 70%,transparent);}
+[data-theme="light"] .obs-sec--night::after{background:radial-gradient(closest-side,rgba(96,64,200,0.08),transparent 70%);}
+.obs-sec--night>*{position:relative;z-index:1;}
+.obs-sec--night .obs-sec-head{border-bottom-color:color-mix(in srgb,var(--night-border) 55%,transparent);}
+.obs-sec-ic--night{
+  color:var(--night-text);
+  background:color-mix(in srgb,var(--night-text) 12%,transparent);
+  border-color:color-mix(in srgb,var(--night-text) 20%,transparent);
+  box-shadow:0 0 10px rgba(138,100,255,0.18);
+}
+[data-theme="light"] .obs-sec-ic--night{box-shadow:none;}
+
+/* ── Workplace preset cards — three distinct profiles ──────────────────────────
+   Layered glass: a diagonal sheen over the card material, a lit top hairline,
+   an accent-tinted identity tile per profile (primary / violet / teal), and
+   concrete feature rows. Selection LIFTS the card: stronger ring, inner glow
+   pooling from the top edge, deeper shadow, and the corner radio fills with
+   the gradient check inside a soft halo. */
+.wpx-choices{display:flex;flex-direction:column;gap:10px;}
+.wpx-card{
+  position:relative;display:flex;flex-direction:column;gap:11px;
+  padding:14px 15px;border-radius:19px;width:100%;text-align:left;cursor:pointer;
+  color:var(--text);
+  font-family:'Inter',system-ui,sans-serif;
+  background:
+    linear-gradient(165deg,rgba(255,255,255,0.05) 0%,rgba(255,255,255,0.015) 34%,transparent 56%),
+    var(--bg-card);
+  border:1px solid var(--border);
+  border-top-color:var(--card-border-top);
+  box-shadow:var(--shadow-sm),inset 0 1px 0 rgba(255,255,255,0.05);
+  backdrop-filter:blur(18px) saturate(150%);
+  -webkit-backdrop-filter:blur(18px) saturate(150%);
+  transition:transform .22s cubic-bezier(.34,1.4,.5,1),border-color .18s ease,
+             background .2s ease,box-shadow .22s ease;
+}
+[data-theme="light"] .wpx-card{background:var(--bg-card);box-shadow:var(--shadow-sm);}
+.wpx-card:hover{border-color:var(--border-strong);transform:translateY(-1px);}
+.wpx-card:active{transform:scale(.985);}
+.wpx-card:focus-visible{outline:2px solid var(--primary);outline-offset:2px;}
+/* Selected: elevated + ringed + inner-lit */
+.wpx-card--active{
+  border-color:color-mix(in srgb,var(--primary) 52%,transparent);
+  background:
+    linear-gradient(165deg,rgba(255,255,255,0.07) 0%,rgba(255,255,255,0.02) 34%,transparent 56%),
+    linear-gradient(135deg,rgba(124,147,255,0.13) 0%,rgba(167,139,250,0.06) 100%),
+    var(--bg-card);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb,var(--primary) 42%,transparent),
+    0 18px 40px -18px rgba(96,110,235,0.55),
+    0 0 26px -8px var(--primary-glow),
+    inset 0 1px 0 rgba(255,255,255,0.14);
+  transform:translateY(-2px);
+}
+.wpx-card--active:hover{transform:translateY(-2px);}
+/* Inner glow pooling from the lit top edge */
+.wpx-card--active::after{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:radial-gradient(120% 55% at 50% 0%,rgba(124,147,255,0.15),transparent 62%);
+}
+[data-theme="light"] .wpx-card--active{
+  border-color:rgba(73,119,253,0.4);
+  background:linear-gradient(135deg,rgba(73,119,253,0.07) 0%,rgba(139,92,246,0.04) 100%),var(--bg-card);
+  box-shadow:
+    0 0 0 1px rgba(73,119,253,0.28),
+    0 16px 34px -18px rgba(73,119,253,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.7);
+}
+[data-theme="light"] .wpx-card--active::after{background:radial-gradient(120% 55% at 50% 0%,rgba(73,119,253,0.07),transparent 62%);}
+
+.wpx-card-head{display:flex;align-items:center;gap:12px;min-width:0;padding-right:26px;}
+.wpx-card-ic{
+  width:44px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;
+  border-radius:14px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.1);
+  transition:transform .25s cubic-bezier(.34,1.56,.64,1);
+}
+[data-theme="light"] .wpx-card-ic{box-shadow:none;}
+.wpx-card-ic svg{width:19px;height:19px;}
+.wpx-card:active .wpx-card-ic{transform:scale(.92);}
+/* Profile accents: Standard = primary blue, Iljitech = night violet,
+   Customize = success teal — the palette's own hues, one per identity. */
+.wpx-card--std .wpx-card-ic{color:var(--primary);background:var(--primary-bg);border:1px solid color-mix(in srgb,var(--primary) 24%,transparent);}
+.wpx-card--rec .wpx-card-ic{color:var(--night-text);background:var(--night-bg);border:1px solid var(--night-border);}
+.wpx-card--custom .wpx-card-ic{color:var(--success);background:var(--success-bg);border:1px solid color-mix(in srgb,var(--success) 26%,transparent);}
+.wpx-card-txt{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0;}
+.wpx-card-t{font-size:13.5px;font-weight:700;letter-spacing:-0.015em;line-height:1.25;color:var(--text);}
+.wpx-card-s{
+  font-size:11.5px;font-weight:500;line-height:1.45;
+  color:color-mix(in srgb,var(--text) 45%,var(--text-muted));
+}
+
+/* Feature rows — concrete, scannable differences (2-col chips when stacked) */
+.wpx-feats{display:grid;grid-template-columns:1fr 1fr;gap:7px;min-width:0;}
+.wpx-feat{
+  display:flex;align-items:center;gap:7px;min-width:0;
+  padding:7px 10px;border-radius:10px;
+  font-size:10.5px;font-weight:600;line-height:1.3;
+  color:color-mix(in srgb,var(--text) 34%,var(--text-muted));
+  background:color-mix(in srgb,var(--text) 4.5%,transparent);
+  border:1px solid color-mix(in srgb,var(--text) 8%,transparent);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.03);
+}
+[data-theme="light"] .wpx-feat{box-shadow:none;background:color-mix(in srgb,var(--text) 3.5%,transparent);}
+.wpx-feat svg{width:12px;height:12px;flex:none;}
+.wpx-feat>span{min-width:0;}
+.wpx-card--std .wpx-feat svg{color:var(--primary);}
+.wpx-card--rec .wpx-feat svg{color:var(--night-text);}
+.wpx-card--custom .wpx-feat svg{color:var(--success);}
+
+/* Narrow (the mobile onboarding column): compact cards — the three features
+   collapse from chip pills into one hairline-divided strip so each card stays
+   short enough for all three plus the CTA to share the screen. */
+@container (max-width:499px){
+  .wpx-choices{gap:8px;}
+  .wpx-card{padding:11px 13px 10px;gap:9px;border-radius:17px;}
+  .wpx-card-head{gap:11px;}
+  .wpx-card-ic{width:38px;height:38px;border-radius:12px;}
+  .wpx-card-ic svg{width:17px;height:17px;}
+  .wpx-card-txt{gap:1px;}
+  .wpx-feats{grid-template-columns:1fr 1fr 1fr;gap:0;}
+  .wpx-choices .wpx-feat{
+    padding:1px 6px 1px 9px;border-radius:0;gap:6px;
+    background:none;border:none;box-shadow:none;
+    border-left:1px solid color-mix(in srgb,var(--text) 10%,transparent);
+    font-size:10px;line-height:1.3;
+  }
+  .wpx-choices .wpx-feat:first-child{border-left:none;padding-left:0;}
+}
+
+/* Corner radio — empty ring that fills with the gradient check in a halo */
+.wpx-radio{
+  position:absolute;top:13px;right:13px;z-index:1;
+  width:22px;height:22px;display:flex;align-items:center;justify-content:center;
+  border-radius:50%;color:#fff;
+  border:1.5px solid var(--border-strong);
+  background:transparent;
+  transition:border-color .18s ease,background .18s ease,box-shadow .18s ease;
+}
+.wpx-radio svg{opacity:0;transform:scale(.4);transition:opacity .18s ease,transform .3s cubic-bezier(.34,1.56,.64,1);}
+.wpx-card--active .wpx-radio{
+  border-color:transparent;
+  background:var(--grad-primary);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb,var(--primary) 16%,transparent),
+    0 3px 12px -2px var(--primary-glow),
+    inset 0 1px 0 rgba(255,255,255,0.3);
+}
+.wpx-card--active .wpx-radio svg{opacity:1;transform:scale(1);}
+
+/* Wide: a 3-up grid of standing profiles — identity centred, features
+   bottom-aligned so the chips rest on a shared baseline. */
+@container (min-width:500px){
+  .wpx-choices{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;align-items:stretch;}
+  .wpx-card{padding:18px 13px 14px;gap:13px;}
+  .wpx-card-head{flex-direction:column;align-items:center;text-align:center;gap:11px;padding-right:0;}
+  .wpx-card-ic{width:50px;height:50px;border-radius:16px;}
+  .wpx-card-ic svg{width:22px;height:22px;}
+  .wpx-feats{grid-template-columns:1fr;margin-top:auto;}
+}
+
+/* Helper note — anchored under the CTA, quiet but readable */
+.obx-flownote{
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  margin:0;font-size:11.5px;font-weight:500;
+  color:var(--text-muted);
+}
+.obx-flownote svg{flex:none;opacity:.65;}
+
+/* The Customize escape hatch only exists while Customize is open — [hidden]
+   must beat the ghost button's display:flex. */
+.obx-later[hidden]{display:none;}
+
+/* Pay-rules card: reuses the wz-rule rows; the restore action lives in the header */
+.wpx-rules .wz-rule{padding:9px 0;}
+.wpx-restore{
+  display:flex;align-items:center;gap:6px;flex:none;
+  border:none;background:none;cursor:pointer;padding:4px 2px;
+  font-family:'Inter',system-ui,sans-serif;font-size:11px;font-weight:600;
+  color:var(--text-muted);
+  transition:color .15s ease;
+}
+.wpx-restore:hover{color:var(--primary);}
+.wpx-restore:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:6px;}
+.wpx-restore svg{flex:none;}
+
+/* ── Night Schedule page ───────────────────────────────────────────────────── */
+.nsx-grid{display:grid;grid-template-columns:1fr 1fr;}
+.nsx-fgroup{display:flex;flex-direction:column;gap:9px;padding:10px 0 12px;min-width:0;}
+.nsx-grid .nsx-fgroup:first-child{padding-right:16px;}
+.nsx-grid .nsx-fgroup:last-child{
+  padding-left:16px;
+  border-left:1px solid color-mix(in srgb,var(--night-border) 55%,transparent);
+}
+.nsx-q{
+  font-size:12.5px;font-weight:650;letter-spacing:-0.01em;line-height:1.35;
+  color:var(--night-text);
+  display:flex;align-items:flex-end;
+}
+.nsx-times{display:grid;grid-template-columns:1fr auto 1fr;gap:7px;align-items:center;}
+.nsx-times-sep{
+  display:flex;align-items:center;justify-content:center;
+  color:var(--text-hint);
+}
+.nsx-times-sep--dash{font-size:14px;font-weight:600;}
+.nsx-note{
+  display:flex;align-items:flex-start;gap:8px;
+  padding:10px 0 3px;
+  border-top:1px solid color-mix(in srgb,var(--night-border) 45%,transparent);
+  font-size:11.5px;color:var(--text-muted);line-height:1.5;
+}
+.nsx-brk-night{padding-bottom:9px;}
+.wz-rule--nsx{padding:8px 0;}
+.wz-rule--nsx .wz-rule-t{font-size:12.5px;}
+.wz-rule--nsx .wz-rule-c{font-size:10.5px;}
+
+/* ── Live preview: shift summary · timeline · legend · you'll-earn ─────────── */
+.nsx-pv-tag{
+  flex:none;padding:3px 9px;border-radius:999px;
+  font-size:10px;font-weight:650;letter-spacing:0.02em;
+  color:var(--primary);
+  background:var(--primary-bg);
+  border:1px solid color-mix(in srgb,var(--primary) 24%,transparent);
+}
+.nsx-pv-body{display:flex;flex-direction:column;}
+.nsx-pv-shift{
+  display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;
+  padding:6px 0 12px;
+}
+.nsx-pv-shift-k{font-size:11px;font-weight:600;color:var(--text-muted);}
+.nsx-pv-shift-v{
+  font-family:'Space Grotesk','Inter',system-ui,sans-serif;
+  font-size:17px;font-weight:700;letter-spacing:-0.01em;color:var(--text);
+  font-variant-numeric:tabular-nums;
+}
+.nsx-pv-shift-m{font-size:11px;font-weight:500;color:var(--text-muted);font-variant-numeric:tabular-nums;}
+.nsx-tl{padding-bottom:4px;}
+.nsx-tl-bar{
+  display:flex;height:10px;border-radius:999px;overflow:hidden;
+  background:var(--input-bg);
+  box-shadow:inset 0 1px 2px rgba(0,0,0,0.18);
+}
+[data-theme="light"] .nsx-tl-bar{box-shadow:inset 0 1px 2px rgba(20,30,80,0.06);}
+.nsx-tl-seg{display:block;height:100%;}
+.nsx-tl-seg--prem{
+  background:linear-gradient(90deg,color-mix(in srgb,var(--night-text) 78%,transparent),var(--night-text));
+  box-shadow:0 0 10px rgba(138,100,255,0.45);
+}
+.nsx-tl-seg--plain{background:color-mix(in srgb,var(--sat) 80%,transparent);}
+.nsx-tl-seg--brk{
+  background:repeating-linear-gradient(-45deg,
+    color-mix(in srgb,var(--day-text) 65%,transparent) 0 3px,
+    color-mix(in srgb,var(--day-text) 30%,transparent) 3px 6px);
+}
+.nsx-tl-labels{
+  position:relative;height:15px;margin-top:6px;
+  font-size:10px;font-weight:600;color:var(--text-hint);
+  font-variant-numeric:tabular-nums;
+}
+.nsx-tl-labels span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap;}
+.nsx-tl-labels span[data-edge="l"]{transform:none;}
+.nsx-tl-labels span[data-edge="r"]{transform:translateX(-100%);}
+.nsx-leg{
+  display:flex;flex-wrap:wrap;gap:5px 14px;
+  padding:2px 0 13px;
+  font-size:10.5px;font-weight:550;color:var(--text-muted);
+  font-variant-numeric:tabular-nums;
+}
+.nsx-leg>span{display:inline-flex;align-items:center;gap:6px;}
+.nsx-leg-i{width:8px;height:8px;border-radius:3px;flex:none;}
+.nsx-leg-i--prem{background:var(--night-text);box-shadow:0 0 6px rgba(138,100,255,0.5);}
+.nsx-leg-i--plain{background:var(--sat);}
+.nsx-leg-i--brk{background:repeating-linear-gradient(-45deg,
+  color-mix(in srgb,var(--day-text) 65%,transparent) 0 2px,
+  color-mix(in srgb,var(--day-text) 30%,transparent) 2px 4px);}
+/* You'll earn — a tinted receipt with the gradient-number total */
+.nsx-earn{
+  display:flex;flex-direction:column;gap:7px;
+  padding:11px 13px 12px;border-radius:14px;
+  background:var(--primary-bg);
+  border:1px solid color-mix(in srgb,var(--primary) 16%,transparent);
+  box-shadow:inset 0 1px 0 var(--card-border-top);
+}
+.nsx-earn-h{
+  font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--text-muted);
+}
+.nsx-earn-r{
+  display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  font-size:12.5px;font-variant-numeric:tabular-nums;
+}
+.nsx-earn-k{display:flex;align-items:center;gap:8px;color:var(--text-muted);font-weight:550;min-width:0;}
+.nsx-earn-k::before{content:"";width:5px;height:5px;border-radius:50%;flex:none;}
+.nsx-earn-k--reg::before{background:var(--sat);box-shadow:0 0 6px rgba(122,184,255,0.5);}
+.nsx-earn-k--night::before{background:var(--night-text);box-shadow:0 0 6px rgba(138,100,255,0.5);}
+.nsx-earn-pct{
+  font-style:normal;font-size:10px;font-weight:700;
+  color:var(--night-text);
+  padding:1px 6px;border-radius:999px;
+  background:color-mix(in srgb,var(--night-text) 12%,transparent);
+}
+.nsx-earn-v{font-weight:700;letter-spacing:-0.01em;color:var(--text);white-space:nowrap;}
+.nsx-earn-total{
+  display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  padding-top:9px;margin-top:2px;
+  border-top:1px solid color-mix(in srgb,var(--primary) 18%,transparent);
+}
+.nsx-earn-total>span:first-child{font-size:11px;font-weight:650;color:var(--text-muted);}
+.nsx-earn-big{
+  font-family:'Space Grotesk','Inter',system-ui,sans-serif;
+  font-size:22px;font-weight:700;letter-spacing:-0.02em;line-height:1;
+  background:linear-gradient(135deg,#ffffff 0%,#d7ddff 100%);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  white-space:nowrap;
+}
+[data-theme="light"] .nsx-earn-big{
+  background:linear-gradient(135deg,#0d1033 0%,#3548a8 100%);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+}
+
+/* ── Responsive: the schedule grid stacks in narrow containers ─────────────── */
+@container (max-width:479px){
+  .nsx-grid{grid-template-columns:1fr;}
+  .nsx-grid .nsx-fgroup:first-child{padding-right:0;padding-bottom:13px;}
+  .nsx-grid .nsx-fgroup:last-child{
+    padding-left:0;padding-top:13px;
+    border-left:none;
+    border-top:1px solid color-mix(in srgb,var(--night-border) 45%,transparent);
+  }
+  .nsx-q{min-height:0;}
+}
+@media (prefers-reduced-motion:reduce){
+  .wpx-card,.wpx-card-ic,.wpx-radio,.wpx-radio svg{transition:border-color .15s ease,background .15s ease;}
+  .wpx-card--active{transform:none;}
 }

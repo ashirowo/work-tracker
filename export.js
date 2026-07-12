@@ -18,7 +18,9 @@
 //   worker afterward, so PDF export keeps working offline too.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { TR, nightWeekdayEff, satNightEff, satDayEff } from './translations.js';
+import { TR } from './translations.js';
+import { calcWage as calcWageCore } from './calc.js';
+import { DEFAULT_PROFILE, isUsableProfile } from './profile.js';
 
 // ── Re-use helpers already defined in app.js via a small shared-state bridge ──
 // We read from localStorage directly (same keys as app.js) so this module is
@@ -164,67 +166,22 @@ function isFixedShiftPattern() {
 
 function applyTax(g) { return Math.round(g * (1 - deductionPct() / 100)); }
 
+// Phase 1: the duplicate calculator that used to live here (a hand-maintained
+// copy of app.js's calcWage) moved to calc.js — ONE implementation now serves
+// both the app display and these exports, so they can never drift apart.
+// This adapter keeps the old (…, holidays) signature used by buildRows and
+// supplies the export-side environment. NOTE: net/gross semantics are now
+// exactly the app's (incl. its per-term OT rounding); notes are computed by
+// the core but unused here.
+function getProfile() {
+  const p = ld('wt4_profile', null);
+  return isUsableProfile(p) ? p : DEFAULT_PROFILE;
+}
 function calcWage(dateStr, regHrs, otHrs, wage, shiftOverride, holCreditOverride, holidays) {
-  const shift = shiftOverride || shiftFor(dateStr);
-  const holDay = !!holidays[dateStr];
-  const sun = isSun(dateStr) && !holDay;
-  const sat = isSat(dateStr) && !holDay;
-  const holCredit = holCreditOverride !== undefined ? holCreditOverride : isHolAuto();
-  let eff = 0;
-
-  if (shift === 'double') {
-    const nightEff = +(satNightEff(8)).toFixed(2);
-    const daySatEff = +(8 / 8 * 12).toFixed(2);
-    if (sun || holDay) {
-      const hasAutoBase = sun || (holDay && holCredit);
-      eff = hasAutoBase ? +(8 + daySatEff + nightEff).toFixed(2) : +(daySatEff + nightEff).toFixed(2);
-    } else if (sat) {
-      eff = +(daySatEff + nightEff).toFixed(2);
-    } else {
-      eff = +(8 + nightEff).toFixed(2);
-    }
-    if (otHrs > 0) eff = +(eff + otHrs * 2).toFixed(2);
-    const g = Math.round(eff * wage);
-    return { gross: g, net: applyTax(g), eff };
-  }
-
-  if (sun) {
-    eff = 8;
-    if (regHrs > 0 || otHrs > 0) {
-      const wEff = shift === 'day'
-        ? +(satDayEff(regHrs) + (otHrs > 0 ? otHrs * 1.5 : 0)).toFixed(2)
-        : +(satNightEff(regHrs) + (otHrs > 0 ? otHrs * 2 : 0)).toFixed(2);
-      eff = +(8 + wEff).toFixed(2);
-    }
-    const g = Math.round(eff * wage); return { gross: g, net: applyTax(g), eff };
-  }
-
-  if (holDay) {
-    if (holCredit) eff = 8;
-    if (regHrs > 0 || otHrs > 0) {
-      const wEff = shift === 'day'
-        ? +(satDayEff(regHrs) + (otHrs > 0 ? otHrs * 1.5 : 0)).toFixed(2)
-        : +(satNightEff(regHrs) + (otHrs > 0 ? otHrs * 2 : 0)).toFixed(2);
-      eff = +(eff + wEff).toFixed(2);
-    }
-    const g = Math.round(eff * wage); return { gross: g, net: applyTax(g), eff };
-  }
-
-  if (sat) {
-    eff = shift === 'day'
-      ? +(satDayEff(regHrs) + (otHrs > 0 ? otHrs * 1.5 : 0)).toFixed(2)
-      : +(satNightEff(regHrs) + (otHrs > 0 ? otHrs * 2 : 0)).toFixed(2);
-    const g = Math.round(eff * wage); return { gross: g, net: applyTax(g), eff };
-  }
-
-  if (shift === 'day') {
-    eff = regHrs;
-    if (otHrs > 0) eff = +(eff + otHrs * 1.5).toFixed(2);
-  } else {
-    eff = nightWeekdayEff(regHrs);
-    if (otHrs > 0) eff = +(eff + otHrs * 2).toFixed(2);
-  }
-  const g = Math.round(eff * wage); return { gross: g, net: applyTax(g), eff };
+  return calcWageCore(
+    { tr: TR[getLang()] || TR.en, holAuto: isHolAuto(), isHol: ds => !!holidays[ds], shiftFor, applyTax, profile: getProfile() },
+    dateStr, regHrs, otHrs, wage, shiftOverride, holCreditOverride
+  );
 }
 
 // ── Determine which months have any data ──────────────────────────────────────

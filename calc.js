@@ -46,12 +46,14 @@ function pd(s){const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d);}
 function dowOf(s){return pd(s).getDay();}
 
 // ── Day classification ────────────────────────────────────────────────────────
-// Precedence (matches the original calcWage flag logic exactly for restDow=0):
-// holiday > restday > saturday > weekday.
+// Precedence: holiday > restday > saturday > weekday — EXCEPT a public holiday
+// that lands on a Saturday. Those are paid under the 50% Saturday rule (no 8h
+// holiday base, worked hours use Saturday math), so a Saturday holiday falls
+// through to the 'saturday' classification instead of winning as 'holiday'.
 export function classifyDay(dateStr, holDay, profile){
   profile = normalizeProfile(profile);
-  if(holDay) return 'holiday';
   const dow = dowOf(dateStr);
+  if(holDay && dow !== 6) return 'holiday';
   if(dow === ((profile && profile.restDow) ?? 0)) return 'restday';
   if(dow === 6) return 'saturday';
   return 'weekday';

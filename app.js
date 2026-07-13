@@ -10,6 +10,23 @@ import { DEFAULT_PROFILE, isUsableProfile } from './profile.js';
 import { needsNightSchedule, nightHoursOf } from './profile-v2.js';
 import { buildExportCard, wireExportCard, buildRows, exportCSV, exportPDF, showExportToast, monthsWithData as expMonthsWithData } from './export.js';
 
+// ── App signature footer ─────────────────────────────────────────────────────
+// Premium credit footer shared beneath the last card on the Calendar, Overview,
+// and Settings tabs. Bump APP_VERSION on release — it surfaces in the pill on
+// the right. The credit text stays localized via t('calHint').
+const APP_VERSION = 'v2.1.4';
+function appFooter(){
+  return `
+  <footer class="app-footer">
+    <div class="app-footer-rule"><span class="app-footer-spark"></span></div>
+    <div class="app-footer-pill">
+      <span class="app-footer-credit">${t('calHint')}</span>
+      <span class="app-footer-div"></span>
+      <span class="app-footer-ver">${APP_VERSION}</span>
+    </div>
+  </footer>`;
+}
+
 // ── Auth state (global, set by firebase.js) ─────────────────────────────────
 // CURRENT_USER is the single source of truth for auth in the render layer.
 // firebase.js calls setCURRENT_USER when onAuthStateChanged fires,
@@ -1639,7 +1656,9 @@ function liveGross(ds, logsArg){
     return calcWage(ds, reg, ot, w, l.shiftOverride, l.holCreditOverride).gross;
   }
   const todayStr = today();
-  if(isHol(ds) && ds <= todayStr){
+  // Holiday auto-credit is suppressed when the holiday falls on a Saturday —
+  // Saturdays follow the separate 50% Saturday pay rule, not the 8h credit.
+  if(isHol(ds) && !isSat(ds) && ds <= todayStr){
     const logEntry=logs[ds];
     const credit = logEntry?.holCreditOverride !== undefined ? logEntry.holCreditOverride : isHolAuto();
     if(credit && !logEntry) return Math.round(8 * w); // auto-credit, no manual log
@@ -1662,7 +1681,9 @@ function autoEff(ds, logsArg){
     return calcWage(ds, reg, ot, wageFor(ds), l.shiftOverride, l.holCreditOverride).eff;
   }
   const todayStr = today();
-  if(isHol(ds) && ds <= todayStr){
+  // Holiday auto-credit is suppressed when the holiday falls on a Saturday —
+  // Saturdays follow the separate 50% Saturday pay rule, not the 8h credit.
+  if(isHol(ds) && !isSat(ds) && ds <= todayStr){
     const logEntry=getLogs()[ds];
     const credit = logEntry?.holCreditOverride !== undefined ? logEntry.holCreditOverride : isHolAuto();
     if(credit && !logEntry) return 8;
@@ -2412,7 +2433,9 @@ function buildCal(){
     const workedLog = logged && !creditOnlyHol;
     const sun=dw===0,autoSun=sun&&!hol&&!logged&&!future&&allWeekdaysLogged(s);
     // Auto-credited holiday: live (holAuto ON, no entry) OR a baked credit-only entry.
-    const autoHol=hol&&!future&&((!logged&&isHolAuto())||creditOnlyHol);
+    // The live auto-credit is suppressed on Saturdays (dw===6): those fall under the
+    // separate 50% Saturday pay rule and pay 0 when unworked, so no auto-cred marker.
+    const autoHol=hol&&!future&&((!logged&&isHolAuto()&&dw!==6)||creditOnlyHol);
     const dayShift=logs[s]?.shiftOverride||shiftFor(s);
     const isNight=dayShift==='night';
     const isDouble=dayShift==='double';
@@ -2490,7 +2513,7 @@ function buildCal(){
     </div>
     ${holChips?`<div class="hol-list">${holChips}</div>`:''}
   </div>
-  <div style="font-size:11px;color:var(--text-hint);text-align:center;margin-top:-6px;">${t('calHint')}</div>`;
+  ${appFooter()}`;
 }
 function buildOverview(){
   const logs=getLogs(),todayStr=today();
@@ -3057,7 +3080,7 @@ function buildOverview(){
     </div>
 
   </div>
-  <div style="font-size:11px;color:var(--text-hint);text-align:center;margin-top:-6px;">${t('calHint')}</div>`;
+  ${appFooter()}`;
   // Charts rendered after DOM injection — see renderTrendChart() called from attachListeners
 }
 
@@ -4382,7 +4405,7 @@ function buildSettings(){
     </button>
   </div>
 
-  <div style="font-size:11px;color:var(--text-hint);text-align:center;margin-top:4px;">${t('calHint')}</div>`;
+  ${appFooter()}`;
 }
 
 // ── Inline export card ────────────────────────────────────────────────────────
@@ -5041,7 +5064,7 @@ function buildModal(){
     ${buildRegOtRows(ms.shift)}
     ${previewHTMLShell}`;
   }else if(holDay){
-    const holInfoKey=ms.holCredit?'holInfo':'holInfoNoAuto';
+    const holInfoKey=(ms.holCredit && dw!==6)?'holInfo':'holInfoNoAuto';
     bodyHTML=`<div class="info-box warn" id="m-hol-info">${t(holInfoKey)}</div>
     ${buildHolCreditToggle(ms.holCredit)}
     ${buildRegOtRows(ms.shift)}
@@ -6771,7 +6794,10 @@ function attachContentListeners(){
       const w = wageFor(ds);
       const sf = shiftFor(ds);
       if(!logs[ds]) {
-        // Case 1: no entry — bake in as a pure holiday credit day
+        // Case 1: no entry — bake in as a pure holiday credit day.
+        // Saturday holidays are never auto-credited (they follow the 50% Saturday
+        // pay rule), so there's no phantom credit to preserve — skip them.
+        if(isSat(ds)) return;
         const c = calcWage(ds, 0, 0, w, sf, true);
         logs[ds] = {regHrs:0, otHrs:0, hrs:0, gross:c.gross, net:c.net, eff:c.eff,
           holCreditOverride:true};

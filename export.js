@@ -262,7 +262,8 @@ export function buildRows(fromYM, toYM, lang = getLang()) {
         otHrs  = log.otHrs  !== undefined ? log.otHrs  : 0;
         const c = calcWage(ds, regHrs, otHrs, wage, log.shiftOverride, log.holCreditOverride, holidays);
         gross = c.gross; net = c.net; eff = c.eff;
-      } else if (isHol && holCredit && startedBy(ds)) {
+      } else if (isHol && !isSat(ds) && holCredit && startedBy(ds)) {
+        // Saturday holidays are excluded — they follow the 50% Saturday pay rule.
         gross = Math.round(8 * wage); net = applyTax(gross); eff = 8; autoCredit = true;
       } else if (sun && startedBy(ds)) {
         const ws = getMonday(ds);

@@ -11,6 +11,8 @@ import { compileProfileV2, PRESET_ANSWERS_V2 } from './compile.js';
 import { DEFAULT_PROFILE, isUsableProfile } from './profile.js';
 import { needsNightSchedule, nightHoursOf } from './profile-v2.js';
 import { buildRows, exportCSV, exportPDF, showExportToast, monthsWithData as expMonthsWithData } from './export.js';
+import { pad, mkds, pd, dowOf, isSun, isSat, getMonday } from './core/dates.js';
+import { entryHours, isZeroDay } from './domain/log-entries.js';
 
 // ── App signature footer ─────────────────────────────────────────────────────
 // Premium credit footer shared beneath the last card on the Calendar, Overview,
@@ -444,11 +446,10 @@ function getActiveDeductionPct(){return Math.round(deductionRate()*100*100)/100;
 function getDeductionNoun(){return t(getDeductionMode()==='insurance'?'deductionModeInsurance':'deductionModeTax');}
 function ld(k,d){try{const v=localStorage.getItem(k);return v!==null?JSON.parse(v):d;}catch{return d;}}
 function sv(k,v){localStorage.setItem(k,JSON.stringify(v));}
-function pad(n){return String(n).padStart(2,'0');}
-function mkds(y,m,d){return`${y}-${pad(m+1)}-${pad(d)}`;}
-function pd(s){const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d);}
+// pad/mkds/pd/dowOf/isSun/isSat/getMonday moved to core/dates.js (Phase 2).
+// today() stays HERE: the golden oracle reassigns it to a pinned fixture date,
+// which an imported binding cannot be.
 function today(){const d=new Date();return mkds(d.getFullYear(),d.getMonth(),d.getDate());}
-function dowOf(s){return pd(s).getDay();}
 function getLogs(){return ld('wt4_logs',{});}
 function saveLogs(l){sv('wt4_logs',l);scheduleSync();}
 
@@ -557,20 +558,12 @@ function holName(s){
   if(S.lang === 'ko') return ko;
   return translateHolidayName(ko, S.lang);
 }
-function isSun(s){return dowOf(s)===0;}
-function isSat(s){return dowOf(s)===6;}
 // Applies whichever deduction mode is active (tax or insurance).
 // Named applyTax for backward-compat with existing call sites.
 function applyDeductions(g){return Math.round(g*(1-deductionRate()));}
 function applyTax(g){return applyDeductions(g);}
 
 // ── Shift: anchor-based propagation forward indefinitely ─────────────────────
-function getMonday(s){
-  const d=pd(s),day=d.getDay(),diff=d.getDate()-day+(day===0?-6:1);
-  const m=new Date(d);m.setDate(diff);
-  return mkds(m.getFullYear(),m.getMonth(),m.getDate());
-}
-
 function shiftFor(s){
   const sh=getShifts(),ws=getMonday(s);
   const keys=Object.keys(sh).filter(k=>k<=ws).sort();
@@ -1674,8 +1667,7 @@ function liveGross(ds, logsArg){
     // Recompute from the raw inputs saved with the entry.
     // regHrs/otHrs are present in all entries saved after the wage-history feature.
     // Older entries used a single 'hrs' field — fall back gracefully.
-    const reg = l.regHrs !== undefined ? l.regHrs : (l.hrs || 0);
-    const ot  = l.otHrs  !== undefined ? l.otHrs  : 0;
+    const { reg, ot } = entryHours(l);
     return calcWage(ds, reg, ot, w, l.shiftOverride, l.holCreditOverride).gross;
   }
   const todayStr = today();
@@ -1699,8 +1691,7 @@ function autoEff(ds, logsArg){
   const logs = logsArg !== undefined ? logsArg : getLogs();
   if(logs[ds]){
     const l = logs[ds];
-    const reg = l.regHrs !== undefined ? l.regHrs : (l.hrs || 0);
-    const ot  = l.otHrs  !== undefined ? l.otHrs  : 0;
+    const { reg, ot } = entryHours(l);
     return calcWage(ds, reg, ot, wageFor(ds), l.shiftOverride, l.holCreditOverride).eff;
   }
   const todayStr = today();
@@ -2302,7 +2293,7 @@ function buildStats(){
   for(let d=1;d<=daysInM;d++){
     const ds=mkds(S.calY,S.calM,d);
     const g=autoGross(ds,logs),e=autoEff(ds,logs);
-    if(g>0||(logs[ds]&&(logs[ds].regHrs===0&&logs[ds].otHrs===0))){days++;gross+=g;hrs+=e;}
+    if(g>0||(logs[ds]&&isZeroDay(logs[ds]))){days++;gross+=g;hrs+=e;}
   }
   const net=applyTax(gross);
   const target=S.targetHrs||250;
@@ -2566,8 +2557,8 @@ function buildOverview(){
       const g=autoGross(ds,logs);  // liveGross: always recomputed from hours × wageFor(ds)
       const e=autoEff(ds,logs);
       const isLogged=!!logs[ds];
-      const isZeroDay=isLogged&&(logs[ds].regHrs===0&&logs[ds].otHrs===0);
-      if(g>0||isZeroDay){
+      const zeroDay=isLogged&&isZeroDay(logs[ds]);
+      if(g>0||zeroDay){
         ensureMonth(ym);
         const m=monthData[ym];
         const net=applyTax(g);
@@ -2795,8 +2786,7 @@ function buildOverview(){
     const sh=(l.shiftOverride)||shiftFor(ds);
     const shLabel=sh==='double'?`<i class="fa-solid fa-rotate"></i> ${t('doubleShift')}`:sh==='night'?`<i class="fa-solid fa-moon"></i> ${t('nightShift')}`:`<i class="fa-solid fa-sun"></i> ${t('dayShift')}`;
     const shCls=sh==='double'?'rs-shift--double':sh==='night'?'rs-shift--night':'rs-shift--day';
-    const reg=l.regHrs!==undefined?l.regHrs:(l.hrs||0);
-    const ot=l.otHrs||0;
+    const {reg,ot}=entryHours(l);
     const totalH=(sh==='double'?0:reg)+ot;
     const net=applyTax(liveGross(ds,logs));
     const isToday=ds===todayStr;
@@ -3855,7 +3845,7 @@ async function renderMonthBarChart(){
     const ds=mkds(curY,curMo,d);
     if(ds>todayStr) break;
     const g=autoGross(ds,logs);
-    if(g>0||(logs[ds]&&logs[ds].regHrs===0&&logs[ds].otHrs===0)){
+    if(g>0||(logs[ds]&&isZeroDay(logs[ds]))){
       bars.push({day:d, value:applyTax(g)});
     }
   }
@@ -6183,8 +6173,7 @@ function _asmComputeData() {
     .filter(([ds]) => ds <= todayStr)
     .map(([ds, l]) => {
       const sh     = l.shiftOverride || shiftFor(ds);
-      const reg    = l.regHrs !== undefined ? l.regHrs : (l.hrs || 0);
-      const ot     = l.otHrs || 0;
+      const { reg, ot } = entryHours(l);
       const totalH = sh === 'double' ? 0 : reg + ot;
       const net    = applyTax(liveGross(ds, logs));
       return { ds, sh, totalH, net };

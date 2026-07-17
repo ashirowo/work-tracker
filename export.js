@@ -15,21 +15,17 @@
 import { TR } from './translations.js';
 import { calcWage as calcWageCore } from './calc.js';
 import { DEFAULT_PROFILE, isUsableProfile } from './profile.js';
+import { pad, mkds, pd, dowOf, isSun, isSat, getMonday } from './core/dates.js';
+import { entryHours } from './domain/log-entries.js';
 
-// ── Re-use helpers already defined in app.js via a small shared-state bridge ──
-// We read from localStorage directly (same keys as app.js) so this module is
-// fully self-contained and doesn't need to import app.js internals.
+// ── Storage access — reads localStorage directly (same keys as app.js) so
+// this module never imports app.js internals; the date math now comes from
+// core/dates.js (Phase 2), the exact functions app.js runs.
 
 function ld(k, d) {
   try { const v = localStorage.getItem(k); return v !== null ? JSON.parse(v) : d; } catch { return d; }
 }
-function pad(n) { return String(n).padStart(2, '0'); }
-function mkds(y, m, d) { return `${y}-${pad(m + 1)}-${pad(d)}`; }
-function pd(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
 function todayStr() { const d = new Date(); return mkds(d.getFullYear(), d.getMonth(), d.getDate()); }
-function dowOf(s) { return pd(s).getDay(); }
-function isSun(s) { return dowOf(s) === 0; }
-function isSat(s) { return dowOf(s) === 6; }
 
 function getLang() { return ld('wt4_lang', 'en'); }
 function t(k, ...a) {
@@ -128,12 +124,6 @@ function wageFor(dateStr) {
     else break;
   }
   return active;
-}
-
-function getMonday(s) {
-  const d = pd(s), day = d.getDay(), diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  const m = new Date(d); m.setDate(diff);
-  return mkds(m.getFullYear(), m.getMonth(), m.getDate());
 }
 
 function shiftFor(s) {
@@ -252,8 +242,8 @@ export function buildRows(fromYM, toYM, lang = getLang()) {
       let regHrs = 0, otHrs = 0, gross = 0, net = 0, eff = 0, type = '', autoCredit = false;
 
       if (log) {
-        regHrs = log.regHrs !== undefined ? log.regHrs : (log.hrs || 0);
-        otHrs  = log.otHrs  !== undefined ? log.otHrs  : 0;
+        const eh = entryHours(log);
+        regHrs = eh.reg; otHrs = eh.ot;
         const c = calcWage(ds, regHrs, otHrs, wage, log.shiftOverride, log.holCreditOverride, holidays);
         gross = c.gross; net = c.net; eff = c.eff;
       } else if (isHol && !isSat(ds) && holCredit && startedBy(ds)) {

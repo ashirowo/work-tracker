@@ -7,13 +7,10 @@
 //   3. That's it — the language picker reads TR keys automatically.
 //
 // MATH HELPERS
-// The effective-hours formulas moved to calc.js (Phase 1: single calculator).
-// The dynamic note strings below (nDay, nNight, …) import them from there, and
-// this module re-exports them so existing `from './translations.js'` imports
-// keep working for one release; new code should import from './calc.js'.
+// The effective-hours formulas live in calc.js (single calculator). This module
+// is pure data — it imports nothing and computes nothing; every number shown in
+// a note or rules row arrives from the engine via the seg template arguments.
 // ─────────────────────────────────────────────────────────────────────────────
-
-import { nightWeekdayEff, satNightEff, satDayEff } from './calc.js';
 
 export const TR={
 en: {
@@ -3411,6 +3408,3 @@ ne: {
   },
 }
 };
-
-// Re-export helpers so app.js can import them from one place
-export { nightWeekdayEff, satNightEff, satDayEff };

@@ -5,12 +5,12 @@
 import { signInWithGoogle, signOutUser, scheduleSync, getSyncStatus, deleteCloudData,
          createShare, fetchShare, deleteShare, listMyShares } from './firebase.js';
 import { packShare, unpackShare, normalizeShareCode, formatShareCode } from './share.js';
-import { TR, nightWeekdayEff, satNightEff, satDayEff } from './translations.js';
+import { TR } from './translations.js';
 import { calcWage as calcWageCore, buildRulesRows, calcDay as calcDayCore, classifyDay as classifyDayCore } from './calc.js';
-import { compileProfile, PRESET_ANSWERS, compileProfileV2, PRESET_ANSWERS_V2 } from './compile.js';
+import { compileProfileV2, PRESET_ANSWERS_V2 } from './compile.js';
 import { DEFAULT_PROFILE, isUsableProfile } from './profile.js';
 import { needsNightSchedule, nightHoursOf } from './profile-v2.js';
-import { buildExportCard, wireExportCard, buildRows, exportCSV, exportPDF, showExportToast, monthsWithData as expMonthsWithData } from './export.js';
+import { buildRows, exportCSV, exportPDF, showExportToast, monthsWithData as expMonthsWithData } from './export.js';
 
 // ── App signature footer ─────────────────────────────────────────────────────
 // Premium credit footer shared beneath the last card on the Calendar, Overview,
@@ -1595,7 +1595,7 @@ let S={
   taxRate:ld('wt4_tax_rate',DEFAULT_TAX),
   targetHrs:ld('wt4_target_hrs',250),
   tab:'calendar',calY:new Date().getFullYear(),calM:new Date().getMonth(),
-  modal:null,success:'',
+  modal:null,
   chartRange:'3m',   // '3m' | '6m' | '1y'
   wageModal:null,   // transient: {mode:'add'|'edit'|'delete', idx?:number} or null
   resetModal:false, // transient: whether the "Reset all data" confirmation modal is open
@@ -1914,7 +1914,6 @@ function switchTab(tab){
   // content would needlessly replay the Overview entrance choreography.
   if(S.tab===tab) return;
   S.tab=tab;
-  S.success='';
   // Update tab-button active states in place
   document.querySelectorAll('.tab[data-tab]').forEach(b=>{
     b.classList.toggle('on', b.dataset.tab===tab);
@@ -7351,8 +7350,6 @@ function attachContentListeners(){
 
   // Export card — wire premium UI with live summary, filtered export, persistence
   if(S.tab==='settings'){
-    wireExportCard();
-
     const card=document.getElementById('export-card');
     if(!card)return;
 

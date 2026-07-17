@@ -6,7 +6,7 @@ import { signInWithGoogle, signOutUser, scheduleSync, getSyncStatus, deleteCloud
          createShare, fetchShare, deleteShare, listMyShares } from './firebase.js';
 import { packShare, unpackShare, normalizeShareCode, formatShareCode } from './share.js';
 import { TR } from './translations.js';
-import { calcWage as calcWageCore, buildRulesRows, calcDay as calcDayCore, classifyDay as classifyDayCore } from './calc.js';
+import { buildRulesRows, calcDay as calcDayCore } from './calc.js';
 import { compileProfileV2, PRESET_ANSWERS_V2 } from './compile.js';
 import { DEFAULT_PROFILE, isUsableProfile } from './profile.js';
 import { needsNightSchedule, nightHoursOf } from './profile-v2.js';
@@ -16,6 +16,8 @@ import { entryHours, isZeroDay } from './domain/log-entries.js';
 import { shiftForIn, applyAnchor, recentAnchorsFixedDay } from './domain/shift-pattern.js';
 import { normalizeWages, wageForIn, activeWageIdx } from './domain/wage-history.js';
 import { DEFAULT_INSURANCE, careRateOfGross as careRateOf, insuranceRate as insRateOf, applyDeductionRate } from './domain/deductions.js';
+import { calcWageIn, liveGrossIn, autoEffIn, allWeekdaysLoggedIn, probeHoursIn, engineDayClassIn, baseEffForIn, bucketKeysIn, bucketForIn, bucketDeterministicEffIn } from './domain/earnings.js';
+import { defaultLogForIn, buildQuickLogEntryIn } from './domain/quick-log.js';
 
 // ── App signature footer ─────────────────────────────────────────────────────
 // Premium credit footer shared beneath the last card on the Calendar, Overview,
@@ -439,62 +441,9 @@ function today(){const d=new Date();return mkds(d.getFullYear(),d.getMonth(),d.g
 function getLogs(){return ld('wt4_logs',{});}
 function saveLogs(l){sv('wt4_logs',l);scheduleSync();}
 
-// ── One-tap default inference ─────────────────────────────────────────────────
-// Work out the user's "usual" hours so a single tap can log a normal shift.
-// Strategy (strongest signal first):
-//   1. Look at recent logs of the SAME shift type (day/night) as the target date.
-//   2. Find the modal (most common) regular-hours value among them.
-//   3. Only trust it if it's consistent enough (the confidence gate) — otherwise
-//      the user is irregular and we should NOT offer one-tap (they use the modal).
-// Overtime is never assumed (unpredictable): the default is always OT = 0.
-// Returns null when there isn't enough confident signal to offer a one-tap log.
-const QUICK_LOG_MIN_SAMPLES = 3;     // need at least this many same-type logs
-const QUICK_LOG_MIN_CONFIDENCE = 0.7; // ≥70% must share the modal hours value
-function defaultLogFor(dateStr){
-  const shift = shiftFor(dateStr); // day/night/(double never auto-defaulted)
-  if(shift==='double') return null; // doubles are deliberate — never one-tap
-  const logs = getLogs();
-  // Gather regular-hours from recent logs of the same shift type, newest first.
-  const sameType = Object.keys(logs)
-    .filter(d => d <= today())
-    .sort().reverse()
-    .map(d => ({ d, log: logs[d] }))
-    .filter(({d, log}) => {
-      if(!log || typeof log.regHrs !== 'number' || log.regHrs <= 0) return false;
-      const s = log.shiftOverride || shiftFor(d);
-      return s === shift;
-    })
-    .slice(0, 12); // recent window
-
-  if(sameType.length < QUICK_LOG_MIN_SAMPLES) return null;
-
-  // Modal (most frequent) regular-hours value.
-  const counts = {};
-  sameType.forEach(({log}) => { counts[log.regHrs] = (counts[log.regHrs]||0)+1; });
-  let bestHrs = null, bestCount = 0;
-  Object.entries(counts).forEach(([hrs, n]) => { if(n > bestCount){ bestCount = n; bestHrs = parseFloat(hrs); } });
-
-  // Confidence gate: the modal value must dominate, else the user is irregular.
-  const confidence = bestCount / sameType.length;
-  if(confidence < QUICK_LOG_MIN_CONFIDENCE) return null;
-
-  return { regHrs: bestHrs, otHrs: 0, shift };
-}
-
-// Build a full log entry (same shape as the modal's save path) for a one-tap log.
-function buildQuickLogEntry(dateStr){
-  const def = defaultLogFor(dateStr);
-  if(!def) return null;
-  const wage = wageFor(dateStr);
-  const c = calcWage(dateStr, def.regHrs, def.otHrs, wage, def.shift, undefined);
-  const weekShift = shiftFor(dateStr);
-  const override = def.shift !== weekShift ? def.shift : undefined;
-  return {
-    regHrs: def.regHrs, otHrs: def.otHrs, hrs: def.regHrs + def.otHrs,
-    gross: c.gross, net: c.net, eff: c.eff,
-    ...(override && { shiftOverride: override }),
-  };
-}
+// ── One-tap default inference — moved to domain/quick-log.js (Phase 4) ───────
+function defaultLogFor(dateStr){ return defaultLogForIn(APP_ENV, dateStr); }
+function buildQuickLogEntry(dateStr){ return buildQuickLogEntryIn(APP_ENV, dateStr); }
 function getShifts(){return ld('wt4_shifts',{});}
 function saveShifts(s){sv('wt4_shifts',s);scheduleSync();}
 // ── Wage history ──────────────────────────────────────────────────────────────
@@ -544,31 +493,8 @@ function toggleShift(ws){
 }
 
 // ── Sunday auto-credit: all Mon–Fri of that week must be logged ──────────────
-function allWeekdaysLogged(s){
-  // Monday through Friday only — Saturday ignored.
-  // Public holidays are also ignored.
-
-  const logs = getLogs();
-  const ws = getMonday(s);
-
-  for(let i = 0; i <= 4; i++){
-    const d = pd(ws);
-    d.setDate(d.getDate() + i);
-
-    const ds = mkds(
-      d.getFullYear(),
-      d.getMonth(),
-      d.getDate()
-    );
-
-    // If not logged and not a holiday → incomplete
-    if(!logs[ds] && !isHol(ds)){
-      return false;
-    }
-  }
-
-  return true;
-}
+// (rule lives in domain/earnings.js, Phase 4)
+function allWeekdaysLogged(s){ return allWeekdaysLoggedIn(APP_ENV, s); }
 
 // ── Wage calculation ──────────────────────────────────────────────────────────
 // Phase 1: the calculator moved VERBATIM to calc.js (single source of truth,
@@ -585,50 +511,15 @@ function getProfile(){
   const p = ld('wt4_profile', null);
   return isUsableProfile(p) ? p : DEFAULT_PROFILE;
 }
-// Phase 4: projection primitives — every number the Overview projections use
-// now comes from an engine probe of the ACTIVE profile. The last hardcoded
-// rule constants (21.16/25.16/33.16/9.16) leave app.js with this change.
-// The representative day length is the profile's composite part hours.
-function probeHours(){
-  const p=getProfile();
-  return (p.composites&&p.composites.double&&p.composites.double.parts[0].hours)||8;
-}
-function engineDayClass(ds){ return classifyDayCore(ds, isHol(ds), getProfile()); }
-// Plain-base effective hours for a day (OT excluded), for the overtime split:
-// doubles use the full composite for the day's class; single shifts use the
-// WEEKDAY table regardless of day class — deliberately preserving the
-// historical definition of "base pay" the OT split has always used.
-function baseEffFor(ds, sh){
-  const profile=getProfile();
-  if(sh==='double')
-    return calcDayCore(profile,{dayClass:engineDayClass(ds),shift:'double',regHrs:0,otHrs:0,holCredit:isHolAuto()}).eff;
-  return calcDayCore(profile,{dayClass:'weekday',shift:sh,regHrs:probeHours(),otHrs:0,holCredit:false}).eff;
-}
-// Projection buckets: one per (shift × own-table class) + restday + holiday.
-// Aliased classes (workedAs) pool into their target's buckets — same formula,
-// same statistics. The default profile yields the historical six buckets.
-function bucketKeys(){
-  const p=getProfile(); const keys=[];
-  for(const cls of ['weekday','saturday']) if(!p.rates[cls].workedAs)
-    for(const sh of p.shifts) keys.push(sh+'|'+cls);
-  keys.push('restday','holiday'); return keys;
-}
-function bucketFor(ds){
-  const p=getProfile(); const cls=engineDayClass(ds);
-  if(cls==='restday'||cls==='holiday') return cls;
-  const pooled=(p.rates[cls].workedAs)||cls;
-  return shiftFor(ds)+'|'+pooled;
-}
-// Deterministic projection floor: a representative plain day of this bucket.
-function bucketDeterministicEff(bucket){
-  const profile=getProfile();
-  if(bucket==='restday')
-    return calcDayCore(profile,{dayClass:'restday',shift:profile.shifts[0],regHrs:0,otHrs:0,holCredit:false}).eff;
-  if(bucket==='holiday')
-    return calcDayCore(profile,{dayClass:'holiday',shift:profile.shifts[0],regHrs:0,otHrs:0,holCredit:isHolAuto()}).eff;
-  const i=bucket.indexOf('|');
-  return calcDayCore(profile,{dayClass:bucket.slice(i+1),shift:bucket.slice(0,i),regHrs:probeHours(),otHrs:0,holCredit:true}).eff;
-}
+// Phase 4 (structural): the projection primitives live in domain/earnings.js —
+// every number the Overview projections use comes from an engine probe of the
+// ACTIVE profile, through these env-bound adapters.
+function probeHours(){ return probeHoursIn(getProfile()); }
+function engineDayClass(ds){ return engineDayClassIn(APP_ENV, ds); }
+function baseEffFor(ds, sh){ return baseEffForIn(APP_ENV, ds, sh); }
+function bucketKeys(){ return bucketKeysIn(getProfile()); }
+function bucketFor(ds){ return bucketForIn(APP_ENV, ds); }
+function bucketDeterministicEff(bucket){ return bucketDeterministicEffIn(APP_ENV, bucket); }
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Phase 5: pay-rules wizard — the authoring UI over compile.js.
@@ -1528,11 +1419,19 @@ function rulesRows(){
   return buildRulesRows(getProfile(), TR[S.lang].seg,
     { holAuto: isHolAuto(), dedPct: getActiveDeductionPct(), dedNoun: getDeductionNoun() });
 }
+// The app's capability record for the domain layer (Phase 4). Members are the
+// app's own functions — late-bound, never data snapshots — so read-per-call
+// semantics stay byte-identical. Arrow wrappers where the target is reassigned
+// (the oracle re-pins today) or dynamic (S.lang).
+const APP_ENV = {
+  getLogs, wageFor, shiftFor, isHol,
+  isHolAuto: () => isHolAuto(),
+  applyTax, getProfile,
+  tr: () => TR[S.lang],
+  todayStr: () => today(),
+};
 function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride,holCreditOverride){
-  return calcWageCore(
-    { tr: TR[S.lang], holAuto: isHolAuto(), isHol, shiftFor, applyTax, profile: getProfile() },
-    dateStr, regHrs, otHrs, wage, shiftOverride, holCreditOverride
-  );
+  return calcWageIn(APP_ENV, dateStr, regHrs, otHrs, wage, shiftOverride, holCreditOverride);
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -1612,52 +1511,15 @@ function applyTheme(){document.documentElement.setAttribute('data-theme',S.theme
 // For everything else: 0.
 //
 // Pass a pre-fetched logs object to avoid repeated localStorage reads in loops.
-function liveGross(ds, logsArg){
-  const logs = logsArg !== undefined ? logsArg : getLogs();
-  const w = wageFor(ds);
-  if(logs[ds]){
-    const l = logs[ds];
-    // Recompute from the raw inputs saved with the entry.
-    // regHrs/otHrs are present in all entries saved after the wage-history feature.
-    // Older entries used a single 'hrs' field — fall back gracefully.
-    const { reg, ot } = entryHours(l);
-    return calcWage(ds, reg, ot, w, l.shiftOverride, l.holCreditOverride).gross;
-  }
-  const todayStr = today();
-  // Holiday auto-credit is suppressed when the holiday falls on a Saturday —
-  // Saturdays follow the separate 50% Saturday pay rule, not the 8h credit.
-  if(isHol(ds) && !isSat(ds) && ds <= todayStr){
-    const logEntry=logs[ds];
-    const credit = logEntry?.holCreditOverride !== undefined ? logEntry.holCreditOverride : isHolAuto();
-    if(credit && !logEntry) return Math.round(8 * w); // auto-credit, no manual log
-  }
-  if(isSun(ds) && !isHol(ds) && ds <= todayStr && allWeekdaysLogged(ds)) return Math.round(8 * w);
-  return 0;
-}
+// (bodies live in domain/earnings.js since Phase 4 — same rules, env-bound)
+function liveGross(ds, logsArg){ return liveGrossIn(APP_ENV, ds, logsArg); }
 
 // autoGross / autoEff: wrappers used throughout the render layer.
 // autoGross delegates entirely to liveGross — one definition, no divergence.
 function autoGross(ds, logsArg){
   return liveGross(ds, logsArg);
 }
-function autoEff(ds, logsArg){
-  const logs = logsArg !== undefined ? logsArg : getLogs();
-  if(logs[ds]){
-    const l = logs[ds];
-    const { reg, ot } = entryHours(l);
-    return calcWage(ds, reg, ot, wageFor(ds), l.shiftOverride, l.holCreditOverride).eff;
-  }
-  const todayStr = today();
-  // Holiday auto-credit is suppressed when the holiday falls on a Saturday —
-  // Saturdays follow the separate 50% Saturday pay rule, not the 8h credit.
-  if(isHol(ds) && !isSat(ds) && ds <= todayStr){
-    const logEntry=getLogs()[ds];
-    const credit = logEntry?.holCreditOverride !== undefined ? logEntry.holCreditOverride : isHolAuto();
-    if(credit && !logEntry) return 8;
-  }
-  if(isSun(ds) && !isHol(ds) && ds <= todayStr && allWeekdaysLogged(ds)) return 8;
-  return 0;
-}
+function autoEff(ds, logsArg){ return autoEffIn(APP_ENV, ds, logsArg); }
 
 // ── Holiday separator visibility ─────────────────────────────────────────────
 // Hides a .hol-sep when it has wrapped to the start of a new row — i.e. when

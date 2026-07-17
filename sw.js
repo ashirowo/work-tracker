@@ -29,7 +29,7 @@
 //  The old cache is deleted in the `activate` handler so stale files are purged.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CACHE_VERSION   = 'wt4-v64';
+const CACHE_VERSION   = 'wt4-v76';
 const SHELL_CACHE     = `${CACHE_VERSION}-shell`;
 const FONT_CACHE      = `${CACHE_VERSION}-fonts`;
 const CDN_CACHE       = `${CACHE_VERSION}-cdn`;
@@ -48,6 +48,7 @@ const SHELL_ASSETS = [
   './profile.js',
   './profile-v2.js',
   './compile.js',
+  './share.js',
   './firebase.js',
   './translations.js',
   './export.js',
@@ -91,9 +92,13 @@ const FIREBASE_ORIGINS   = [
 self.addEventListener('install', event => {
   event.waitUntil(
     Promise.all([
-      // Cache app shell
+      // Cache app shell. {cache:'reload'} forces each install-time fetch past
+      // the browser HTTP cache to the network: without it, a freshly-bumped
+      // CACHE_VERSION can precache STALE files the HTTP cache still holds —
+      // shipping old code under a new cache version (observed on v66/v68 with
+      // app.js and translations.js, which carry no ?v= to bust the HTTP cache).
       caches.open(SHELL_CACHE).then(cache =>
-        cache.addAll(SHELL_ASSETS).catch(err =>
+        cache.addAll(SHELL_ASSETS.map(u => new Request(u, { cache: 'reload' }))).catch(err =>
           console.warn('[SW] Shell pre-cache partial failure:', err)
         )
       ),

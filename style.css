@@ -2824,6 +2824,7 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   letter-spacing:0.01em;
 }
 .hdr-dropdown-item:hover{background:var(--bg-hover)}
+.flag-ico{width:19px;height:14px;object-fit:cover;border-radius:2px;vertical-align:-2px;margin-right:9px;box-shadow:0 0 0 .5px rgba(0,0,0,.25);}
 .hdr-dropdown-item--active{
   background:var(--primary-bg);
   color:var(--primary);
@@ -3499,7 +3500,7 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   background:var(--primary-bg);
   box-shadow:0 0 0 3px var(--primary-glow);
 }
-.obx-lang-flag{font-size:20px;line-height:1;}
+.obx-lang-flag{width:30px;height:22px;object-fit:cover;border-radius:3px;display:block;box-shadow:0 1px 3px rgba(0,0,0,.35),0 0 0 .5px rgba(255,255,255,.12);}
 .obx-lang-label{font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;}
 
 /* ── Option cards (shift pattern) ── */
@@ -9039,3 +9040,303 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   .app-footer-spark{animation:none;}
   .app-footer-pill{transition:none;}
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Phase 6.3: workplace sharing — Settings share/import modals.
+   Built entirely from the design tokens above; glass panels match the
+   workplace modal (.wpm-*) these modals reuse for their shell.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Share/Import buttons under the rules card — two half-width siblings of the
+   full-width Edit button. */
+.pr-btn-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
+.pr-btn-row .sw-add-btn{margin-top:0;}
+
+/* The share/import modals are narrower than the workplace editor. */
+.shm-modal{max-width:520px;}
+.shm-body{display:flex;flex-direction:column;gap:14px;}
+
+/* Signed-out state */
+.shm-auth{display:flex;flex-direction:column;align-items:center;gap:16px;padding:18px 6px 8px;text-align:center;}
+.shm-auth-msg{color:var(--text-muted);font-size:0.92rem;line-height:1.55;max-width:36ch;}
+
+/* Create form */
+.shm-form{display:flex;flex-direction:column;gap:10px;}
+.shm-label{font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);}
+.shm-name-in{
+  width:100%;padding:11px 14px;border-radius:12px;
+  background:var(--input-bg);border:1px solid var(--border-strong);
+  color:var(--text);font:inherit;font-size:0.95rem;outline:none;
+  transition:border-color .18s ease,box-shadow .18s ease;
+}
+.shm-name-in:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-glow);}
+.shm-create{justify-content:center;}
+
+/* The dynamic stage below the create CTA. One slot, two states: a quiet
+   dashed placeholder until a code exists, then the sharing card — the area
+   never reads as an empty input or missing UI. */
+.shm-stage{display:flex;flex-direction:column;}
+.shm-empty{
+  display:flex;flex-direction:column;align-items:center;gap:5px;text-align:center;
+  padding:22px 18px;border-radius:16px;
+  border:1.5px dashed var(--border-strong);
+  animation:shmRise .28s cubic-bezier(.22,1,.36,1);
+}
+.shm-empty-ic{
+  display:grid;place-items:center;width:34px;height:34px;border-radius:50%;
+  background:var(--bg-glass);border:1px solid var(--border);
+  color:var(--text-hint);margin-bottom:3px;
+}
+.shm-empty-t{font-size:0.88rem;font-weight:700;color:var(--text-muted);}
+.shm-empty-s{font-size:0.8rem;line-height:1.5;color:var(--text-hint);max-width:36ch;}
+
+/* The sharing card: success surface for a fresh mint, sharing sheet for a
+   re-opened active code. The code block is the hero; the link is the second,
+   visually distinct transport under an "or" seam. */
+.shm-card{
+  display:flex;flex-direction:column;gap:12px;
+  padding:16px;border-radius:16px;
+  background:var(--grad-primary-soft);border:1px solid var(--primary-glow);
+  animation:shmRise .32s cubic-bezier(.22,1,.36,1);
+}
+.shm-card-head{display:flex;align-items:flex-start;gap:10px;}
+.shm-card-badge{
+  display:grid;place-items:center;width:26px;height:26px;border-radius:50%;flex-shrink:0;
+  background:var(--primary-bg);color:var(--primary);
+}
+.shm-card-badge.is-fresh{background:var(--success-bg);color:var(--success);box-shadow:0 0 14px var(--success-glow);}
+.shm-card-headtxt{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.shm-card-title{font-size:0.95rem;font-weight:800;color:var(--text);}
+.shm-card-hint{font-size:0.8rem;line-height:1.45;color:var(--text-muted);overflow-wrap:anywhere;}
+.shm-card-hint b{color:var(--text);font-weight:700;}
+.shm-code-row{
+  display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 12px;
+  padding:12px 12px 12px 16px;border-radius:14px;
+  background:var(--input-bg);border:1px solid var(--border-strong);
+}
+.shm-code{
+  font-variant-numeric:tabular-nums;letter-spacing:0.13em;
+  font-size:1.65rem;font-weight:800;color:var(--text);
+  text-shadow:0 0 24px var(--primary-glow);user-select:all;
+}
+.shm-copy{
+  display:inline-flex;align-items:center;gap:6px;flex-shrink:0;
+  padding:8px 13px;border-radius:10px;cursor:pointer;
+  font:inherit;font-size:0.78rem;font-weight:700;
+  background:var(--primary-bg);border:1px solid transparent;color:var(--primary);
+  transition:border-color .15s ease,filter .15s ease,background .15s ease,color .15s ease;
+}
+.shm-copy:hover{border-color:var(--primary);filter:brightness(1.06);}
+.shm-copy.is-copied{background:var(--success-bg);color:var(--success);border-color:transparent;}
+.shm-divider{
+  display:flex;align-items:center;gap:10px;
+  font-size:0.66rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;
+  color:var(--text-hint);
+}
+.shm-divider::before,.shm-divider::after{content:'';flex:1;height:1px;background:var(--border-strong);}
+.shm-link-row{
+  display:flex;align-items:center;gap:9px;min-width:0;
+  padding:8px 8px 8px 13px;border-radius:12px;
+  background:var(--bg-glass);border:1px solid var(--border);
+}
+.shm-link-ic{display:grid;place-items:center;color:var(--text-hint);flex-shrink:0;}
+.shm-link-url{flex:1;display:flex;min-width:0;font-size:0.82rem;white-space:nowrap;}
+.shm-link-pre{overflow:hidden;text-overflow:ellipsis;color:var(--text-hint);}
+.shm-link-code{color:var(--text-muted);font-weight:700;flex-shrink:0;font-variant-numeric:tabular-nums;}
+.shm-card-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+.shm-expiry{font-size:0.76rem;color:var(--text-muted);}
+.shm-native{
+  display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:8px;cursor:pointer;
+  background:none;border:none;font:inherit;font-size:0.78rem;font-weight:700;color:var(--primary);
+  transition:filter .15s ease;
+}
+.shm-native:hover{filter:brightness(1.12);}
+@keyframes shmRise{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+@media (prefers-reduced-motion:reduce){.shm-card,.shm-empty{animation:none;}}
+
+/* Active codes: the management list. The row whose code is on the stage gets
+   the open accent; sharing actions stay small so the code and Revoke read
+   first without Revoke ever overpowering them. */
+.shm-active{display:flex;flex-direction:column;gap:8px;}
+.shm-list{display:flex;flex-direction:column;gap:8px;min-height:24px;}
+.shm-item{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 10px 9px 12px;border-radius:14px;
+  background:var(--bg-glass);border:1px solid var(--border);
+  transition:border-color .18s ease;
+}
+.shm-item.is-open{border-color:var(--primary-glow);}
+.shm-item-ic{
+  display:grid;place-items:center;width:30px;height:30px;border-radius:10px;flex-shrink:0;
+  background:var(--primary-bg);color:var(--primary);
+}
+.shm-item-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;}
+.shm-item-top{display:flex;align-items:center;gap:8px;min-width:0;}
+.shm-item-code{font-weight:700;letter-spacing:0.08em;font-variant-numeric:tabular-nums;color:var(--text);white-space:nowrap;}
+.shm-item-live{
+  display:inline-flex;align-items:center;gap:4px;flex-shrink:0;
+  font-size:0.6rem;font-weight:800;letter-spacing:0.09em;text-transform:uppercase;
+  color:var(--success);
+}
+.shm-item-live i{width:5px;height:5px;border-radius:50%;background:currentColor;box-shadow:0 0 6px var(--success-glow);}
+.shm-item-live em{font-style:normal;}
+.shm-item-sub{font-size:0.75rem;color:var(--text-hint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.shm-item-share{
+  display:grid;place-items:center;width:30px;height:30px;border-radius:9px;flex-shrink:0;cursor:pointer;
+  background:transparent;border:1px solid var(--border-strong);color:var(--text-muted);
+  transition:color .15s ease,border-color .15s ease;
+}
+.shm-item-share:hover,.shm-item.is-open .shm-item-share{color:var(--primary);border-color:var(--primary);}
+.shm-revoke{
+  padding:6px 12px;border-radius:10px;cursor:pointer;font:inherit;font-size:0.78rem;font-weight:600;
+  background:var(--danger-bg);border:1px solid transparent;color:var(--danger);
+  transition:border-color .15s ease,filter .15s ease;
+}
+.shm-revoke:hover{border-color:var(--danger);filter:brightness(1.08);}
+.shm-revoke:disabled{opacity:0.5;cursor:not-allowed;}
+.shm-none{font-size:0.85rem;color:var(--text-hint);padding:4px 2px;}
+
+/* Import: code entry row */
+.imm-row{display:flex;gap:10px;}
+.imm-row .btn-pri{flex-shrink:0;}
+.imm-input{
+  flex:1;min-width:0;padding:11px 14px;border-radius:12px;
+  background:var(--input-bg);border:1px solid var(--border-strong);
+  color:var(--text);font:inherit;font-size:1.02rem;font-weight:700;
+  letter-spacing:0.12em;text-transform:uppercase;font-variant-numeric:tabular-nums;
+  outline:none;transition:border-color .18s ease,box-shadow .18s ease;
+}
+.imm-input:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-glow);}
+.imm-input::placeholder{letter-spacing:0.12em;color:var(--text-hint);font-weight:600;}
+
+/* Import: errors, stage (idle placeholder ↔ found card), warning.
+   .imm-preview/.imm-name stay for the onboarding join fold, which still
+   renders the plain preview inside its own panel. */
+.imm-err{
+  padding:10px 14px;border-radius:12px;font-size:0.86rem;line-height:1.5;
+  background:var(--danger-bg);border:1px solid var(--danger);color:var(--danger);
+}
+.imm-stage{display:flex;flex-direction:column;}
+.imm-preview{display:flex;flex-direction:column;gap:10px;}
+.imm-name{font-size:1.05rem;font-weight:800;color:var(--text);}
+.imm-rules{
+  display:flex;flex-direction:column;border-radius:14px;overflow:hidden;
+  background:var(--bg-glass);border:1px solid var(--border);
+  padding:4px 10px;
+}
+.imm-warn{
+  padding:10px 14px;border-radius:12px;font-size:0.84rem;line-height:1.5;
+  background:var(--warning-bg);border:1px solid var(--warning);color:var(--text);
+}
+
+@media (max-width:520px){
+  .pr-btn-row{grid-template-columns:1fr;}
+  .shm-code{font-size:1.3rem;letter-spacing:0.1em;}
+  .shm-item-live em{display:none;}   /* the glowing dot alone marks "active" */
+  /* Tighter rows so the code never wraps beside the two actions. */
+  .shm-item{gap:8px;padding:8px 8px 8px 10px;}
+  .shm-item-ic{width:26px;height:26px;border-radius:8px;}
+  .shm-item-share{width:28px;height:28px;}
+  .shm-revoke{padding:6px 9px;}
+  .imm-row{flex-direction:column;}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Phase 6.4: onboarding workplace-code fork ("I have a workplace code").
+   Reuses the imm-* import components inside an onboarding-styled fold; a
+   confirmed code renders as an applied-chip and dims the preset cards.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.objoin{display:flex;flex-direction:column;gap:12px;margin-top:14px;}
+.objoin-panel{
+  display:flex;flex-direction:column;gap:12px;
+  padding:16px;border-radius:16px;
+  background:var(--bg-glass);border:1px solid var(--border);
+}
+
+/* Entry card: the door into import mode — a quiet glass row with icon and
+   chevron, deliberately NOT shaped like a fourth preset card. */
+.objoin-entry{
+  display:flex;align-items:center;gap:12px;width:100%;
+  padding:13px 14px;border-radius:14px;cursor:pointer;font:inherit;text-align:left;
+  background:var(--bg-glass);border:1px solid var(--border);color:var(--text);
+  transition:border-color .18s ease,transform .18s ease;
+}
+.objoin-entry:hover{border-color:var(--primary);}
+.objoin-entry:active{transform:scale(0.99);}
+.objoin-entry-ic{
+  display:grid;place-items:center;width:32px;height:32px;border-radius:10px;flex-shrink:0;
+  background:var(--primary-bg);color:var(--primary);
+}
+.objoin-entry-txt{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;}
+.objoin-entry-t{font-weight:700;font-size:0.92rem;}
+.objoin-entry-s{font-size:0.78rem;color:var(--text-muted);line-height:1.4;}
+.objoin-entry-chev{display:grid;place-items:center;color:var(--text-hint);flex-shrink:0;}
+.objoin-entry:hover .objoin-entry-chev{color:var(--primary);}
+
+/* Import mode: the escape hatch back to the preset path */
+.objoin-back{
+  display:inline-flex;align-items:center;gap:6px;align-self:flex-start;
+  background:none;border:none;cursor:pointer;font:inherit;font-size:0.85rem;font-weight:600;
+  color:var(--text-muted);padding:6px 10px 6px 4px;border-radius:10px;
+  transition:color .15s ease;
+}
+.objoin-back:hover{color:var(--primary);}
+
+/* What's-included chips on the found card */
+.objoin-inc{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.objoin-inc-it{
+  display:flex;align-items:center;gap:8px;
+  padding:9px 11px;border-radius:11px;font-size:0.8rem;font-weight:600;color:var(--text-muted);
+  background:var(--bg-glass);border:1px solid var(--border);
+}
+.objoin-inc-it svg{color:var(--primary);flex-shrink:0;}
+
+/* Applied-chip: the confirmed workplace code */
+.objoin-chip{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 16px;border-radius:14px;
+  background:var(--grad-primary-soft);border:1px solid var(--primary-glow);
+}
+.objoin-chip-ic{
+  display:grid;place-items:center;width:28px;height:28px;border-radius:50%;
+  background:var(--primary-bg);color:var(--primary);flex-shrink:0;
+}
+.objoin-chip-txt{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;text-align:left;}
+.objoin-chip-t{font-weight:700;color:var(--text);font-size:0.92rem;}
+.objoin-chip-s{font-size:0.8rem;color:var(--text-muted);letter-spacing:0.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.objoin-remove{
+  padding:7px 13px;border-radius:10px;cursor:pointer;font:inherit;font-size:0.8rem;font-weight:600;
+  background:transparent;border:1px solid var(--border-strong);color:var(--text-muted);
+  transition:border-color .15s ease,color .15s ease;flex-shrink:0;
+}
+.objoin-remove:hover{border-color:var(--danger);color:var(--danger);}
+
+/* Preset cards overridden by an applied code. Dimming alone isn't enough:
+   the selected card's ring/check would still read as "chosen" while the
+   imported profile is what actually wins — so the active styling is
+   neutralized too. Only presentation: OB.rules.preset is preserved, and
+   Remove restores the exact selection. */
+.wpx-overridden{opacity:0.4;pointer-events:none;filter:saturate(0.6);transition:opacity .25s ease;}
+.wpx-overridden .wpx-card--active{
+  border-color:var(--border);
+  background:var(--bg-card);
+  box-shadow:none;
+  transform:none;
+}
+.wpx-overridden .wpx-card--active::after{content:none;}
+.wpx-overridden .wpx-card--active .wpx-radio{
+  border-color:var(--border-strong);
+  background:transparent;
+  box-shadow:none;
+}
+.wpx-overridden .wpx-card--active .wpx-radio svg{opacity:0;transform:scale(.4);}
+
+/* ── Phase 6.5: Backup & Restore ghost links inside the share/import modals ── */
+.shm-file-btn{
+  align-self:center;background:none;border:none;cursor:pointer;font:inherit;
+  font-size:0.82rem;font-weight:600;color:var(--text-muted);
+  padding:6px 12px;border-radius:8px;
+  text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--border-strong);
+  transition:color .15s ease;
+}
+.shm-file-btn:hover{color:var(--primary);}

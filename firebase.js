@@ -49,8 +49,10 @@ const FIREBASE_CONFIG = {
 import { initializeApp }                              from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
                                                       from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, deleteDoc, serverTimestamp }
+import { getFirestore, doc, getDoc, setDoc, deleteDoc, serverTimestamp,
+         collection, query, where, getDocs, Timestamp }
                                                       from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { generateShareCode } from './share.js';
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 const firebaseApp = initializeApp(FIREBASE_CONFIG);
@@ -185,12 +187,28 @@ async function pushToCloud(uid) {
   };
 
   try {
-    // merge:true — payload always writes every SYNC_KEYS field, so this is
-    // behavior-identical today; it exists so that FUTURE synced fields (e.g.
-    // the pay profile) can never be silently erased from the cloud doc by a
-    // client running this older version. Must be deployed at least one
-    // release before any new field joins SYNC_KEYS.
-    await setDoc(userDoc(targetUid), payload, { merge: true });
+    // ⚠ DO NOT ADD { merge: true } HERE. This has now been regressed twice
+    // (added in "added google auth", removed in "Fix deleted logs reappearing
+    // after Firestore sync", re-added by the "custom presets" refactor).
+    //
+    // WHY: Firestore's merge DEEP-MERGES nested map fields instead of
+    // replacing them. logs/shifts/profile are maps, so a DELETED key (a
+    // removed day, a cleared shift anchor, a dropped rate cell) has nothing to
+    // merge and silently survives in the cloud forever — the next pull
+    // resurrects it locally. It is NOT "behavior-identical": that only holds
+    // for scalars and for `wages` (an array, which merge replaces wholesale).
+    // For `profile` it is actively dangerous — a merged rates cell can carry
+    // BOTH `workedAs` and day/night cells, and normalizeProfile() takes the
+    // `workedAs` branch first, silently dropping a premium the user configured.
+    //
+    // THE TRADEOFF (deliberate): a full overwrite means a client that doesn't
+    // know a field erases it. That is safe here BECAUSE the payload above
+    // writes every field pullFromCloud reads — the doc we write is exactly the
+    // doc we read. If you ever ADD a synced field, add it to SYNC_KEYS, this
+    // payload, AND pullFromCloud together; do not reach for merge to paper
+    // over a partial rollout (use { mergeFields: [...] }, which replaces the
+    // named fields wholesale, if you truly need a staged one).
+    await setDoc(userDoc(targetUid), payload);
     lsSet('wt4_syncedAt', Date.now());
     console.log('[firebase] Pushed to cloud.');
     _setSyncStatus('synced');
@@ -311,6 +329,81 @@ async function deleteCloudData(explicitUid) {
   }
 }
 
+// ── Workplace sharing — transport for share.js envelopes (Phase 6.2) ─────────
+// This layer is DUMB on purpose: it moves envelopes between the client and
+// shares/{code}, nothing more. All packing, stripping, validation, and
+// migration lives in share.js — anything read from shares/ is UNTRUSTED and
+// must go through unpackShare() before it is shown or stored. Access control
+// lives in firestore.rules (get-only, no enumeration, immutable after create,
+// owner-only list/delete).
+const SHARE_TTL_DAYS = 180;   // shares are snapshots; stale pay rules expire
+
+// Publish an envelope (from packShare) under a fresh random code.
+// Returns { code, expiresAtMs }. Throws 'auth-required' when signed out —
+// creating shares needs an accountable owner (rules enforce it server-side).
+async function createShare(envelope){
+  if(!_currentUser) throw new Error('auth-required');
+  let lastErr = null;
+  for(let attempt = 0; attempt < 3; attempt++){
+    const code = generateShareCode();
+    const expiresAt = Timestamp.fromMillis(Date.now() + SHARE_TTL_DAYS * 86400000);
+    try{
+      await setDoc(doc(db, 'shares', code), {
+        ...envelope,                       // fmt, schemaV, profile, name?
+        ownerUid: _currentUser.uid,
+        createdAt: serverTimestamp(),
+        expiresAt,
+      });
+      return { code, expiresAtMs: expiresAt.toMillis() };
+    }catch(e){
+      // permission-denied here is either the 1-in-2⁴⁰ code collision (the
+      // create-only rule refuses to overwrite) or a rules/payload mismatch;
+      // a fresh code retries the former and can't worsen the latter.
+      if(e.code === 'permission-denied'){ lastErr = e; continue; }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
+// Fetch one share by CANONICAL code (callers normalize via normalizeShareCode).
+// Returns the raw envelope doc or null (missing/expired). No auth required —
+// importers are typically brand-new users. Result is UNTRUSTED by contract.
+async function fetchShare(code){
+  const snap = await getDoc(doc(db, 'shares', code));
+  if(!snap.exists()) return null;
+  const data = snap.data();
+  // Client-side expiry guard — Firestore TTL deletion can lag by hours/days.
+  const exp = data.expiresAt?.toMillis?.() ?? 0;
+  if(exp && exp < Date.now()) return null;
+  return data;
+}
+
+// Revoke one of the caller's own shares (rules verify ownership).
+async function deleteShare(code){
+  if(!_currentUser) throw new Error('auth-required');
+  await deleteDoc(doc(db, 'shares', code));
+}
+
+// The caller's live shares, for the Settings share list. The ownerUid filter
+// is REQUIRED — it is the exact condition firestore.rules' list clause proves,
+// so an unfiltered query would be denied, not merely slow.
+async function listMyShares(){
+  if(!_currentUser) return [];
+  const q = query(collection(db, 'shares'), where('ownerUid', '==', _currentUser.uid));
+  const snaps = await getDocs(q);
+  const now = Date.now();
+  return snaps.docs.map(d => {
+    const v = d.data();
+    return {
+      code: d.id,
+      name: typeof v.name === 'string' ? v.name : null,
+      createdAtMs: v.createdAt?.toMillis?.() ?? 0,
+      expiresAtMs: v.expiresAt?.toMillis?.() ?? 0,
+    };
+  }).filter(s => !s.expiresAtMs || s.expiresAtMs > now);
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 // Exported so app.js can call these without knowing Firebase internals.
 // getSyncStatus() — read by app.js during render to show sync badge
@@ -323,4 +416,8 @@ export {
   pushToCloud,       // call for immediate push (e.g. before page unload)
   getSyncStatus,     // read current sync status for header badge
   deleteCloudData,   // call to permanently delete the user's Firestore document
+  createShare,       // publish a share envelope → { code, expiresAtMs }
+  fetchShare,        // code → raw envelope (UNTRUSTED — run unpackShare)
+  deleteShare,       // revoke one of the caller's shares
+  listMyShares,      // the caller's live shares for the Settings list
 };

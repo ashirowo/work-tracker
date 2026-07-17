@@ -2,7 +2,9 @@
 // scheduleSync() is called after every data mutation so changes automatically
 // propagate to Firestore when the user is signed in. If not signed in or offline,
 // the call is a no-op and localStorage continues working as usual.
-import { signInWithGoogle, signOutUser, scheduleSync, getSyncStatus, deleteCloudData } from './firebase.js';
+import { signInWithGoogle, signOutUser, scheduleSync, getSyncStatus, deleteCloudData,
+         createShare, fetchShare, deleteShare, listMyShares } from './firebase.js';
+import { packShare, unpackShare, normalizeShareCode, formatShareCode } from './share.js';
 import { TR, nightWeekdayEff, satNightEff, satDayEff } from './translations.js';
 import { calcWage as calcWageCore, buildRulesRows, calcDay as calcDayCore, classifyDay as classifyDayCore } from './calc.js';
 import { compileProfile, PRESET_ANSWERS, compileProfileV2, PRESET_ANSWERS_V2 } from './compile.js';
@@ -370,6 +372,27 @@ function buildAllHolidaysModal() {
 
 
 const DEFAULT_WAGE=10320,DEFAULT_TAX=3.3;
+
+// ── Language flag icons ────────────────────────────────────────────────────────
+// Emoji flags (🇺🇸 etc.) are regional-indicator pairs, and Windows ships no flag
+// glyphs — every Windows browser falls back to rendering the bare letters ("US",
+// "KR", …). These inline SVG data-URIs (flag-icons, MIT) render identically on
+// every platform and stay offline-safe (no CDN, cached with the shell). Keyed by
+// language code, so en→US, ko→KR, zh→CN, ne→NP.
+const FLAGS={
+    en:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20id%3D%22flag-icons-us%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cpath%20fill%3D%22%23bd3d44%22%20d%3D%22M0%200h640v480H0%22%2F%3E%3Cpath%20stroke%3D%22%23fff%22%20stroke-width%3D%2237%22%20d%3D%22M0%2055.3h640M0%20129h640M0%20203h640M0%20277h640M0%20351h640M0%20425h640%22%2F%3E%3Cpath%20fill%3D%22%23192f5d%22%20d%3D%22M0%200h364.8v258.5H0%22%2F%3E%3Cmarker%20id%3D%22us-a%22%20markerHeight%3D%2230%22%20markerWidth%3D%2230%22%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22m14%200%209%2027L0%2010h28L5%2027z%22%2F%3E%3C%2Fmarker%3E%3Cpath%20fill%3D%22none%22%20marker-mid%3D%22url(%23us-a)%22%20d%3D%22m0%200%2016%2011h61%2061%2061%2061%2060L47%2037h61%2061%2060%2061L16%2063h61%2061%2061%2061%2060L47%2089h61%2061%2060%2061L16%20115h61%2061%2061%2061%2060L47%20141h61%2061%2060%2061L16%20166h61%2061%2061%2061%2060L47%20192h61%2061%2060%2061L16%20218h61%2061%2061%2061%2060z%22%2F%3E%3C%2Fsvg%3E',
+    ko:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20xmlns%3Axlink%3D%22http%3A%2F%2Fwww.w3.org%2F1999%2Fxlink%22%20id%3D%22flag-icons-kr%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cdefs%3E%3CclipPath%20id%3D%22kr-a%22%3E%3Cpath%20fill-opacity%3D%22.7%22%20d%3D%22M-95.8-.4h682.7v512H-95.8z%22%2F%3E%3C%2FclipPath%3E%3C%2Fdefs%3E%3Cg%20fill-rule%3D%22evenodd%22%20clip-path%3D%22url(%23kr-a)%22%20transform%3D%22translate(89.8%20.4)scale(.9375)%22%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22M-95.8-.4H587v512H-95.8Z%22%2F%3E%3Cg%20transform%3D%22rotate(-56.3%20361.6%20-101.3)scale(10.66667)%22%3E%3Cg%20id%3D%22kr-c%22%3E%3Cpath%20id%3D%22kr-b%22%20fill%3D%22%23000001%22%20d%3D%22M-6-26H6v2H-6Zm0%203H6v2H-6Zm0%203H6v2H-6Z%22%2F%3E%3Cuse%20xlink%3Ahref%3D%22%23kr-b%22%20width%3D%22100%25%22%20height%3D%22100%25%22%20y%3D%2244%22%2F%3E%3C%2Fg%3E%3Cpath%20stroke%3D%22%23fff%22%20d%3D%22M0%2017v10%22%2F%3E%3Cpath%20fill%3D%22%23cd2e3a%22%20d%3D%22M0-12a12%2012%200%200%201%200%2024Z%22%2F%3E%3Cpath%20fill%3D%22%230047a0%22%20d%3D%22M0-12a12%2012%200%200%200%200%2024A6%206%200%200%200%200%200Z%22%2F%3E%3Ccircle%20cy%3D%22-6%22%20r%3D%226%22%20fill%3D%22%23cd2e3a%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22rotate(-123.7%20191.2%2062.2)scale(10.66667)%22%3E%3Cuse%20xlink%3Ahref%3D%22%23kr-c%22%20width%3D%22100%25%22%20height%3D%22100%25%22%2F%3E%3Cpath%20stroke%3D%22%23fff%22%20d%3D%22M0-23.5v3M0%2017v3.5m0%203v3%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E',
+    id:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20id%3D%22flag-icons-id%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cpath%20fill%3D%22%23e70011%22%20d%3D%22M0%200h640v240H0Z%22%2F%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22M0%20240h640v240H0Z%22%2F%3E%3C%2Fsvg%3E',
+    th:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20id%3D%22flag-icons-th%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cg%20fill-rule%3D%22evenodd%22%3E%3Cpath%20fill%3D%22%23f4f5f8%22%20d%3D%22M0%200h640v480H0z%22%2F%3E%3Cpath%20fill%3D%22%232d2a4a%22%20d%3D%22M0%20162.5h640v160H0z%22%2F%3E%3Cpath%20fill%3D%22%23a51931%22%20d%3D%22M0%200h640v82.5H0zm0%20400h640v80H0z%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E',
+    ru:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20id%3D%22flag-icons-ru%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22M0%200h640v160H0z%22%2F%3E%3Cpath%20fill%3D%22%230039a6%22%20d%3D%22M0%20160h640v160H0z%22%2F%3E%3Cpath%20fill%3D%22%23d52b1e%22%20d%3D%22M0%20320h640v160H0z%22%2F%3E%3C%2Fsvg%3E',
+    zh:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20xmlns%3Axlink%3D%22http%3A%2F%2Fwww.w3.org%2F1999%2Fxlink%22%20id%3D%22flag-icons-cn%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cdefs%3E%3Cpath%20id%3D%22cn-a%22%20fill%3D%22%23ff0%22%20d%3D%22M-.6.8%200-1%20.6.8-1-.3h2z%22%2F%3E%3C%2Fdefs%3E%3Cpath%20fill%3D%22%23ee1c25%22%20d%3D%22M0%200h640v480H0z%22%2F%3E%3Cuse%20xlink%3Ahref%3D%22%23cn-a%22%20width%3D%2230%22%20height%3D%2220%22%20transform%3D%22matrix(71.9991%200%200%2072%20120%20120)%22%2F%3E%3Cuse%20xlink%3Ahref%3D%22%23cn-a%22%20width%3D%2230%22%20height%3D%2220%22%20transform%3D%22matrix(-12.33562%20-20.5871%2020.58684%20-12.33577%20240.3%2048)%22%2F%3E%3Cuse%20xlink%3Ahref%3D%22%23cn-a%22%20width%3D%2230%22%20height%3D%2220%22%20transform%3D%22matrix(-3.38573%20-23.75998%2023.75968%20-3.38578%20288%2095.8)%22%2F%3E%3Cuse%20xlink%3Ahref%3D%22%23cn-a%22%20width%3D%2230%22%20height%3D%2220%22%20transform%3D%22matrix(6.5991%20-23.0749%2023.0746%206.59919%20288%20168)%22%2F%3E%3Cuse%20xlink%3Ahref%3D%22%23cn-a%22%20width%3D%2230%22%20height%3D%2220%22%20transform%3D%22matrix(14.9991%20-18.73557%2018.73533%2014.99929%20240%20216)%22%2F%3E%3C%2Fsvg%3E',
+    fr:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20id%3D%22flag-icons-fr%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cpath%20fill%3D%22%23000091%22%20d%3D%22M0%200h213.3v480H0z%22%2F%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22M213.3%200h213.4v480H213.3z%22%2F%3E%3Cpath%20fill%3D%22%23e1000f%22%20d%3D%22M426.7%200H640v480H426.7z%22%2F%3E%3C%2Fsvg%3E',
+    ne:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20id%3D%22flag-icons-np%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cdefs%3E%3CclipPath%20id%3D%22np-a%22%3E%3Cpath%20fill-opacity%3D%22.7%22%20d%3D%22M0-16h512v512H0z%22%2F%3E%3C%2FclipPath%3E%3C%2Fdefs%3E%3Cg%20clip-path%3D%22url(%23np-a)%22%20transform%3D%22translate(0%2015)scale(.9375)%22%3E%3Cg%20fill-rule%3D%22evenodd%22%3E%3Cpath%20fill%3D%22%23ce0000%22%20stroke%3D%22%23000063%22%20stroke-width%3D%2213.8%22%20d%3D%22M6.5%20489.5h378.8L137.4%20238.1l257.3.3L6.6-9.5v499z%22%2F%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22m180.7%20355.8-27%209%2021.2%2019.8-28.5-1.8%2011.7%2026.2-25.5-12.3.5%2028.6-18.8-20.9-10.7%2026.6-9.2-26.3-20.3%2020.6%201.8-27.7L49%20409l12.6-25-29.3.6%2021.5-18.3-27.3-10.5%2027-9L32.2%20327l28.4%201.8L49%20302.6l25.6%2012.3-.5-28.6%2018.8%2020.9%2010.7-26.6%209.1%2026.3%2020.4-20.6-1.9%2027.7%2027-11.4-12.7%2025%2029.4-.6-21.5%2018.3zm-32.4-184.7-11.3%208.4%205.6%204.6a94%2094%200%200%200%2030.7-36c1.8%2021.3-17.7%2069-68.7%2069.5a70.6%2070.6%200%200%201-71.5-70.3c10%2018.2%2016.2%2027%2032%2036.5l4.7-4.4-10.6-8.9%2013.7-3.6-7.4-12.4%2014.4%201-1.8-14.4%2012.6%207.4%204-13.5%209%2010.8%208.5-10.3%204.6%2014%2011.8-8.2-1.5%2014.3%2014.2-1.7-6.7%2013.2z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E',
+};
+// Renders a language flag as an isolated <img> (data-URI SVG), so each flag's
+// internal element ids can't collide when the same flag appears more than once.
+const flagImg=(code,cls)=>`<img class="${cls}" src="${FLAGS[code]||''}" alt="" aria-hidden="true" draggable="false">`;
+
 // ── Deductions ───────────────────────────────────────────────────────────────
 // Two mutually-exclusive modes decide what's subtracted from gross pay:
 //   'tax'       → a single flat withholding % (default; Korea's 3.3% freelancer
@@ -3965,6 +3988,36 @@ async function renderMonthBarChart(){
   });
 }
 
+// ── Rules rows (Settings card + import preview) ──────────────────────────────
+// Icons are keyed by the rule KIND buildRulesRows tags each row with — never
+// by row position, which shifts as optional rules (Saturday, Sunday credit…)
+// drop out of the profile. Module-scope so the workplace-import preview
+// (Phase 6.3) renders a candidate profile with the exact same card rows.
+const RULE_ICONS={
+  // Day — gold sun (matches the app's day-shift ☀ convention)
+  day:    {color:'#fbbf24',glow:'rgba(251,191,36,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`},
+  // Night — purple moon (matches the app's night-shift convention)
+  night:  {color:'#a78bfa',glow:'rgba(138,100,255,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`},
+  // Double — teal rotate (matches the app's double-shift convention)
+  double: {color:'#00d2be',glow:'rgba(0,210,190,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`},
+  // Sunday rest credit — pink sparkle
+  sunday: {color:'#f472b6',glow:'rgba(244,114,182,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></svg>`},
+  // Holiday credit — red alert circle
+  holiday:{color:'#f87171',glow:'rgba(248,113,113,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`},
+  // Tax/deduction — yellow percent
+  tax:    {color:'#fbbf24',glow:'rgba(251,191,36,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>`},
+};
+function ruleRowsHTML(rows){
+  return rows.map(([type,rule,kind])=>{
+    const ic=RULE_ICONS[kind]||RULE_ICONS.tax;
+    return`<div class="sr-row">
+      <div class="sr-icon-wrap" style="--ic:${ic.color};--ig:${ic.glow};">${ic.svg}</div>
+      <div class="sr-name">${type}</div>
+      <div class="sr-desc">${rule}</div>
+    </div>`;
+  }).join('');
+}
+
 function buildSettings(){
   const wages=getWages();
   const taxPct=getTaxPct();
@@ -3975,10 +4028,16 @@ function buildSettings(){
   // ── Wage timeline rows (newest first, up to 4) ────────────────────────────
   const LANG_LOCALE={en:'en-US',ko:'ko-KR',id:'id-ID',th:'th-TH',ru:'ru-RU',zh:'zh-CN',fr:'fr-FR',ne:'ne-NP'};
   const fmtWageDate=ds=>{const[y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString(LANG_LOCALE[S.lang]||'en-US',{month:'short',day:'2-digit',year:'numeric'});};
+  // The "current" row is the entry active today (last one with date ≤ today),
+  // matching wageFor()/getWage(). This may not be the newest row if a future-
+  // dated wage change exists.
+  const todayStr=today();
+  let activeIdx=0;
+  wages.forEach((w,idx)=>{ if(w.date<=todayStr) activeIdx=idx; });
   const wageRows=wages.slice().reverse().slice(0,4).map((w,i)=>{
     const realIdx=wages.length-1-i;
     const isFirst=realIdx===0;
-    const isCurrent=i===0;
+    const isCurrent=realIdx===activeIdx;
     return`<div class="sw-row${isCurrent?' sw-row--current':''}">
       <div class="sw-dot-col">
         <div class="sw-dot${isCurrent?' sw-dot--active':''}"></div>
@@ -4021,32 +4080,7 @@ function buildSettings(){
   const tgCirc=2*Math.PI*TG_R;
   const tgDash=Math.round((tgtPct/100)*tgCirc);
 
-  // ── Rules rows ────────────────────────────────────────────────────────────
-  // Icons are keyed by the rule KIND buildRulesRows tags each row with — never
-  // by row position, which shifts as optional rules (Saturday, Sunday credit…)
-  // drop out of the profile.
-  const RULE_ICONS={
-    // Day — gold sun (matches the app's day-shift ☀ convention)
-    day:    {color:'#fbbf24',glow:'rgba(251,191,36,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`},
-    // Night — purple moon (matches the app's night-shift convention)
-    night:  {color:'#a78bfa',glow:'rgba(138,100,255,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`},
-    // Double — teal rotate (matches the app's double-shift convention)
-    double: {color:'#00d2be',glow:'rgba(0,210,190,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`},
-    // Sunday rest credit — pink sparkle
-    sunday: {color:'#f472b6',glow:'rgba(244,114,182,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></svg>`},
-    // Holiday credit — red alert circle
-    holiday:{color:'#f87171',glow:'rgba(248,113,113,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`},
-    // Tax/deduction — yellow percent
-    tax:    {color:'#fbbf24',glow:'rgba(251,191,36,0.28)',svg:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>`},
-  };
-  const rulesHTML=rules.map(([type,rule,kind])=>{
-    const ic=RULE_ICONS[kind]||RULE_ICONS.tax;
-    return`<div class="sr-row">
-      <div class="sr-icon-wrap" style="--ic:${ic.color};--ig:${ic.glow};">${ic.svg}</div>
-      <div class="sr-name">${type}</div>
-      <div class="sr-desc">${rule}</div>
-    </div>`;
-  }).join('');
+  const rulesHTML=ruleRowsHTML(rules);
 
   return`
   <!-- ── Row 1: three equal cards ── -->
@@ -4384,6 +4418,18 @@ function buildSettings(){
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         ${wizT(S.lang,'edit')}
       </button>
+      <!-- Phase 6.3: workplace sharing — a code sets up these exact pay rules
+           on a coworker's phone; import replaces this workplace via preview. -->
+      <div class="pr-btn-row">
+        <button type="button" class="sw-add-btn" id="pr-share-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          ${wizT(S.lang,'shareBtn')}
+        </button>
+        <button type="button" class="sw-add-btn" id="pr-import-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          ${wizT(S.lang,'importBtn')}
+        </button>
+      </div>
     </div>
   </div>
 
@@ -5390,6 +5436,475 @@ function buildWorkplaceModal(){
   panel.focus({preventScroll:true});
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// Phase 6.3: workplace sharing — Settings "Share workplace" / "Import
+// workplace" modals. Pure UI over the share.js pipeline + firebase.js
+// transport: pack/unpack do all validation; these modals never construct or
+// mutate profile data themselves. Import commits via the SAME write the
+// wizard uses (sv('wt4_profile') + scheduleSync) — the engine sees nothing new.
+// ═════════════════════════════════════════════════════════════════════════════
+const escHTML=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const SHARE_LOCALE={en:'en-US',ko:'ko-KR',id:'id-ID',th:'th-TH',ru:'ru-RU',zh:'zh-CN',fr:'fr-FR',ne:'ne-NP'};
+const shareFmtDate=ms=>new Date(ms).toLocaleDateString(SHARE_LOCALE[S.lang]||'en-US',{year:'numeric',month:'short',day:'numeric'});
+// The share link. The code rides the HASH so the SW-cached shell at '/' serves
+// the PWA identically — no server routing, no cache-key changes (Phase 6.4
+// reads it at boot; until then the link still opens the app).
+const shareLink=code=>location.origin+location.pathname+'#join='+formatShareCode(code);
+async function copyToClipboard(text,toast){
+  try{ await navigator.clipboard.writeText(text); }
+  catch(e){
+    // Clipboard API needs a secure context — fall back to the classic path.
+    const ta=document.createElement('textarea');
+    ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();
+    try{ document.execCommand('copy'); }catch(e2){}
+    ta.remove();
+  }
+  if(toast) showExportToast(toast);   // omitted when the button gives inline feedback
+}
+
+// ── Shared share-code entry (Settings import modal ⟷ onboarding join) ────────
+// ONE implementation of the code mask, the lookup/error mapping, and the
+// stage-state markup, so the two entry points cannot drift apart.
+const SHM_IC_CHECK='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+const SHM_IC_SEARCH='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+
+// The XXXX-XXXX mask. Typing inserts the hyphen after the 4th character;
+// pasting accepts JDAYJ9KW, JDAY-J9KW, or a whole share link (everything
+// after 'join=' — the field itself only ever holds a code); Backspace/Delete
+// hop over the auto-hyphen instead of fighting it. After every edit
+// onChange(complete, changed) fires — `complete` gates the lookup button,
+// `changed` lets the caller disarm a stale preview. Enter calls onEnter.
+function wireShareCodeInput(inp,{onChange,onEnter}){
+  const sig=(v,pos)=>v.slice(0,pos).replace(/[^0-9A-Za-z]/g,'').length;
+  let last=null;
+  function mask(){
+    const caret=sig(inp.value,inp.selectionStart??inp.value.length);
+    let raw=inp.value;
+    const ji=raw.lastIndexOf('join=');
+    if(ji>=0)raw=raw.slice(ji+5);
+    const s=raw.toUpperCase().replace(/[^0-9A-Z]/g,'').slice(0,8);
+    inp.value=s.length>4?s.slice(0,4)+'-'+s.slice(4):s;
+    const c=Math.min(caret,s.length);
+    const pos=c>4?c+1:c;
+    inp.setSelectionRange(pos,pos);
+    const changed=s!==last;
+    last=s;
+    onChange(s.length===8,changed);
+  }
+  inp.addEventListener('input',mask);
+  inp.addEventListener('keydown',e=>{
+    const p=inp.selectionStart;
+    if(p===inp.selectionEnd){
+      if(e.key==='Backspace'&&inp.value[p-1]==='-')inp.setSelectionRange(p-1,p-1);
+      else if(e.key==='Delete'&&inp.value[p]==='-')inp.setSelectionRange(p+1,p+1);
+    }
+    if(e.key==='Enter'){e.preventDefault();if(onEnter)onEnter();}
+  });
+  mask();                                          // normalize any prefill
+  inp.setSelectionRange(inp.value.length,inp.value.length);
+}
+
+// Canonical code → {ok:true,r:{profile,name?}} | {ok:false,msg} with the
+// user-facing message already chosen. Never throws.
+async function shareLookupByCode(code,W){
+  let env;
+  try{ env=await fetchShare(code); }
+  catch(e){ console.warn('[share] fetch failed',e); return {ok:false,msg:W('imErrNet')}; }
+  if(!env) return {ok:false,msg:W('imErrNotFound')};
+  const r=unpackShare(env);                        // envelope is UNTRUSTED
+  if(!r.ok) return {ok:false,msg:W(r.error==='version'?'imErrVersion':r.error==='format'?'imErrNotFound':'imErrInvalid')};
+  return {ok:true,r};
+}
+
+// Stage-state markup shared by both entry points.
+const shmEmptyHTML=(icon,title,desc)=>`<div class="shm-empty">
+  <span class="shm-empty-ic" aria-hidden="true">${icon}</span>
+  <div class="shm-empty-t">${title}</div>
+  <div class="shm-empty-s">${desc}</div>
+</div>`;
+const shmFoundHeadHTML=(title,hintHTML)=>`<div class="shm-card-head">
+  <span class="shm-card-badge is-fresh" aria-hidden="true">${SHM_IC_CHECK}</span>
+  <div class="shm-card-headtxt">
+    <div class="shm-card-title">${title}</div>
+    <div class="shm-card-hint">${hintHTML}</div>
+  </div>
+</div>`;
+// Shared modal scaffolding: overlay + glass header + body + footer, with the
+// exact close/Escape/focus behavior of the workplace modal.
+function buildShareLikeModal({ovId,badgeSVG,title,sub,bodyHTML,footHTML}){
+  document.querySelectorAll('#'+ovId).forEach(el=>el.remove());
+  const W=k=>wizT(S.lang,k);
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';ov.id=ovId;
+  document.body.classList.add('modal-open');
+  const close=()=>animateModalClose('#'+ovId,()=>{document.body.classList.remove('modal-open');});
+  ov.innerHTML=`<div class="modal wpm-modal shm-modal" role="dialog" aria-modal="true" aria-label="${title}">
+    <div class="wm-glow" aria-hidden="true"></div>
+    <div class="wm-header wpm-header">
+      <div class="wm-header-badge wpm-badge">${badgeSVG}</div>
+      <div class="wm-header-text">
+        <h3 class="wm2-title wpm-title">${title}</h3>
+        <div class="wpm-sub">${sub}</div>
+      </div>
+      <button class="asm-close-btn wm-close" data-shm-close aria-label="${W('cancel')}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="wpm-body shm-body">${bodyHTML}</div>
+    ${footHTML?`<div class="wpm-actions">${footHTML}</div>`:''}
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)close();});
+  ov.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();close();}});
+  ov.querySelectorAll('[data-shm-close]').forEach(b=>b.addEventListener('click',close));
+  const panel=ov.querySelector('.wpm-modal');
+  panel.tabIndex=-1;
+  panel.focus({preventScroll:true});
+  return { ov, close };
+}
+
+// ── Share workplace ───────────────────────────────────────────────────────────
+function buildShareModal(){
+  const W=k=>wizT(S.lang,k);
+  const badge='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>';
+
+  // Default share name: the preset label when the workplace came from one.
+  const p=getProfile();
+  const presetNames={'kr-factory-2shift':W('pFactory'),'kr-statutory-5plus':W('pStatutory')};
+  const defName=(p.source&&p.source.kind==='preset'&&presetNames[p.source.presetId])||'';
+
+  // Phase 6.5: Backup — the same envelope as a code, downloaded as a .json
+  // file. Needs NO account (the offline/no-sign-in escape hatch); Restore
+  // lives in the Import modal and runs the identical unpackShare pipeline.
+  const wireBackup=m=>{
+    m.ov.querySelector('#sh-backup')?.addEventListener('click',()=>{
+      try{
+        const nameIn=m.ov.querySelector('#sh-name');
+        const name=(nameIn&&nameIn.value.trim())||defName||'';
+        const env=packShare(getProfile(), name?{name}:{});
+        const blob=new Blob([JSON.stringify(env,null,2)],{type:'application/json'});
+        const a=document.createElement('a');
+        a.href=URL.createObjectURL(blob);
+        a.download='shiftr-workplace-'+today()+'.json';
+        document.body.appendChild(a);a.click();a.remove();
+        setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+        showExportToast(W('bkDone'));
+      }catch(e){ console.warn('[share] backup failed',e); }
+    });
+  };
+
+  // Sharing needs an accountable owner (rules enforce it server-side too):
+  // signed-out users get the explanation + the app's normal sign-in — and the
+  // file backup, which is exactly the path that works without an account.
+  if(!CURRENT_USER){
+    const m=buildShareLikeModal({
+      ovId:'sh-modal-ov',badgeSVG:badge,title:W('shTitle'),sub:W('shSub'),
+      bodyHTML:`<div class="shm-auth">
+        <div class="shm-auth-msg">${W('shAuthMsg')}</div>
+        <button class="btn-pri" id="sh-signin">${W('shSignIn')}</button>
+      </div>
+      <button type="button" class="shm-file-btn" id="sh-backup">${W('bkDownload')}</button>`,
+      footHTML:`<button class="btn-sec" data-shm-close>${W('cancel')}</button>`,
+    });
+    m.ov.querySelector('#sh-signin').addEventListener('click',()=>{m.close();signInWithGoogle();});
+    wireBackup(m);
+    return;
+  }
+
+  // Icons for the sharing surfaces (app icon convention: currentColor,
+  // stroke-width 2, round caps/joins).
+  const icShare=(s=14)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+  const icLink=(s=14)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
+  const icCopy='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  const icCheck=SHM_IC_CHECK;
+
+  const m=buildShareLikeModal({
+    ovId:'sh-modal-ov',badgeSVG:badge,title:W('shTitle'),sub:W('shSub'),
+    bodyHTML:`
+      <div class="shm-form" id="sh-form">
+        <label class="shm-label" for="sh-name">${W('shNameLabel')}</label>
+        <input type="text" id="sh-name" class="shm-name-in" maxlength="60"
+               value="${escHTML(defName)}" placeholder="${W('shNamePh')}" autocomplete="off">
+        <button class="btn-pri shm-create" id="sh-create">${W('shCreate')}</button>
+        <div class="imm-err" id="sh-err" hidden></div>
+      </div>
+      <div class="shm-stage" id="sh-stage" aria-live="polite"></div>
+      <div class="shm-active">
+        <div class="shm-label">${W('shActive')}</div>
+        <div class="shm-list" id="sh-list"></div>
+      </div>
+      <button type="button" class="shm-file-btn" id="sh-backup">${W('bkDownload')}</button>`,
+    footHTML:`<button class="btn-sec" data-shm-close>${W('cancel')}</button>`,
+  });
+  wireBackup(m);
+
+  const showErr=msg=>{const el=m.ov.querySelector('#sh-err');el.hidden=false;el.textContent=msg;};
+
+  // ── The dynamic stage below the CTA ─────────────────────────────────────────
+  // One slot, two states: a quiet dashed placeholder until a code exists, then
+  // the sharing card. The SAME card serves a fresh mint (success header) and a
+  // re-opened active code (row share icon) — reopening never mints a new code.
+  const stage=m.ov.querySelector('#sh-stage');
+  let shown=null;                                  // code currently on the stage
+  const revealStage=()=>stage.scrollIntoView({
+    behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',
+    block:'nearest'});
+  const markOpenRow=()=>{m.ov.querySelectorAll('.shm-item').forEach(it=>
+    it.classList.toggle('is-open',it.dataset.code===shown));};
+
+  function renderEmpty(){
+    shown=null;
+    stage.innerHTML=`<div class="shm-empty">
+      <span class="shm-empty-ic" aria-hidden="true">${icShare(15)}</span>
+      <div class="shm-empty-t">${W('shEmptyTitle')}</div>
+      <div class="shm-empty-s">${W('shEmptyDesc')}</div>
+    </div>`;
+    markOpenRow();
+  }
+
+  // Copy button with inline feedback: flips to "✓ Copied" in place (no toast).
+  function wireCopy(btn,text){
+    btn.addEventListener('click',async()=>{
+      if(btn.classList.contains('is-copied'))return;
+      await copyToClipboard(text);
+      const orig=btn.innerHTML;
+      btn.classList.add('is-copied');
+      btn.innerHTML=`${icCheck}${W('shCopied')}`;
+      setTimeout(()=>{if(!btn.isConnected)return;
+        btn.classList.remove('is-copied');btn.innerHTML=orig;},1400);
+    });
+  }
+
+  function renderCard({code,name,expiresAtMs,fresh}){
+    shown=code;
+    // Compact link display: the host may truncate, the code tail never does.
+    const bare=shareLink(code).replace(/^https?:\/\//,'');
+    const ji=bare.lastIndexOf('#join=');
+    stage.innerHTML=`<div class="shm-card">
+      <div class="shm-card-head">
+        <span class="shm-card-badge${fresh?' is-fresh':''}" aria-hidden="true">${fresh?icCheck:icShare(13)}</span>
+        <div class="shm-card-headtxt">
+          <div class="shm-card-title">${fresh?W('shCreated'):(name?escHTML(name):W('shYourCode'))}</div>
+          <div class="shm-card-hint">${W('shHint')}</div>
+        </div>
+      </div>
+      <div class="shm-code-row">
+        <span class="shm-code">${formatShareCode(code)}</span>
+        <button class="shm-copy" id="sh-copy-code">${icCopy}${W('shCopyCode')}</button>
+      </div>
+      <div class="shm-divider"><span>${W('shOrLink')}</span></div>
+      <div class="shm-link-row">
+        <span class="shm-link-ic" aria-hidden="true">${icLink(14)}</span>
+        <span class="shm-link-url"><span class="shm-link-pre">${escHTML(bare.slice(0,ji+6))}</span><span class="shm-link-code">${escHTML(bare.slice(ji+6))}</span></span>
+        <button class="shm-copy" id="sh-copy-link">${icCopy}${W('shCopyLink')}</button>
+      </div>
+      <div class="shm-card-meta">
+        <span class="shm-expiry">${expiresAtMs?W('shExpires')(shareFmtDate(expiresAtMs)):''}</span>
+        ${navigator.share?`<button class="shm-native" id="sh-native">${icShare(13)}${W('shNative')}</button>`:''}
+      </div>
+    </div>`;
+    wireCopy(stage.querySelector('#sh-copy-code'),formatShareCode(code));
+    wireCopy(stage.querySelector('#sh-copy-link'),shareLink(code));
+    stage.querySelector('#sh-native')?.addEventListener('click',()=>{
+      navigator.share({text:`${W('shYourCode')}: ${formatShareCode(code)}`,url:shareLink(code)}).catch(()=>{});
+    });
+    markOpenRow();
+  }
+  renderEmpty();
+
+  async function refreshList(){
+    const el=m.ov.querySelector('#sh-list');
+    if(!el)return;
+    el.innerHTML='<span class="obx-spin" aria-hidden="true"></span>';
+    let shares;
+    try{ shares=(await listMyShares()).sort((a,b)=>b.createdAtMs-a.createdAtMs); }
+    catch(e){
+      if(el.isConnected) el.innerHTML=`<div class="shm-none">${W('imErrNet')}</div>`;
+      return;
+    }
+    if(!el.isConnected)return;                     // modal closed mid-flight
+    if(!shares.length){el.innerHTML=`<div class="shm-none">${W('shNone')}</div>`;return;}
+    el.innerHTML=shares.map(s=>`
+      <div class="shm-item" data-code="${s.code}">
+        <span class="shm-item-ic" aria-hidden="true">${icLink(14)}</span>
+        <div class="shm-item-main">
+          <div class="shm-item-top">
+            <span class="shm-item-code">${formatShareCode(s.code)}</span>
+            <span class="shm-item-live"><i aria-hidden="true"></i><em>${W('shActiveTag')}</em></span>
+          </div>
+          <div class="shm-item-sub">${s.name?`${escHTML(s.name)} · `:''}${s.createdAtMs?W('shCreatedOn')(shareFmtDate(s.createdAtMs)):''}</div>
+        </div>
+        <button class="shm-item-share" data-share="${s.code}" aria-label="${W('shNative')}">${icShare(14)}</button>
+        <button class="shm-revoke" data-revoke="${s.code}">${W('shRevoke')}</button>
+      </div>`).join('');
+    // Row share icon → the same sharing card for that code (no new code is
+    // minted). Tapping the open row's icon again folds the stage back.
+    el.querySelectorAll('[data-share]').forEach(b=>b.addEventListener('click',()=>{
+      const s=shares.find(x=>x.code===b.dataset.share);
+      if(!s)return;
+      if(shown===s.code){renderEmpty();return;}
+      renderCard({code:s.code,name:s.name,expiresAtMs:s.expiresAtMs,fresh:false});
+      revealStage();
+    }));
+    el.querySelectorAll('[data-revoke]').forEach(b=>b.addEventListener('click',async()=>{
+      b.disabled=true;
+      try{
+        await deleteShare(b.dataset.revoke);
+        if(shown===b.dataset.revoke)renderEmpty(); // a revoked code leaves the stage
+        refreshList();
+      }
+      catch(e){ b.disabled=false; }
+    }));
+    markOpenRow();                                 // keep the open-row accent in sync
+  }
+  refreshList();
+
+  m.ov.querySelector('#sh-create').addEventListener('click',async()=>{
+    const btn=m.ov.querySelector('#sh-create');
+    const orig=btn.innerHTML;
+    btn.disabled=true;
+    btn.innerHTML=`<span class="obx-spin" aria-hidden="true"></span>${W('shCreating')}`;
+    m.ov.querySelector('#sh-err').hidden=true;
+    try{
+      const name=m.ov.querySelector('#sh-name').value.trim();
+      const env=packShare(getProfile(),name?{name}:{});
+      const {code,expiresAtMs}=await createShare(env);
+      btn.disabled=false;
+      btn.innerHTML=orig;
+      renderCard({code,name,expiresAtMs,fresh:true});
+      revealStage();
+      refreshList();
+    }catch(err){
+      console.warn('[share] create failed',err);
+      btn.disabled=false;
+      btn.innerHTML=orig;
+      showErr(err&&err.message==='auth-required'?W('shAuthMsg'):W('shErr'));
+    }
+  });
+}
+
+// ── Import workplace ──────────────────────────────────────────────────────────
+// opts.auto — run the lookup on open (deep-linked #join= codes arrive verified
+// in format but not in existence; auto-lookup shows the preview or the error
+// without an extra tap).
+function buildImportModal(prefill,opts){
+  const W=k=>wizT(S.lang,k);
+  const badge='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+  const m=buildShareLikeModal({
+    ovId:'im-modal-ov',badgeSVG:badge,title:W('imTitle'),sub:W('imSub'),
+    bodyHTML:`
+      <div class="imm-row">
+        <input type="text" id="im-code" class="imm-input" placeholder="${W('imPlaceholder')}"
+               autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="120"
+               value="${prefill?escHTML(prefill):''}">
+        <button class="btn-pri" id="im-lookup" disabled>${W('imLookup')}</button>
+      </div>
+      <div class="imm-err" id="im-err" hidden></div>
+      <div class="imm-stage" id="im-stage" aria-live="polite"></div>
+      <button type="button" class="shm-file-btn" id="im-restore-file">${W('bkRestore')}</button>
+      <input type="file" id="im-file" accept=".json,application/json" hidden>`,
+    footHTML:`<button class="btn-sec" data-shm-close>${W('cancel')}</button>
+      <button class="btn-pri wpm-save" id="im-confirm" disabled>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>${W('imConfirm')}
+      </button>`,
+  });
+
+  const inp=m.ov.querySelector('#im-code');
+  const errEl=m.ov.querySelector('#im-err');
+  const stage=m.ov.querySelector('#im-stage');
+  const lookupBtn=m.ov.querySelector('#im-lookup');
+  const confirmBtn=m.ov.querySelector('#im-confirm');
+  let pending=null;                                  // the unpacked result awaiting confirm
+
+  // The stage below the entry row: an intentional placeholder until a lookup
+  // succeeds, then the "Workplace found" card. Confirm stays visible but
+  // disabled until a result is armed — the whole flow reads at a glance.
+  const renderIdle=()=>{stage.innerHTML=shmEmptyHTML(SHM_IC_SEARCH,W('imEmptyTitle'),W('imEmptyDesc'));};
+  renderIdle();
+
+  const showErr=msg=>{errEl.hidden=false;errEl.textContent=msg;renderIdle();confirmBtn.disabled=true;pending=null;};
+
+  // The shared XXXX-XXXX mask; editing after a successful lookup disarms the
+  // stale preview so the armed confirm always matches the visible code.
+  wireShareCodeInput(inp,{
+    onChange:(complete,changed)=>{
+      lookupBtn.disabled=!complete;
+      if(changed&&pending){pending=null;confirmBtn.disabled=true;errEl.hidden=true;renderIdle();}
+    },
+    onEnter:()=>{if(!lookupBtn.disabled)lookup();},
+  });
+
+  // Both transports (code lookup, backup file) land here with an unpacked,
+  // pipeline-verified result: a "Workplace found" card with the SAME
+  // context-aware rules rows Settings renders, the replace warning, and the
+  // now-armed confirm button. `sub` names the source (code or backup file).
+  function presentResult(r,sub){
+    pending=r;
+    errEl.hidden=true;
+    const rows=buildRulesRows(r.profile,TR[S.lang].seg,
+      {holAuto:isHolAuto(),dedPct:getActiveDeductionPct(),dedNoun:getDeductionNoun()});
+    stage.innerHTML=`<div class="shm-card">
+      ${shmFoundHeadHTML(W('imFound'),r.name?`<b>${escHTML(r.name)}</b>`:escHTML(sub||''))}
+      <div class="imm-rules">${ruleRowsHTML(rows)}</div>
+      <div class="imm-warn">${W('imReplaceWarn')}</div>
+    </div>`;
+    confirmBtn.disabled=false;
+  }
+
+  async function lookup(){
+    errEl.hidden=true;
+    // The mask keeps the field canonical; normalizeShareCode still fixes the
+    // classic O/I/L transcription typos.
+    const code=normalizeShareCode(inp.value);
+    if(!code){showErr(W('imErrFormat'));return;}
+    const orig=lookupBtn.innerHTML;
+    lookupBtn.disabled=true;
+    lookupBtn.innerHTML=`<span class="obx-spin" aria-hidden="true"></span>${W('imChecking')}`;
+    const res=await shareLookupByCode(code,W);
+    lookupBtn.disabled=false;
+    lookupBtn.innerHTML=orig;
+    if(!res.ok){showErr(res.msg);return;}
+    presentResult(res.r,formatShareCode(code));
+  }
+
+  lookupBtn.addEventListener('click',lookup);
+
+  // Phase 6.5: Restore — a backup .json is the same envelope by another
+  // transport. Parse, then the identical UNTRUSTED-input pipeline; version
+  // mismatches keep their "update the app" message, everything else that
+  // fails is simply "not a Shiftr backup".
+  const fileBtn=m.ov.querySelector('#im-restore-file');
+  const fileIn=m.ov.querySelector('#im-file');
+  fileBtn.addEventListener('click',()=>fileIn.click());
+  fileIn.addEventListener('change',async()=>{
+    const f=fileIn.files&&fileIn.files[0];
+    fileIn.value='';                                 // same file re-selectable
+    if(!f)return;
+    let env;
+    try{ env=JSON.parse(await f.text()); }
+    catch(e){ showErr(W('bkErrFile')); return; }
+    const r=unpackShare(env);
+    if(!r.ok){ showErr(r.error==='version'?W('imErrVersion'):W('bkErrFile')); return; }
+    presentResult(r,f.name);
+  });
+  confirmBtn.addEventListener('click',()=>{
+    if(!pending)return;
+    try{
+      sv('wt4_profile',pending.profile);             // the wizard's exact write
+      scheduleSync();
+    }catch(err){ console.warn('[share] import save failed',err); return; }
+    const needsSched=needsNightSchedule(pending.profile);
+    animateModalClose('#im-modal-ov',()=>{
+      document.body.classList.remove('modal-open');
+      render();                                      // rules card reflects the import
+      showExportToast(needsSched?W('imSchedNote'):W('imported'));
+    });
+  });
+  inp.focus({preventScroll:true});
+  if(opts&&opts.auto&&prefill) lookup();
+}
+
 function buildWageModal(){
   const{mode,idx}=S.wageModal;
   const wages=getWages();
@@ -6293,8 +6808,8 @@ function attachHeaderListeners(){
   if(langBtn){
     const langPortal=createPortalDropdown('lang-menu',
       ['en','ko','id','th','ru','zh','fr','ne'].map(l=>{
-        const labels={en:'🇺🇸 English',ko:'🇰🇷 한국어',id:'🇮🇩 Indonesia',th:'🇹🇭 ภาษาไทย',ru:'🇷🇺 Русский',zh:'🇨🇳 中文',fr:'🇫🇷 Français',ne:'🇳🇵 नेपाली'};
-        return `<button class="hdr-dropdown-item${S.lang===l?' hdr-dropdown-item--active':''}" data-lang="${l}">${labels[l]}</button>`;
+        const names={en:'English',ko:'한국어',id:'Indonesia',th:'ภาษาไทย',ru:'Русский',zh:'中文',fr:'Français',ne:'नेपाली'};
+        return `<button class="hdr-dropdown-item${S.lang===l?' hdr-dropdown-item--active':''}" data-lang="${l}">${flagImg(l,'flag-ico')}${names[l]}</button>`;
       }).join(''));
     // Wire language buttons inside portal
     langPortal.querySelectorAll('[data-lang]').forEach(b=>b.addEventListener('click',e=>{
@@ -6449,6 +6964,17 @@ function attachContentListeners(){
     if(editBtn) editBtn.addEventListener('click',e=>{
       e.stopPropagation();
       buildWorkplaceModal();
+    });
+    // Phase 6.3: share/import this workplace by code.
+    const shareBtn=card.querySelector('#pr-share-btn');
+    if(shareBtn) shareBtn.addEventListener('click',e=>{
+      e.stopPropagation();
+      buildShareModal();
+    });
+    const importBtn=card.querySelector('#pr-import-btn');
+    if(importBtn) importBtn.addEventListener('click',e=>{
+      e.stopPropagation();
+      buildImportModal();
     });
     header.addEventListener('keydown',e=>{
       if(e.key==='Enter'||e.key===' '){e.preventDefault();toggle();}
@@ -7268,6 +7794,19 @@ applyTheme();
 // A returning user who restores on screen 1 jumps straight to screen 6 —
 // zero setup questions. Their cloud pull already rehydrated localStorage.
 (function initOnboarding(){
+  // Phase 6.4: #join=CODE deep link (share links, Phase 6.3's shareLink()).
+  // Captured before any routing decision and stripped from the URL so a
+  // refresh doesn't re-trigger it; the code itself persists via OB state
+  // (pendingJoin) for the not-yet-onboarded path.
+  let PENDING_JOIN_CODE=null;
+  try{
+    const jm=/[#&]join=([^&\s]+)/.exec(location.hash||'');
+    if(jm){
+      PENDING_JOIN_CODE=normalizeShareCode(decodeURIComponent(jm[1]));
+      history.replaceState(null,'',location.pathname+location.search);
+    }
+  }catch(e){}
+
   // Backward-compat: if user already has data BUT onboarding was never explicitly
   // completed, mark them as onboarded silently — they pre-date this flow.
   // IMPORTANT: we only do this when there is NO active in-progress onboarding session
@@ -7290,6 +7829,13 @@ applyTheme();
     // app shell and splash resolve correctly.
     document.documentElement.removeAttribute('data-onboarding');
     document.getElementById('ob-splash')?.remove();
+    // A share link opened by an already-onboarded user → the Settings import
+    // modal, prefilled and auto-looked-up (imports replace, so it previews +
+    // warns exactly like a manual import).
+    if(PENDING_JOIN_CODE){
+      const code=PENDING_JOIN_CODE;
+      setTimeout(()=>{ try{ buildImportModal(formatShareCode(code),{auto:true}); }catch(e){ console.warn('[share] join-link modal failed',e); } },400);
+    }
     return;
   }
 
@@ -7321,6 +7867,9 @@ applyTheme();
         if(s.step >= 4) s.step += 1;
         s.v = 4;
       }
+      // v4 → v5: Phase 6.4 adds importedShare/pendingJoin (workplace-by-code).
+      // No step positions changed — pure field addition.
+      if(s && s.v === 4){ s.v = 5; }
       return s;
     }catch(e){}
     return null;
@@ -7328,7 +7877,7 @@ applyTheme();
   function saveOBState(){
     try{
       localStorage.setItem('wt4_ob_state', JSON.stringify({
-        v:4,
+        v:5,
         step: OB.step,
         rules: OB.rules,
         lang: OB.lang,
@@ -7339,19 +7888,21 @@ applyTheme();
         dedMode: OB.dedMode,
         holAuto: OB.holAuto,
         restored: OB.restored,
+        importedShare: OB.importedShare,   // {code,name,profile} or null
+        pendingJoin: OB.pendingJoin,       // deep-linked code awaiting lookup
       }));
     }catch(e){}
   }
 
   const OB_LANGS=[
-    {code:'en',flag:'🇺🇸',label:'English'},
-    {code:'ko',flag:'🇰🇷',label:'한국어'},
-    {code:'id',flag:'🇮🇩',label:'Indonesia'},
-    {code:'th',flag:'🇹🇭',label:'ภาษาไทย'},
-    {code:'ru',flag:'🇷🇺',label:'Русский'},
-    {code:'zh',flag:'🇨🇳',label:'中文'},
-    {code:'fr',flag:'🇫🇷',label:'Français'},
-    {code:'ne',flag:'🇳🇵',label:'नेपाली'},
+    {code:'en',label:'English'},
+    {code:'ko',label:'한국어'},
+    {code:'id',label:'Indonesia'},
+    {code:'th',label:'ภาษาไทย'},
+    {code:'ru',label:'Русский'},
+    {code:'zh',label:'中文'},
+    {code:'fr',label:'Français'},
+    {code:'ne',label:'नेपाली'},
   ];
   // Best-guess language from the browser so screen 1 usually needs zero taps.
   function detectLang(){
@@ -7377,8 +7928,15 @@ applyTheme();
     dedMode:      saved?.dedMode      ?? ld('wt4_deduction_mode','tax'),
     holAuto:      saved?.holAuto      !== undefined ? saved.holAuto : true, // default: auto-credit ON
     restored:     saved?.restored === true, // cloud fast path — skip setup screens
+    importedShare:saved?.importedShare ?? null, // Phase 6.4: confirmed workplace code {code,name,profile}
+    pendingJoin:  saved?.pendingJoin   ?? null, // Phase 6.4: deep-linked code awaiting lookup
     signingIn:    false, // transient — never persisted
   };
+  // A #join= deep link captured at boot pre-opens the code panel on the
+  // workplace step (unless a code was already confirmed this session).
+  if(typeof PENDING_JOIN_CODE==='string' && PENDING_JOIN_CODE && !OB.importedShare){
+    OB.pendingJoin=PENDING_JOIN_CODE;
+  }
   // Combined employee insurance % (statutory defaults) — for the live preview
   // and the "4 Insurances" total chip. Uses the app's own insuranceRate().
   const OB_INS_PCT = Math.round(insuranceRate(DEFAULT_INSURANCE)*100*100)/100;
@@ -7388,8 +7946,17 @@ applyTheme();
   // 5 pay · 6 finish. The Night Schedule step exists only when the chosen rules
   // are schedule-driven (overlap-mode night premium) AND the user isn't
   // day-only — otherwise the flow runs 2 → 3 → 5 and shows one fewer segment.
+  // Phase 6.4: an imported workplace code decides the schedule question from
+  // the IMPORTED profile (the share stripped the sharer's schedule, so overlap
+  // workplaces still need this user's own times); wizard flows keep deciding
+  // from the chip state as before.
+  function obNeedsSched(){
+    if(OB.importedShare)
+      return OB.pattern!=='day' && needsNightSchedule(OB.importedShare.profile);
+    return obxNeedsSchedPage(OB.rules,OB.pattern);
+  }
   function obSeq(){
-    return obxNeedsSchedPage(OB.rules,OB.pattern) ? [1,2,3,4,5,6] : [1,2,3,5,6];
+    return obNeedsSched() ? [1,2,3,4,5,6] : [1,2,3,5,6];
   }
   function obTotal(){ return obSeq().length-1; }         // displayed setup steps
   function obStepIdx(step){                              // 1-based display index
@@ -7406,7 +7973,7 @@ applyTheme();
   }
   // A saved session can sit on step 4 while the rules no longer need it (the
   // user changed presets and refreshed mid-flow) — resume on the pay step.
-  if(OB.step===4 && !obxNeedsSchedPage(OB.rules,OB.pattern)) OB.step=5;
+  if(OB.step===4 && !obNeedsSched()) OB.step=5;
 
   // Restored sessions: the cloud pull already wrote the user's real language —
   // prefer it over whatever the session captured (covers a refresh mid-finale).
@@ -7490,7 +8057,7 @@ applyTheme();
         <div class="obx-langs" style="--i:1" role="group" aria-label="${ot('obStep1Title')}">
           ${OB_LANGS.map(l=>`
             <button type="button" class="obx-lang${OB.lang===l.code?' obx-lang--active':''}" data-lang="${l.code}" aria-pressed="${OB.lang===l.code}">
-              <span class="obx-lang-flag" aria-hidden="true">${l.flag}</span>
+              ${flagImg(l.code,'obx-lang-flag')}
               <span class="obx-lang-label">${l.label}</span>
             </button>`).join('')}
         </div>
@@ -7533,16 +8100,22 @@ applyTheme();
         <button type="button" class="btn-pri obx-cta obx-next" style="--i:4" ${obCanProceed()?'':'disabled'}>${ot('obNext')} ${OI.arrow}</button>`;
     }
 
-    // Step 3 — Workplace & Pay Rules: WHAT the workplace pays.
+    // Step 3 — Workplace & Pay Rules: WHAT the workplace pays. Two deliberate
+    // paths (Phase 6.4): pick/author rules with the cards, OR flip into a
+    // dedicated import mode via the entry card below them — a confirmed code
+    // overrides the cards (dimmed until removed) and is stored verbatim at
+    // completeOnboarding.
     if(OB.step===3){
+      if(obJoinMode()) return objoinModeHTML();
       return `
         <div class="obx-eyebrow" id="ob-eyebrow" style="--i:0">2 ${ot('obOf')} ${obTotal()}</div>
         <h2 class="obx-title" style="--i:1">${wizT(OB.lang,'title')}</h2>
         <p class="obx-sub-text" style="--i:2">${wizT(OB.lang,'sub')}</p>
-        <div style="--i:3">${obxWorkplaceHTML(OB.rules, OB.lang, OB.pattern)}</div>
-        <button type="button" class="btn-pri obx-cta obx-next" style="--i:4">${ot('obNext')} ${OI.arrow}</button>
-        <button type="button" class="obx-ghost obx-later" style="--i:5"${OB.rules.preset?' hidden':''}>${wizT(OB.lang,'laterBtn')}</button>
-        <p class="obx-flownote" style="--i:6">${WZI.lock}<span>${wizT(OB.lang,'laterNote')}</span></p>`;
+        <div style="--i:3"${OB.importedShare?' class="wpx-overridden" aria-disabled="true"':''}>${obxWorkplaceHTML(OB.rules, OB.lang, OB.pattern)}</div>
+        <div style="--i:4">${objoinHTML()}</div>
+        <button type="button" class="btn-pri obx-cta obx-next" style="--i:5">${ot('obNext')} ${OI.arrow}</button>
+        <button type="button" class="obx-ghost obx-later" style="--i:6"${(OB.rules.preset||OB.importedShare)?' hidden':''}>${wizT(OB.lang,'laterBtn')}</button>
+        <p class="obx-flownote" style="--i:7">${WZI.lock}<span>${wizT(OB.lang,'laterNote')}</span></p>`;
     }
 
     // Step 4 — Night Schedule: WHEN those rules apply. Exists only for
@@ -7795,6 +8368,174 @@ applyTheme();
   }
 
   // ── Wire step-level events (called after every body swap) ────────────────────
+  // Phase 6.4: "I have a workplace code" — the coworker fast path on the
+  // workplace step. A ghost toggle folds open the same lookup → preview →
+  // confirm pipeline as the Settings import modal (same imm-* components,
+  // same share.js gates); a confirmed code renders as an applied-chip and
+  // overrides the preset cards until removed. Nothing touches real storage
+  // here — the profile is held in OB.importedShare until completeOnboarding.
+  function objoinHTML(){
+    const W=k=>wizT(OB.lang,k);
+    if(OB.importedShare){
+      const s=OB.importedShare;
+      return `<div class="objoin" id="ob-join">
+        <div class="objoin-chip">
+          <span class="objoin-chip-ic">${OI.check}</span>
+          <span class="objoin-chip-txt">
+            <span class="objoin-chip-t">${W('obCodeApplied')}</span>
+            <span class="objoin-chip-s">${s.name?escHTML(s.name)+' · ':''}${formatShareCode(s.code)}</span>
+          </span>
+          <button type="button" class="objoin-remove" id="ob-join-remove">${W('obCodeRemove')}</button>
+        </div>
+      </div>`;
+    }
+    // The second path's door: an intentional entry card, not a fourth preset.
+    return `<div class="objoin" id="ob-join">
+      <button type="button" class="objoin-entry" id="ob-join-enter">
+        <span class="objoin-entry-ic" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>
+        <span class="objoin-entry-txt">
+          <span class="objoin-entry-t">${W('obHaveCode')}</span>
+          <span class="objoin-entry-s">${W('obCodeDesc')}</span>
+        </span>
+        <span class="objoin-entry-chev" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+      </button>
+    </div>`;
+  }
+
+  // Import mode owns the whole step: the preset UI steps aside and the code
+  // path gets a focused screen — the SAME mask/lookup/stage components as the
+  // Settings import modal (wireShareCodeInput / shareLookupByCode / shm-*).
+  function obJoinMode(){
+    return OB.joinMode!==undefined?!!OB.joinMode:(!!OB.pendingJoin&&!OB.importedShare);
+  }
+  function objoinModeHTML(){
+    const W=k=>wizT(OB.lang,k);
+    const prefill=OB.pendingJoin?formatShareCode(OB.pendingJoin):(OB._joinDraft||'');
+    return `
+      <div class="obx-eyebrow" id="ob-eyebrow" style="--i:0">2 ${ot('obOf')} ${obTotal()}</div>
+      <button type="button" class="objoin-back" id="ob-join-back" style="--i:1">${OI.back}${W('obBackPresets')}</button>
+      <h2 class="obx-title" style="--i:2">${W('imTitle')}</h2>
+      <p class="obx-sub-text" style="--i:3">${W('imSub')}</p>
+      <div class="objoin-panel" id="ob-join" style="--i:4">
+        <div class="imm-row">
+          <input type="text" id="ob-join-code" class="imm-input" placeholder="${W('imPlaceholder')}"
+                 autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="120"
+                 value="${escHTML(prefill)}">
+          <button type="button" class="btn-pri" id="ob-join-lookup" disabled>${W('imLookup')}</button>
+        </div>
+        <div class="imm-err" id="ob-join-err" hidden></div>
+        <div class="imm-stage" id="ob-join-stage" aria-live="polite"></div>
+      </div>
+      <button type="button" class="btn-pri obx-cta" id="ob-join-confirm" style="--i:5" disabled>${W('imConfirm')} ${OI.arrow}</button>`;
+  }
+  function wireObJoin(root){
+    const W=k=>wizT(OB.lang,k);
+    const body=document.getElementById('ob-body');
+    const rerender=()=>{ body.innerHTML=buildStepHTML(); wireStepEvents(); syncFlowChrome(); };
+
+    // Applied chip → Remove re-enables the preset cards.
+    const removeBtn=root.querySelector('#ob-join-remove');
+    if(removeBtn){
+      removeBtn.addEventListener('click',()=>{
+        OB.importedShare=null;
+        saveOBState();
+        rerender();                       // cards re-enable; flow re-syncs
+      });
+      return;
+    }
+
+    // Default mode: the entry card is the door into import mode.
+    const enter=root.querySelector('#ob-join-enter');
+    if(enter){
+      enter.addEventListener('click',()=>{
+        OB.joinMode=true;
+        rerender();
+        document.getElementById('ob-join-code')?.focus({preventScroll:true});
+      });
+      return;
+    }
+
+    // Import mode — shared mask/lookup/stage; only the found-card CONTENT is
+    // onboarding-specific (a high-level what's-included summary instead of
+    // the full rules table a Settings user needs).
+    const inp=root.querySelector('#ob-join-code');
+    const errEl=root.querySelector('#ob-join-err');
+    const stage=root.querySelector('#ob-join-stage');
+    const lookupBtn=root.querySelector('#ob-join-lookup');
+    const confirmBtn=document.getElementById('ob-join-confirm');
+    let candidate=null;
+
+    const renderIdle=()=>{stage.innerHTML=shmEmptyHTML(SHM_IC_SEARCH,W('objEmptyTitle'),W('objEmptyDesc'));};
+    renderIdle();
+    const showErr=msg=>{ errEl.hidden=false; errEl.textContent=msg; renderIdle(); confirmBtn.disabled=true; candidate=null; };
+
+    const oii=p=>`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+    const INC=[
+      [oii('<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>'),'objIncWage'],
+      [oii('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),'objIncOt'],
+      [oii('<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>'),'objIncNight'],
+      [oii('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>'),'objIncHol'],
+    ];
+    function presentResult(r,code){
+      candidate={ code, name:r.name||null, profile:r.profile };
+      errEl.hidden=true;
+      stage.innerHTML=`<div class="shm-card">
+        ${shmFoundHeadHTML(W('imFound'),`${r.name?`<b>${escHTML(r.name)}</b>`:formatShareCode(code)}<br>${W('objFoundSub')}`)}
+        <div class="objoin-inc">${INC.map(([ic,k])=>`<span class="objoin-inc-it">${ic}${W(k)}</span>`).join('')}</div>
+      </div>`;
+      confirmBtn.disabled=false;
+    }
+
+    async function lookup(){
+      errEl.hidden=true;
+      const code=normalizeShareCode(inp.value);
+      if(!code){ showErr(W('imErrFormat')); return; }
+      const orig=lookupBtn.innerHTML;
+      lookupBtn.disabled=true;
+      lookupBtn.innerHTML=`<span class="obx-spin" aria-hidden="true"></span>${W('imChecking')}`;
+      const res=await shareLookupByCode(code,W);
+      lookupBtn.disabled=false;
+      lookupBtn.innerHTML=orig;
+      if(!res.ok){ showErr(res.msg); return; }
+      presentResult(res.r,code);
+    }
+
+    wireShareCodeInput(inp,{
+      onChange:(complete,changed)=>{
+        lookupBtn.disabled=!complete;
+        if(changed&&candidate){ candidate=null; confirmBtn.disabled=true; errEl.hidden=true; renderIdle(); }
+      },
+      onEnter:()=>{ if(!lookupBtn.disabled) lookup(); },
+    });
+    lookupBtn.addEventListener('click',lookup);
+
+    document.getElementById('ob-join-back').addEventListener('click',()=>{
+      OB._joinDraft=inp.value;            // a typed code survives the hop back
+      OB.joinMode=false;
+      rerender();
+    });
+
+    confirmBtn.addEventListener('click',()=>{
+      if(!candidate)return;
+      OB.importedShare=candidate;
+      OB.pendingJoin=null;
+      OB._joinDraft='';
+      OB.joinMode=false;
+      // Seed the chip state the imported rules imply so the Night Schedule
+      // page (when the workplace needs one) previews with the workplace's
+      // premium and shows its window — the STORED artifact stays the
+      // verbatim imported profile, never a recompile of these chips.
+      const nt=candidate.profile.night;
+      if(nt&&nt.prem) OB.rules.night=+(1+nt.prem).toFixed(2);
+      if(nt&&nt.window&&(nt.window.start!=='22:00'||nt.window.end!=='06:00')) OB.rules.window={...nt.window};
+      saveOBState();
+      rerender();
+    });
+
+    // Deep-linked code: run the prefilled lookup once, automatically.
+    if(OB.pendingJoin && !OB._autoLooked && !lookupBtn.disabled){ OB._autoLooked=true; lookup(); }
+  }
+
   function wireStepEvents(){
     const body=document.getElementById('ob-body');
     if(!body) return;
@@ -7943,6 +8684,10 @@ applyTheme();
         transitionTo(obNextStep(),1);
       });
     }
+    // Step 3 — workplace code panel (Phase 6.4). Present whether or not a
+    // code is already applied (the applied-chip wires its Remove button).
+    const join=document.getElementById('ob-join');
+    if(join) wireObJoin(join);
 
     // Step 4 — Night Schedule: times, window, breaks, live timeline preview.
     const nsx=document.getElementById('ob-nsx');
@@ -8023,10 +8768,31 @@ applyTheme();
       sv('wt4_wages', [{date:'2026-01-01', amount:OB.wage}]);
     }
 
-    // 3b. Compile and store the pay profile from the wizard answers. Cloud
-    // users keep their existing synced profile; a compile failure falls back
-    // to the default rules and never blocks onboarding.
-    if(!cloudWasPulled || ld('wt4_profile', null) === null){
+    // 3b. Store the pay profile. An imported workplace code (Phase 6.4) wins
+    // over BOTH the wizard chips and a cloud-pulled profile — it is the
+    // user's most recent explicit choice. The share pipeline stripped the
+    // sharer's schedule, so the importer's own times (collected on the Night
+    // Schedule step) attach here; the profile is otherwise stored VERBATIM —
+    // never recompiled from chips, which would corrupt source-less imports.
+    if(OB.importedShare && OB.importedShare.profile){
+      try{
+        const p=structuredClone(OB.importedShare.profile);
+        if(obNeedsSched()){
+          if(OB.rules.schedule && OB.rules.schedule.night){
+            p.schedule={night:{...OB.rules.schedule.night}};
+            if(p.source&&p.source.answers) p.source.answers.schedule={night:{...OB.rules.schedule.night}};
+          }
+          if(OB.rules.window && p.night){    // user adjusted the window on step 4
+            p.night.window={...OB.rules.window};
+            if(p.source&&p.source.answers) p.source.answers.nightWindow={...OB.rules.window};
+          }
+        }
+        sv('wt4_profile', p);
+      }catch(e){ console.warn('[share] imported profile save failed — default rules apply', e); }
+    }else if(!cloudWasPulled || ld('wt4_profile', null) === null){
+      // Compile and store the pay profile from the wizard answers. Cloud
+      // users keep their existing synced profile; a compile failure falls
+      // back to the default rules and never blocks onboarding.
       try{ sv('wt4_profile', wizardProfileFrom(OB.rules, OB.pattern)); }
       catch(e){ console.warn('[wiz] profile compile failed — default rules apply', e); }
     }

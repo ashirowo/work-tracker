@@ -18,6 +18,7 @@ import { DEFAULT_PROFILE, isUsableProfile } from './profile.js';
 import { pad, mkds, pd, dowOf, isSun, isSat, getMonday } from './core/dates.js';
 import { entryHours } from './domain/log-entries.js';
 import { shiftForIn, allAnchorsSame } from './domain/shift-pattern.js';
+import { liveGrossIn, autoEffIn } from './domain/earnings.js';
 import { normalizeWages, wageForIn } from './domain/wage-history.js';
 import { DEFAULT_INSURANCE, careRateOfGross, insuranceRatePct, applyDeductionRate } from './domain/deductions.js';
 
@@ -191,6 +192,17 @@ export function buildRows(fromYM, toYM, lang = getLang()) {
   const earliestLogDate = Object.keys(logs).sort()[0] || null;
   const startedBy = ds => earliestLogDate !== null && ds >= earliestLogDate;
 
+  // Capability env binding THIS module's reads for the shared credit rules
+  // (domain/earnings.js, Phase 4) — the same functions the app display runs.
+  // isHol closes over this call's holiday map; todayStr over its pinned bound.
+  const env = {
+    getLogs, wageFor, shiftFor,
+    isHol: ds => !!holidays[ds],
+    isHolAuto, applyTax, getProfile,
+    tr: () => TR[lang] || TR.en,
+    todayStr: () => today,
+  };
+
   const [fy, fm] = fromYM.split('-').map(Number);
   const [ty, tm] = toYM.split('-').map(Number);
 
@@ -223,17 +235,14 @@ export function buildRows(fromYM, toYM, lang = getLang()) {
         const c = calcWage(ds, regHrs, otHrs, wage, log.shiftOverride, log.holCreditOverride, holidays);
         gross = c.gross; net = c.net; eff = c.eff;
       } else if (isHol && !isSat(ds) && holCredit && startedBy(ds)) {
-        // Saturday holidays are excluded — they follow the 50% Saturday pay rule.
-        gross = Math.round(8 * wage); net = applyTax(gross); eff = 8; autoCredit = true;
+        // Saturday holidays are excluded — they follow the 50% Saturday pay
+        // rule. Credit math = the app's own display rule (domain/earnings.js).
+        gross = liveGrossIn(env, ds, logs); net = applyTax(gross); eff = autoEffIn(env, ds, logs); autoCredit = true;
       } else if (sun && startedBy(ds)) {
-        const ws = getMonday(ds);
-        let allLogged = true;
-        for (let i = 0; i <= 4; i++) {
-          const wd = new Date(pd(ws)); wd.setDate(wd.getDate() + i);
-          const wds = mkds(wd.getFullYear(), wd.getMonth(), wd.getDate());
-          if (!logs[wds] && !holidays[wds]) { allLogged = false; break; }
-        }
-        if (allLogged) { gross = Math.round(8 * wage); net = applyTax(gross); eff = 8; autoCredit = true; }
+        // Perfect-attendance Sunday credit — same shared rule; returns 0 when
+        // the Mon–Fri week is incomplete (row is then skipped below, as before).
+        gross = liveGrossIn(env, ds, logs);
+        if (gross > 0) { net = applyTax(gross); eff = autoEffIn(env, ds, logs); autoCredit = true; }
       }
 
       if (net === 0 && !log) continue; // skip days with no earnings and no log entry

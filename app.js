@@ -13,6 +13,9 @@ import { needsNightSchedule, nightHoursOf } from './profile-v2.js';
 import { buildRows, exportCSV, exportPDF, showExportToast, monthsWithData as expMonthsWithData } from './export.js';
 import { pad, mkds, pd, dowOf, isSun, isSat, getMonday } from './core/dates.js';
 import { entryHours, isZeroDay } from './domain/log-entries.js';
+import { shiftForIn, applyAnchor, recentAnchorsFixedDay } from './domain/shift-pattern.js';
+import { normalizeWages, wageForIn, activeWageIdx } from './domain/wage-history.js';
+import { DEFAULT_INSURANCE, careRateOfGross as careRateOf, insuranceRate as insRateOf, applyDeductionRate } from './domain/deductions.js';
 
 // ── App signature footer ─────────────────────────────────────────────────────
 // Premium credit footer shared beneath the last card on the Calendar, Overview,
@@ -404,33 +407,16 @@ const flagImg=(code,cls)=>`<img class="${cls}" src="${FLAGS[code]||''}" alt="" a
 // only the source of activeRate differs. Mode defaults to 'tax' so existing
 // users see zero change until they opt in.
 //
-// Insurance rates are stored as editable employee-side percentages. Defaults are
-// the 2026 statutory employee shares (산재/industrial-accident is 100% employer-
-// paid, so it is intentionally excluded). Long-term care (care) is legally a
-// percentage OF the health premium (13.14%), not of gross — so it's stored as
-// that ratio and derived from the health rate, staying correct if health changes.
-const DEFAULT_INSURANCE = {
-  pension:    4.75,    // 국민연금 — employee half of 9.5%
-  health:     3.595,   // 건강보험 — employee half of 7.19%
-  careOfHealth: 13.14, // 장기요양 — % OF the health premium (not of gross)
-  employment: 0.9,     // 고용보험 — employee share (frozen for 2026)
-};
+// The rates, statutory defaults, and math live in domain/deductions.js
+// (Phase 3); these adapters bind stored settings (the ins||getInsurance()
+// defaulting is storage glue, not math).
 function getDeductionMode(){ return ld('wt4_deduction_mode', 'tax'); }
 function getInsurance(){
   const s = ld('wt4_insurance', null);
   return s ? { ...DEFAULT_INSURANCE, ...s } : { ...DEFAULT_INSURANCE };
 }
-// Effective long-term-care rate as a % of GROSS = health × (careOfHealth/100).
-function careRateOfGross(ins){
-  ins = ins || getInsurance();
-  return ins.health * (ins.careOfHealth/100);
-}
-// Combined employee insurance deduction as a fraction of gross (0..1).
-function insuranceRate(ins){
-  ins = ins || getInsurance();
-  const pct = ins.pension + ins.health + careRateOfGross(ins) + ins.employment;
-  return pct/100;
-}
+function careRateOfGross(ins){ return careRateOf(ins || getInsurance()); }
+function insuranceRate(ins){ return insRateOf(ins || getInsurance()); }
 // Tax rate is stored as a percentage (e.g. 3.3) in wt4_tax_rate
 function getTax(){return ld('wt4_tax_rate',DEFAULT_TAX)/100;}
 // The single active deduction fraction, per current mode.
@@ -516,33 +502,15 @@ function saveShifts(s){sv('wt4_shifts',s);scheduleSync();}
 // wageFor(dateStr) returns the wage active on that date (most recent entry ≤ date).
 // Migration: if the old scalar wt4_wage key is present, import it as the
 // initial entry dated '2000-01-01' so all historical logs keep their value.
+// Timeline resolution + both read-migrations live in domain/wage-history.js
+// (Phase 3); this adapter persists when a migration dirtied the data.
 function getWages(){
-  const wages = ld('wt4_wages', null);
-  if(wages){
-    // Migrate: replace the placeholder 2000-01-01 origin date with the real minimum wage effective date
-    let dirty = false;
-    wages.forEach(e=>{ if(e.date==='2000-01-01'){e.date='2026-01-01';dirty=true;} });
-    if(dirty) sv('wt4_wages', wages);
-    return wages;
-  }
-  // Migrate from legacy scalar key
-  const legacy = ld('wt4_wage', null);
-  const initial = [{date:'2026-01-01', amount: legacy !== null ? legacy : DEFAULT_WAGE}];
-  sv('wt4_wages', initial);
-  localStorage.removeItem('wt4_wage');
-  return initial;
+  const { wages, dirty, fromLegacy } = normalizeWages(ld('wt4_wages', null), ld('wt4_wage', null), DEFAULT_WAGE);
+  if(dirty){ sv('wt4_wages', wages); if(fromLegacy) localStorage.removeItem('wt4_wage'); }
+  return wages;
 }
 function saveWages(wages){ sv('wt4_wages', wages); scheduleSync(); }
-function wageFor(dateStr){
-  const wages = getWages();
-  // wages is sorted ascending by date; find the last entry whose date ≤ dateStr
-  let active = DEFAULT_WAGE;
-  for(const {date, amount} of wages){
-    if(date <= dateStr) active = amount;
-    else break;
-  }
-  return active;
-}
+function wageFor(dateStr){ return wageForIn(getWages(), dateStr, DEFAULT_WAGE); }
 // Current wage (for display in settings / modal default)
 function getWage(){ return wageFor(today()); }
 function isHol(s){return!!HOLIDAYS[s];}
@@ -560,30 +528,15 @@ function holName(s){
 }
 // Applies whichever deduction mode is active (tax or insurance).
 // Named applyTax for backward-compat with existing call sites.
-function applyDeductions(g){return Math.round(g*(1-deductionRate()));}
+function applyDeductions(g){return applyDeductionRate(g,deductionRate());}
 function applyTax(g){return applyDeductions(g);}
 
 // ── Shift: anchor-based propagation forward indefinitely ─────────────────────
-function shiftFor(s){
-  const sh=getShifts(),ws=getMonday(s);
-  const keys=Object.keys(sh).filter(k=>k<=ws).sort();
-  if(!keys.length)return'day';
-  const anchor=keys[keys.length-1];
-  const anchorShift=sh[anchor];
-  // Fixed-shift detection: if the two most recent anchors at or before this week
-  // share the same value, the user is on a fixed pattern — skip the alternating formula.
-  if(keys.length>=2 && sh[keys[keys.length-2]]===anchorShift) return anchorShift;
-  const msPerWeek=7*24*3600*1000;
-  const weeks=Math.round((pd(ws)-pd(anchor))/msPerWeek);
-  return weeks%2===0?anchorShift:(anchorShift==='day'?'night':'day');
-}
+// The inference algorithm lives in domain/shift-pattern.js (Phase 3).
+function shiftFor(s){ return shiftForIn(getShifts(), s); }
 
 function setShiftFromWeek(ws,shift){
-  // Remove anchors set after ws (they're superseded), set new anchor
-  const sh=getShifts();
-  Object.keys(sh).filter(k=>k>=ws).forEach(k=>delete sh[k]);
-  sh[ws]=shift;
-  saveShifts(sh);
+  saveShifts(applyAnchor(getShifts(), ws, shift));
 }
 
 function toggleShift(ws){
@@ -4020,9 +3973,7 @@ function buildSettings(){
   // The "current" row is the entry active today (last one with date ≤ today),
   // matching wageFor()/getWage(). This may not be the newest row if a future-
   // dated wage change exists.
-  const todayStr=today();
-  let activeIdx=0;
-  wages.forEach((w,idx)=>{ if(w.date<=todayStr) activeIdx=idx; });
+  const activeIdx=activeWageIdx(wages, today());
   const wageRows=wages.slice().reverse().slice(0,4).map((w,i)=>{
     const realIdx=wages.length-1-i;
     const isFirst=realIdx===0;
@@ -5366,10 +5317,7 @@ function storedPatternIsFixedDay(){
   // Mirrors shiftFor()'s fixed-mode rule for the current week: the two most
   // recent anchors share a value → fixed pattern. A single anchor is rotation
   // parity (its value alone says nothing about the pattern).
-  const sh=ld('wt4_shifts',{});
-  const keys=Object.keys(sh).filter(k=>k<=getMonday(today())).sort();
-  if(keys.length<2) return false;
-  return sh[keys[keys.length-1]]==='day'&&sh[keys[keys.length-2]]==='day';
+  return recentAnchorsFixedDay(ld('wt4_shifts',{}), getMonday(today()));
 }
 function closeWorkplaceModal(){
   animateModalClose('#wp-modal-ov',()=>{document.body.classList.remove('modal-open');});

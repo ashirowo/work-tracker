@@ -17,6 +17,9 @@ import { calcWage as calcWageCore } from './calc.js';
 import { DEFAULT_PROFILE, isUsableProfile } from './profile.js';
 import { pad, mkds, pd, dowOf, isSun, isSat, getMonday } from './core/dates.js';
 import { entryHours } from './domain/log-entries.js';
+import { shiftForIn, allAnchorsSame } from './domain/shift-pattern.js';
+import { normalizeWages, wageForIn } from './domain/wage-history.js';
+import { DEFAULT_INSURANCE, careRateOfGross, insuranceRatePct, applyDeductionRate } from './domain/deductions.js';
 
 // ── Storage access — reads localStorage directly (same keys as app.js) so
 // this module never imports app.js internals; the date math now comes from
@@ -43,7 +46,9 @@ function tFor(lang, k, ...a) {
 
 function getLogs() { return ld('wt4_logs', {}); }
 function getShifts() { return ld('wt4_shifts', {}); }
-function getWages() { return ld('wt4_wages', [{ date: '2026-01-01', amount: 10320 }]); }
+// Read-only view of the wage timeline: same normalization app.js applies, but
+// never persisted from here (the app path has always migrated before export runs).
+function getWages() { return normalizeWages(ld('wt4_wages', null), ld('wt4_wage', null), 10320).wages; }
 function getHolidays() {
   // Collect all gov-cached holiday data across relevant years
   const hols = {};
@@ -64,24 +69,16 @@ function getHolidays() {
 function getTaxRate() { return ld('wt4_tax_rate', 3.3); }
 function isHolAuto() { return ld('wt4_hol_auto', true) !== false; }
 
-// ── Deductions (mirrors app.js) ──────────────────────────────────────────────
-// Two mutually-exclusive modes: 'tax' (flat %) or 'insurance' (4대 보험 summed).
-// Long-term care is derived from the health premium, not a % of gross.
-// Industrial-accident insurance is employer-paid and intentionally excluded.
-const DEFAULT_INSURANCE = { pension: 4.75, health: 3.595, careOfHealth: 13.14, employment: 0.9 };
+// ── Deductions — math lives in domain/deductions.js (Phase 3, same functions
+// app.js runs); these adapters bind the stored settings.
 function getDeductionMode() { return ld('wt4_deduction_mode', 'tax'); }
 function getInsurance() {
   const s = ld('wt4_insurance', null);
   return s ? { ...DEFAULT_INSURANCE, ...s } : { ...DEFAULT_INSURANCE };
 }
-function careRateOfGross(ins) { ins = ins || getInsurance(); return ins.health * (ins.careOfHealth / 100); }
-function insuranceRatePct(ins) {
-  ins = ins || getInsurance();
-  return ins.pension + ins.health + careRateOfGross(ins) + ins.employment;
-}
 // Active deduction as a percentage (so the PDF can show it), per current mode.
 function deductionPct() {
-  return getDeductionMode() === 'insurance' ? insuranceRatePct() : getTaxRate();
+  return getDeductionMode() === 'insurance' ? insuranceRatePct(getInsurance()) : getTaxRate();
 }
 // Mode-aware column/label noun, e.g. "Tax" or "4대 보험", in the given language.
 function dedNoun(lang) {
@@ -116,39 +113,18 @@ function translateHolidayName(ko, lang = getLang()) {
   return ko; // unknown/irregular holiday — fall back to the Korean name
 }
 
-function wageFor(dateStr) {
-  const wages = getWages();
-  let active = 10320;
-  for (const { date, amount } of wages) {
-    if (date <= dateStr) active = amount;
-    else break;
-  }
-  return active;
-}
+// Wage timeline + shift inference are the domain modules' algorithms
+// (Phase 3) — the exact functions app.js runs, bound to this module's reads.
+function wageFor(dateStr) { return wageForIn(getWages(), dateStr, 10320); }
 
-function shiftFor(s) {
-  const sh = getShifts(), ws = getMonday(s);
-  const keys = Object.keys(sh).filter(k => k <= ws).sort();
-  if (!keys.length) return 'day';
-  const anchor = keys[keys.length - 1];
-  const anchorShift = sh[anchor];
-  if (keys.length >= 2 && sh[keys[keys.length - 2]] === anchorShift) return anchorShift;
-  const msPerWeek = 7 * 24 * 3600 * 1000;
-  const weeks = Math.round((pd(ws) - pd(anchor)) / msPerWeek);
-  return weeks % 2 === 0 ? anchorShift : (anchorShift === 'day' ? 'night' : 'day');
-}
+function shiftFor(s) { return shiftForIn(getShifts(), s); }
 
 // True when the user works a single fixed shift (day-only or night-only) rather
 // than an alternating rotation. Fixed mode is stored as ≥2 anchors that are all
 // the same value; in that case the Type column omits the redundant shift suffix.
-function isFixedShiftPattern() {
-  const sh = getShifts();
-  const vals = Object.values(sh).filter(v => v === 'day' || v === 'night');
-  if (vals.length < 2) return false;
-  return vals.every(v => v === vals[0]);
-}
+function isFixedShiftPattern() { return allAnchorsSame(getShifts()); }
 
-function applyTax(g) { return Math.round(g * (1 - deductionPct() / 100)); }
+function applyTax(g) { return applyDeductionRate(g, deductionPct() / 100); }
 
 // Phase 1: the duplicate calculator that used to live here (a hand-maintained
 // copy of app.js's calcWage) moved to calc.js — ONE implementation now serves

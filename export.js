@@ -19,6 +19,7 @@ import { pad, mkds, pd, dowOf, isSun, isSat, getMonday } from './core/dates.js';
 import { entryHours } from './domain/log-entries.js';
 import { shiftForIn, allAnchorsSame } from './domain/shift-pattern.js';
 import { liveGrossIn, autoEffIn } from './domain/earnings.js';
+import { govCacheSnapshot, translateHolidayName } from './data/holidays.js';
 import { normalizeWages, wageForIn } from './domain/wage-history.js';
 import { DEFAULT_INSURANCE, careRateOfGross, insuranceRatePct, applyDeductionRate } from './domain/deductions.js';
 
@@ -50,23 +51,9 @@ function getShifts() { return ld('wt4_shifts', {}); }
 // Read-only view of the wage timeline: same normalization app.js applies, but
 // never persisted from here (the app path has always migrated before export runs).
 function getWages() { return normalizeWages(ld('wt4_wages', null), ld('wt4_wage', null), 10320).wages; }
-function getHolidays() {
-  // Collect all gov-cached holiday data across relevant years
-  const hols = {};
-  const curY = new Date().getFullYear();
-  for (let yr = curY - 3; yr <= curY + 2; yr++) {
-    try {
-      const raw = localStorage.getItem('wt4_gov_' + yr);
-      if (raw) {
-        const { ko } = JSON.parse(raw);
-        if (ko) Object.assign(hols, ko);
-      }
-    } catch (e) {}
-    // Labour Day
-    hols[`${yr}-05-01`] = '근로자의 날';
-  }
-  return hols;
-}
+// The report-side holiday map: gov cache + Labour Day, from data/holidays.js
+// (Phase 5) — the same snapshot logic app.js's holiday service builds from.
+function getHolidays() { return govCacheSnapshot(); }
 function getTaxRate() { return ld('wt4_tax_rate', 3.3); }
 function isHolAuto() { return ld('wt4_hol_auto', true) !== false; }
 
@@ -99,20 +86,6 @@ function dedLabel(lang, pct) {
   return `${dedNoun(lang)} (${Math.round(pct * 100) / 100}%)`;
 }
 
-// Translate a raw Korean holiday name into the given language (defaults to
-// the current UI language), using the same TR[lang].holidays map app.js uses
-// for the Calendar view. Without this, exported reports always showed
-// holiday names in Korean regardless of the selected language — a gap that
-// matters a lot once exports are meant to be genuinely multi-language.
-function translateHolidayName(ko, lang = getLang()) {
-  const map = TR[lang]?.holidays;
-  if (!map || !ko) return ko;
-  if (map[ko]) return map[ko];
-  for (const [k, v] of Object.entries(map)) {
-    if (ko.includes(k)) return v;
-  }
-  return ko; // unknown/irregular holiday — fall back to the Korean name
-}
 
 // Wage timeline + shift inference are the domain modules' algorithms
 // (Phase 3) — the exact functions app.js runs, bound to this module's reads.

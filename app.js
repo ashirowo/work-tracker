@@ -18,6 +18,7 @@ import { normalizeWages, wageForIn, activeWageIdx } from './domain/wage-history.
 import { DEFAULT_INSURANCE, careRateOfGross as careRateOf, insuranceRate as insRateOf, applyDeductionRate } from './domain/deductions.js';
 import { calcWageIn, liveGrossIn, autoEffIn, allWeekdaysLoggedIn, probeHoursIn, engineDayClassIn, baseEffForIn, bucketKeysIn, bucketForIn, bucketDeterministicEffIn } from './domain/earnings.js';
 import { defaultLogForIn, buildQuickLogEntryIn } from './domain/quick-log.js';
+import { createHolidayService, translateHolidayName, getUpcomingIn, upcomingHolCutoff } from './data/holidays.js';
 
 // ── App signature footer ─────────────────────────────────────────────────────
 // Premium credit footer shared beneath the last card on the Calendar, Overview,
@@ -91,219 +92,31 @@ function updateOfflineBanner(){
 window._appBridge = { setCURRENT_USER, updateSyncUI, get render(){ return render; } };
 
 // ── Dynamic Korean Public Holidays ───────────────────────────────────────────
-// Source: data.go.kr — Ministry of the Interior and Safety official holiday API.
-// Includes all public holidays AND substitute holidays (대체공휴일) correctly.
-// Cache key prefix changed to 'wt4_gov_' to avoid conflicts with old nager.at cache.
-
-const GOV_API_KEY = '924a3cd75530bcef9d2c22f449897f23360fd49af3e16b085a170277ec1840ac';
-const GOV_API_BASE = 'https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo';
+// The fetch/cache/cooldown lifecycle lives in data/holidays.js (Phase 5). The
+// MAPS stay app-owned (the golden oracle injects HOLIDAYS per fixture; isHol
+// below is sliced) — the service fills them and calls back render() when a
+// fetch actually lands new data.
 
 let HOLIDAYS = {};    // "YYYY-MM-DD" → English name
 let HOL_KO_DYN = {};  // "YYYY-MM-DD" → Korean name (dateName from API)
-let HOL_LOADING = false;
-const HOL_FETCHING = new Set(); // years currently in-flight — prevents duplicate concurrent fetches
-const HOL_FAIL_UNTIL = new Map(); // year -> timestamp; don't re-attempt a failed year until then
+const HOL_SVC = createHolidayService({
+  holidays: HOLIDAYS,
+  holidaysKo: HOL_KO_DYN,
+  onUpdate: () => render(),
+});
 
-// May 1st — Labour Day (근로자의 날) is under a separate act, not in the gov API.
-// Always inject it manually for every year we load.
-function applyFixedHolidays(years){
-  years.forEach(y => {
-    HOLIDAYS[`${y}-05-01`]    = 'Labour Day';
-    HOL_KO_DYN[`${y}-05-01`] = '근로자의 날';
-  });
-}
+// Seed the cache synchronously on startup (zero network, zero flicker).
+HOL_SVC.seedFromCache();
 
-// Parse the government API XML response into {enObj, koObj}
-// The API returns <item> elements with <locdate> (YYYYMMDD) and <dateName> (Korean name).
-function parseGovXML(xmlText){
-  const enObj = {}, koObj = {};
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xmlText, 'text/xml');
-  // Check for API error
-  const errMsg = doc.querySelector('returnReasonCode,errMsg');
-  if(errMsg && errMsg.textContent !== '00') {
-    console.warn('Gov API error:', errMsg.textContent);
-    return {enObj, koObj};
-  }
-  const items = doc.querySelectorAll('item');
-  items.forEach(item => {
-    const locdate = item.querySelector('locdate')?.textContent?.trim();
-    const dateName = item.querySelector('dateName')?.textContent?.trim();
-    const isHoliday = item.querySelector('isHoliday')?.textContent?.trim();
-    if(!locdate || !dateName || isHoliday === 'N') return;
-    // Convert YYYYMMDD → YYYY-MM-DD
-    const ds = `${locdate.slice(0,4)}-${locdate.slice(4,6)}-${locdate.slice(6,8)}`;
-    koObj[ds] = dateName;
-    // enObj is used purely as a presence-check map (for isHol()).
-    // Store the Korean name as the value; holName() handles display translation.
-    enObj[ds] = dateName;
-  });
-  return {enObj, koObj};
-}
-
-// Translate a Korean holiday name using the current language's holidays map.
-// Falls back to the original Korean name for unknown/irregular holidays.
-function translateHolidayName(ko, lang){
-  const map = TR[lang]?.holidays;
-  if(!map) return ko; // Korean or missing map — return as-is
-  // Exact match first
-  if(map[ko]) return map[ko];
-  // Partial match (e.g. '대체공휴일' inside '어린이날 대체공휴일')
-  for(const [k,v] of Object.entries(map)){
-    if(ko.includes(k)) return v;
-  }
-  return ko; // unknown holiday — fall back to Korean name
-}
-
-// Fetch all 12 months of a year from the gov API (one request per month, run in parallel)
-async function fetchHolidaysForYear(year){
-  // Skip if already in-flight for this year
-  if(HOL_FETCHING.has(year)) return false;
-  const cacheKey = 'wt4_gov_' + year;
-  const cached = localStorage.getItem(cacheKey);
-  if(cached){
-    try{
-      const {en, ko} = JSON.parse(cached);
-      Object.assign(HOLIDAYS, en);
-      Object.assign(HOL_KO_DYN, ko);
-      return false; // already had it — no new data, no re-render needed
-    }catch(e){}
-  }
-  HOL_FETCHING.add(year);
-  try{
-    // Fetch months sequentially in small batches to avoid 429s.
-    // 3 at a time with a small gap is well within typical rate limits.
-    const months = Array.from({length:12}, (_,i) => String(i+1).padStart(2,'0'));
-    const enObj = {}, koObj = {};
-    let anyNetworkError = false;
-    for(let i = 0; i < months.length; i += 3){
-      const batch = months.slice(i, i+3);
-      const results = await Promise.all(batch.map(async mm => {
-        const url = `${GOV_API_BASE}?serviceKey=${GOV_API_KEY}&solYear=${year}&solMonth=${mm}&numOfRows=20&_type=xml`;
-        try{
-          const res = await fetch(url);
-          if(!res.ok){
-            if(res.status === 429) console.warn('[holidays] Rate limited for', year, mm, '— will retry later');
-            return {enObj:{}, koObj:{}};
-          }
-          const xml = await res.text();
-          return parseGovXML(xml);
-        }catch(err){
-          anyNetworkError = true; // offline / DNS / abort
-          return {enObj:{}, koObj:{}};
-        }
-      }));
-      results.forEach(({enObj:e, koObj:k}) => { Object.assign(enObj, e); Object.assign(koObj, k); });
-      // Small gap between batches to stay under rate limit
-      if(i + 3 < months.length) await new Promise(r => setTimeout(r, 120));
-    }
-    const gotData = Object.keys(enObj).length > 0 || Object.keys(koObj).length > 0;
-    if(gotData){
-      Object.assign(HOLIDAYS, enObj);
-      Object.assign(HOL_KO_DYN, koObj);
-      localStorage.setItem(cacheKey, JSON.stringify({en:enObj, ko:koObj, fetchedAt: Date.now()}));
-      HOL_FAIL_UNTIL.delete(year);
-      applyFixedHolidays([year]);
-      return true;
-    }
-    // No data. If it was a network failure (offline), back off longer so we don't
-    // retry on every render; if it was just an empty-but-successful response,
-    // a short cooldown still prevents tight loops.
-    const cooldown = anyNetworkError ? 5*60*1000 : 60*1000; // 5 min offline, 1 min otherwise
-    HOL_FAIL_UNTIL.set(year, Date.now() + cooldown);
-    return false;
-  }catch(e){
-    console.warn('Gov holiday fetch failed for', year, e.message);
-    HOL_FAIL_UNTIL.set(year, Date.now() + 5*60*1000);
-    return false;
-  }finally{
-    HOL_FETCHING.delete(year);
-  }
-}
-
-// Seed from cache immediately on startup (zero network, zero flicker)
-(function seedFromCache(){
-  const y = new Date().getFullYear();
-  for(let yr = y-1; yr <= y+2; yr++){
-    // Clear old nager.at cache entries if still present
-    localStorage.removeItem('wt4_hol_'+yr);
-    localStorage.removeItem('wt4_hol_ko_'+yr);
-    // Load from new gov cache
-    const cached = localStorage.getItem('wt4_gov_'+yr);
-    if(cached){
-      try{
-        const {en, ko} = JSON.parse(cached);
-        Object.assign(HOLIDAYS, en);
-        Object.assign(HOL_KO_DYN, ko);
-      }catch(e){}
-    }
-  }
-  applyFixedHolidays([y-1, y, y+1, y+2]);
-})();
-
-// Ensures holidays for the years we need are loaded; fetches missing years async.
-async function ensureHolidays(years){
-  applyFixedHolidays(years);
-  // Don't hammer the network when offline — fixed holidays are already applied,
-  // and the gov API fetch would just fail 12×/year and re-trigger on every render.
-  if(typeof navigator!=='undefined' && navigator.onLine===false) return;
-  const now = Date.now();
-  // A year needs fetch if: not cached (or cache >30d old), not in-flight, and not
-  // in a post-failure cooldown window.
-  const missing = years.filter(y => {
-    if(HOL_FETCHING.has(y)) return false;            // already being fetched
-    const failUntil = HOL_FAIL_UNTIL.get(y) || 0;
-    if(now < failUntil) return false;                // recently failed — back off
-    const raw = localStorage.getItem('wt4_gov_'+y);
-    if(!raw) return true;
-    try{
-      const {fetchedAt} = JSON.parse(raw);
-      const thirtyDays = 30 * 24 * 3600 * 1000;
-      return (now - (fetchedAt||0)) > thirtyDays;
-    }catch(e){ return true; }
-  });
-  if(!missing.length) return;
-  HOL_LOADING = true;
-  const results = await Promise.all(missing.map(fetchHolidaysForYear));
-  HOL_LOADING = false;
-  // Only re-render if at least one year actually brought in data. A failed
-  // (offline) attempt returns false and must NOT trigger render() — otherwise
-  // render → ensureHolidays → fetch → render becomes an infinite retry storm.
-  if(results.some(Boolean)) render();
-}
-
-// Prefetch on startup in the background
-function prefetchHolidays(){
-  const y = new Date().getFullYear();
-  ensureHolidays([y-1, y, y+1, y+2]);
-}
+// Adapters over the holiday service (data/holidays.js, Phase 5).
+function ensureHolidays(years){ return HOL_SVC.ensureYears(years); }
+function prefetchHolidays(){ HOL_SVC.prefetch(); }
 
 // ── Upcoming holidays ─────────────────────────────────────────────────────────
-// Returns the next `limit` public holidays strictly after today, sorted by date.
-// Returns the cutoff date string (YYYY-MM-DD) for upcoming holiday windows.
-// Rule: end of current year, unless that's less than 6 months away —
-// in which case use 6 months from today (whichever is later).
-function upcomingHolCutoff() {
-  const now = new Date();
-  const endOfYear = new Date(now.getFullYear(), 11, 31); // Dec 31 this year
-  const sixMonths = new Date(now.getFullYear(), now.getMonth() + 6, now.getDate());
-  const cutoff = sixMonths > endOfYear ? sixMonths : endOfYear;
-  return mkds(cutoff.getFullYear(), cutoff.getMonth(), cutoff.getDate());
-}
-
+// The next `limit` public holidays strictly after today; the service returns
+// {ds, diffDays}, holName supplies the display name (app-side, S.lang-aware).
 function getUpcomingHolidays(limit = 3) {
-  const td = today();
-  const cutoff = upcomingHolCutoff();
-  return Object.keys(HOLIDAYS)
-    .filter(ds => ds > td && ds <= cutoff)
-    .sort()
-    .slice(0, limit)
-    .map(ds => {
-      const d = pd(ds);
-      const diffMs = d - new Date(new Date().setHours(0,0,0,0));
-      const diffDays = Math.round(diffMs / 86400000);
-      return { ds, name: holName(ds), diffDays };
-    });
+  return getUpcomingIn(HOLIDAYS, today(), limit).map(h => ({ ...h, name: holName(h.ds) }));
 }
 
 // ── All-Holidays modal ────────────────────────────────────────────────────────

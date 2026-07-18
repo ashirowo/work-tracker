@@ -24,7 +24,7 @@ import { insuranceRate, DEFAULT_INSURANCE } from '../domain/deductions.js';
 import { pd, getMonday } from '../core/dates.js';
 import { obxWorkplaceHTML, obxWireWorkplace, obxNightHTML, obxWireNight, obxNeedsSchedPage } from '../ui/workplace-form.js';
 import { wireShareCodeInput, shareLookupByCode, shmEmptyHTML, shmFoundHeadHTML } from '../ui/share-widgets.js';
-import { WZI } from '../ui/icons.js';
+import { WZI, SHM_IC_SEARCH } from '../ui/icons.js';
 import { escHTML } from '../ui/dom.js';
 import { TR } from '../translations.js';
 

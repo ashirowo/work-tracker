@@ -18,7 +18,7 @@ import { packShare, unpackShare, normalizeShareCode, formatShareCode } from '../
 import { createShare, deleteShare, listMyShares, signInWithGoogle, scheduleSync } from '../../firebase.js';
 import { needsNightSchedule } from '../../profile-v2.js';
 import { buildRulesRows } from '../../calc.js';
-import { WZI } from '../icons.js';
+import { WZI, SHM_IC_CHECK, SHM_IC_SEARCH } from '../icons.js';
 import { escHTML, animateModalClose } from '../dom.js';
 import { showExportToast } from '../../export.js';
 

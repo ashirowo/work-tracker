@@ -27,6 +27,8 @@ import { workplaceFormHTML, wireWorkplaceForm, obxNeedsSchedPage,
          obxWorkplaceHTML, obxWireWorkplace, obxNightHTML, obxWireNight } from './ui/workplace-form.js';
 import { wireShareCodeInput, shareLookupByCode, shmEmptyHTML, shmFoundHeadHTML, buildShareLikeModal } from './ui/share-widgets.js';
 import { buildAllHolidaysModal } from './ui/modals/holidays.js';
+import { buildWageModal } from './ui/modals/wage.js';
+import { buildResetModal } from './ui/modals/reset.js';
 
 // ── App signature footer ─────────────────────────────────────────────────────
 // Premium credit footer shared beneath the last card on the Calendar, Overview,
@@ -510,6 +512,15 @@ function lastSyncedLabel(){
 // t2: translate-with-fallback (t() returns the key when a string is missing).
 function t2(key,fallback){ const v=t(key); return v===key?fallback:v; }
 
+// ── Modal context (Phase 7) ──────────────────────────────────────────────────
+// The app-owned surface the extracted modal modules receive (they can't import
+// app.js). Stable function/state refs are passed directly; CURRENT_USER is
+// reassigned, so it arrives as an accessor. Each modal destructures its subset.
+function modalCtx(){
+  return { S, t, render, today, getWages, saveWages, getWage, showSuccess,
+           currentUser: () => CURRENT_USER };
+}
+
 // ── Render ────────────────────────────────────────────────────────────────────
 function render(){
   applyTheme();
@@ -524,8 +535,8 @@ function render(){
     attachListeners();
   }
   if(S.modal)buildModal();
-  if(S.wageModal)buildWageModal();
-  if(S.resetModal)buildResetModal();
+  if(S.wageModal)buildWageModal(modalCtx());
+  if(S.resetModal)buildResetModal(modalCtx());
   updateOfflineBanner();
 }
 
@@ -4045,13 +4056,6 @@ function closeModal(changed){
 }
 
 // ── Wage modal (add / edit / delete) ─────────────────────────────────────────
-function closeWageModal(changed){
-  animateModalClose('#wage-modal-ov', () => {
-    document.body.classList.remove('modal-open');
-    S.wageModal=null;
-    if(changed) render();
-  });
-}
 
 // ── Workplace modal (Settings → Edit workplace) ──────────────────────────────
 // A premium configuration panel: pinned glass header + footer with the shared
@@ -4500,264 +4504,12 @@ function buildImportModal(prefill,opts){
   if(opts&&opts.auto&&prefill) lookup();
 }
 
-function buildWageModal(){
-  const{mode,idx}=S.wageModal;
-  const wages=getWages();
-  const entry=idx!==undefined?wages[idx]:null;
-  const LANG_LOCALE={en:'en-US',ko:'ko-KR',id:'id-ID',th:'th-TH',ru:'ru-RU',zh:'zh-CN',fr:'fr-FR',ne:'ne-NP'};
-  const fmtWageDate=ds=>{const[y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString(LANG_LOCALE[S.lang]||'en-US',{month:'short',day:'2-digit',year:'numeric'});};
-
-  const ov=document.createElement('div');
-  ov.className='modal-overlay';ov.id='wage-modal-ov';document.body.classList.add('modal-open');
-
-  if(mode==='delete'){
-    ov.innerHTML=`<div class="modal">
-      <h3 style="color:var(--danger)">${t('wageModalDelTitle')}</h3>
-      <div class="modal-sub" style="margin-bottom:20px;">${t('wageModalDelBody', entry.amount.toLocaleString(), fmtWageDate(entry.date))}</div>
-      <div class="m-actions">
-        <button class="btn-sec" id="wm-cancel">${t('cancel')}</button>
-        <button class="btn-del" id="wm-delete">${t('del')}</button>
-      </div>
-    </div>`;
-    document.querySelectorAll('#wage-modal-ov').forEach(el=>el.remove());
-    document.body.appendChild(ov);
-    ov.addEventListener('click',e=>{if(e.target.id==='wage-modal-ov')closeWageModal();});
-    document.getElementById('wm-cancel').addEventListener('click',()=>closeWageModal());
-    document.getElementById('wm-delete').addEventListener('click',()=>{
-      const updated=wages.filter((_,i)=>i!==idx);
-      saveWages(updated);
-      closeWageModal(true);
-    });
-    return;
-  }
-
-  // add or edit
-  const defDate=entry?entry.date:today();
-  const defAmount=entry?entry.amount:getWage();
-  const title=mode==='edit'?t('wageModalEditTitle'):t('wageModalAddTitle');
-  const sub=mode==='edit'?t('wageModalEditSub'):t('wageModalAddSub');
-
-  ov.innerHTML=`<div class="modal wm-modal">
-    <div class="wm-glow" aria-hidden="true"></div>
-    <div class="wm-scroll">
-    <div class="wm-header">
-      <div class="wm-header-badge">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-      </div>
-      <div class="wm-header-text">
-        <h3 class="wm-title">${title}</h3>
-        <div class="wm-subtitle">${sub}</div>
-      </div>
-      <button class="asm-close-btn wm-close" id="wm-cancel" aria-label="${t('cancel')}">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-
-    <div class="wm-divider"></div>
-
-    <div class="wm-fields">
-      <div class="wm-field">
-        <label for="wm-date">${t('wageEffectiveDate')}</label>
-        <div class="wm-input-wrap">
-          <span class="wm-input-icon" aria-hidden="true">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-          </span>
-          <input class="wm-input" id="wm-date" type="date" value="${defDate}">
-        </div>
-      </div>
-      <div class="wm-field">
-        <label for="wm-amount">${t('wageAmount')}</label>
-        <div class="wm-input-wrap">
-          <span class="wm-input-icon wm-input-icon--won" aria-hidden="true">₩</span>
-          <input class="wm-input" id="wm-amount" type="number" value="${defAmount}" min="0" step="100" inputmode="numeric">
-          <span class="wm-input-suffix">${t('perHourUnit')}</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="wm-actions">
-      <button class="wm-btn-cancel" id="wm-cancel-2">${t('cancel')}</button>
-      <button class="wm-btn-save" id="wm-save">
-        ${t('save')}
-      </button>
-    </div>
-
-    <div class="wm-secure">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-      <span>${t('wageSecureNote')}</span>
-    </div>
-    </div>
-  </div>`;
-
-  document.querySelectorAll('#wage-modal-ov').forEach(el=>el.remove());
-  document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target.id==='wage-modal-ov')closeWageModal();});
-  document.getElementById('wm-cancel').addEventListener('click',()=>closeWageModal());
-  document.getElementById('wm-cancel-2')?.addEventListener('click',()=>closeWageModal());
-  document.getElementById('wm-save').addEventListener('click',()=>{
-    const amount=parseInt(document.getElementById('wm-amount').value);
-    const date=document.getElementById('wm-date').value;
-    if(isNaN(amount)||amount<0||!date)return;
-    let working=wages.slice();
-    if(mode==='edit'&&idx!==undefined) working=working.filter((_,i)=>i!==idx);
-    working=working.filter(e=>e.date!==date);
-    working.push({date,amount});
-    working.sort((a,b)=>a.date.localeCompare(b.date));
-    saveWages(working);
-    showSuccess(t('wageSaved'));
-    closeWageModal(true);
-  });
-
-}
 
 // ── Reset all data modal ─────────────────────────────────────────────────────
 // Destructive action: clears all wt4_* localStorage keys (app data + settings),
 // optionally deletes the user's Firestore document, then reloads so onboarding
 // runs fresh. Requires typing a confirmation word to enable the final button.
-function closeResetModal(changed){
-  animateModalClose('#reset-modal-ov', () => {
-    document.body.classList.remove('modal-open');
-    S.resetModal=false;
-    if(changed) render();
-  });
-}
 
-function buildResetModal(){
-  const cw=t('resetConfirmWord');
-  const signedIn=!!CURRENT_USER;
-
-  const ov=document.createElement('div');
-  ov.className='modal-overlay';ov.id='reset-modal-ov';document.body.classList.add('modal-open');
-
-  // Per-item icons (red family) for the delete list — calendar, moon, dollar, gear, rocket
-  const rmIcon={
-    logs:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
-    shifts:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`,
-    wages:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M14.5 9a2.5 2 0 0 0-2.5-1.5h-.5a2 2 0 0 0 0 4h1a2 2 0 0 1 0 4h-.5A2.5 2 0 0 1 9.5 15"/><line x1="12" y1="6" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="18"/></svg>`,
-    settings:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
-    onboarding:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91 0z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>`,
-  };
-  const rmRow=(key,label)=>`<div class="rm-item">
-    <div class="rm-item-icon">${rmIcon[key]}</div>
-    <div class="rm-item-text">${label}</div>
-  </div>`;
-
-  ov.innerHTML=`<div class="modal wm-modal rm-modal wm-modal--danger">
-    <div class="wm-glow wm-glow--danger" aria-hidden="true"></div>
-    <div class="wm-scroll">
-    <div class="wm-header">
-      <div class="wm-header-badge wm-header-badge--danger">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-      </div>
-      <div class="wm-header-text">
-        <h3 class="wm-title"><span class="rm-title-accent">${t('resetWord')}</span> ${t('resetTitleRest')}</h3>
-        <div class="wm-subtitle">${t('resetModalSubtitle')}</div>
-      </div>
-      <button class="asm-close-btn wm-close" id="reset-cancel" aria-label="${t('cancel')}">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-
-    <div class="wm-divider"></div>
-
-    <div class="rm-panel">
-      <div class="rm-panel-intro">${t('resetModalIntro')}</div>
-      <div class="rm-list">
-        ${rmRow('logs',t('resetItemLogs'))}
-        ${rmRow('shifts',t('resetItemShifts'))}
-        ${rmRow('wages',t('resetItemWages'))}
-        ${rmRow('settings',t('resetItemSettings'))}
-        ${rmRow('onboarding',t('resetItemOnboarding'))}
-      </div>
-    </div>
-
-    ${signedIn?`
-    <div class="rm-cloud-panel">
-      <label class="rm-cloud-toggle">
-        <input type="checkbox" id="reset-cloud-cb">
-        <span class="rm-cloud-box" aria-hidden="true">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-        </span>
-        <span class="rm-cloud-label">${t('resetCloudLabel')}</span>
-      </label>
-      <div class="rm-cloud-sub">${t('resetCloudSub')}</div>
-      <div class="rm-cloud-signout">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        <span>${t('resetSignOutNote')}</span>
-      </div>
-    </div>
-    `:''}
-
-    <div class="rm-warn">
-      <div class="rm-warn-icon">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-      </div>
-      <div class="rm-warn-text">
-        <div class="rm-warn-title">${t('resetCancelling')}</div>
-        <div class="rm-warn-sub">${t('resetWarnConfirm')}</div>
-      </div>
-    </div>
-
-    <div class="rm-confirm">
-      <label class="rm-confirm-label">${t('resetConfirmLabel',cw)}</label>
-      <input class="rm-confirm-input" id="reset-confirm-in" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${cw}">
-    </div>
-
-    <div class="rm-actions">
-      <button class="rm-btn-cancel" id="reset-cancel-2">${t('cancel')}</button>
-      <button class="rm-btn-delete" id="reset-confirm" disabled>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-        ${t('resetBtnFinal')}
-      </button>
-    </div>
-    </div>
-  </div>`;
-
-  document.querySelectorAll('#reset-modal-ov').forEach(el => el.remove());
-  document.body.appendChild(ov);
-
-  ov.addEventListener('click',e=>{if(e.target.id==='reset-modal-ov')closeResetModal();});
-  document.getElementById('reset-cancel').addEventListener('click',()=>closeResetModal());
-  document.getElementById('reset-cancel-2')?.addEventListener('click',()=>closeResetModal());
-
-  const confirmIn=document.getElementById('reset-confirm-in');
-  const confirmBtn=document.getElementById('reset-confirm');
-  confirmIn.addEventListener('input',()=>{
-    confirmBtn.disabled = confirmIn.value.trim() !== cw;
-  });
-
-  confirmBtn.addEventListener('click',async()=>{
-    if(confirmIn.value.trim()!==cw)return;
-    confirmBtn.disabled=true;
-    confirmBtn.textContent=t('resetBtnFinal')+'…';
-
-    const wipeCloud=signedIn && document.getElementById('reset-cloud-cb')?.checked;
-    const uid=CURRENT_USER?.uid; // capture before sign-out clears CURRENT_USER
-
-    // Sign out first — signOutUser() may push any pending sync changes before
-    // signing out. Deleting the cloud doc AFTER sign-out (using the captured
-    // uid) ensures nothing gets recreated by that push.
-    if(signedIn){
-      try{ await signOutUser(); }
-      catch(e){ console.warn('[reset] Sign-out failed, continuing with local reset:',e.message); }
-    }
-
-    if(wipeCloud){
-      try{ await deleteCloudData(uid); }
-      catch(e){ console.warn('[reset] Cloud delete failed, continuing with local reset:',e.message); }
-    }
-
-    // Clear every wt4_* key (app data, settings, onboarding state, sync flags).
-    // Holiday API caches (wt4_gov_*, wt4_hol_*) are left intact — they're just
-    // cached lookups, not user data, and will be reused or refreshed naturally.
-    Object.keys(localStorage)
-      .filter(k=>k.startsWith('wt4_') && !k.startsWith('wt4_gov_') && !k.startsWith('wt4_hol_'))
-      .forEach(k=>localStorage.removeItem(k));
-
-    // Reload so onboarding runs fresh against a clean slate.
-    window.location.reload();
-  });
-}
 
 // ── All Shifts modal ─────────────────────────────────────────────────────────
 // Premium glass panel: sorting, shift-type filtering, pagination.

@@ -11,6 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { animateModalClose } from '../dom.js';
+import { entryHours } from '../../domain/log-entries.js';
 
 // Persisted view state (survives the day-log round trip via _returnToAllShifts).
 let _allShiftsSort   = 'date-desc';

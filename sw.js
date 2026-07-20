@@ -29,7 +29,7 @@
 //  The old cache is deleted in the `activate` handler so stale files are purged.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CACHE_VERSION   = 'wt4-v85';
+const CACHE_VERSION   = 'wt4-v86';
 const SHELL_CACHE     = `${CACHE_VERSION}-shell`;
 const FONT_CACHE      = `${CACHE_VERSION}-fonts`;
 const CDN_CACHE       = `${CACHE_VERSION}-cdn`;
@@ -51,6 +51,7 @@ const SHELL_ASSETS = [
   './domain/deductions.js',
   './domain/earnings.js',
   './domain/quick-log.js',
+  './domain/projections.js',
   './domain/wizard-core.js',
   './data/holidays.js',
   './ui/icons.js',

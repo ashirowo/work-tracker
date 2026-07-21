@@ -2,7 +2,7 @@
 // scheduleSync() is called after every data mutation so changes automatically
 // propagate to Firestore when the user is signed in. If not signed in or offline,
 // the call is a no-op and localStorage continues working as usual.
-import { signInWithGoogle, signOutUser, scheduleSync, getSyncStatus, deleteCloudData,
+import { scheduleSync, deleteCloudData,
          createShare, deleteShare, listMyShares } from './firebase.js';
 import { packShare, unpackShare, normalizeShareCode, formatShareCode } from './share.js';
 import { TR } from './translations.js';
@@ -21,7 +21,7 @@ import { createHolidayService, translateHolidayName, getUpcomingIn, upcomingHolC
 import { wizT as wizTCore, WIZ_DEFAULT_RULES as WIZ_DEFAULT_RULES_Core,
          wizardAnswersFrom as wizardAnswersFromCore, wizardProfileFrom as wizardProfileFromCore,
          rulesStateFromProfile as rulesStateFromProfileCore } from './domain/wizard-core.js';
-import { WZI, SHM_IC_CHECK, SHM_IC_SEARCH, ruleRowsHTML } from './ui/icons.js';
+import { WZI, SHM_IC_CHECK, SHM_IC_SEARCH, ruleRowsHTML, flagImg } from './ui/icons.js';
 import { animateModalClose, escHTML } from './ui/dom.js';
 import { workplaceFormHTML, wireWorkplaceForm, obxNeedsSchedPage,
          obxWorkplaceHTML, obxWireWorkplace, obxNightHTML, obxWireNight } from './ui/workplace-form.js';
@@ -37,6 +37,7 @@ import { animateStatsHero, initCardTilt } from './ui/motion.js';
 import { buildCal, wireCalendar, updateHolSeps } from './ui/views/calendar.js';
 import { buildOverview, wireOverview } from './ui/views/overview.js';
 import { buildSettings, wireSettings } from './ui/views/settings.js';
+import { initHeader, buildHeaderHTML, buildStats, attachHeaderListeners, updateSyncUI, updateOfflineBanner, startSyncTicker } from './ui/header.js';
 
 // ── App signature footer ─────────────────────────────────────────────────────
 // Premium credit footer shared beneath the last card on the Calendar, Overview,
@@ -61,50 +62,7 @@ function appFooter(){
 // which triggers render() so every part of the UI derives from this value.
 let CURRENT_USER = null;
 function setCURRENT_USER(user){ CURRENT_USER = user; render(); }
-// updateSyncUI: lightweight badge refresh without full re-render
-function updateSyncUI(){
-  const badge=document.getElementById('sync-badge');
-  if(!badge)return;
-  const status=getSyncStatus();
-  const isOffline=!navigator.onLine;
-  // When the network is gone, always show the offline icon regardless of
-  // what firebase.js reports (it may not have fired its 'offline' event yet).
-  const effectiveStatus=isOffline?'offline':status;
-  const tips={synced:'Synced',pending:'Syncing…',offline:'Offline — saved locally',idle:''};
-  // SYNC_ICONS is defined later in module scope (function hoisting isn't in play
-  // for const, but updateSyncUI only ever runs after first render, by which time
-  // the constant is initialised).
-  badge.innerHTML=SYNC_ICONS[effectiveStatus]||SYNC_ICONS.synced;
-  badge.title=tips[effectiveStatus]||'';
-  badge.setAttribute('aria-label',tips[effectiveStatus]||'');
-  badge.dataset.status=effectiveStatus;
-  badge.className='sync-badge sync-badge--'+effectiveStatus;
-  updateSyncedTime();
-}
-// Refresh the "Last synced Xm ago" label in place (web header). Cheap; safe to
-// call frequently. Also swaps the whole block in/out if sync state appears.
-function updateSyncedTime(){
-  const el=document.getElementById('hdr-synced-time');
-  if(!el)return;
-  const lbl=lastSyncedLabel();
-  if(lbl) el.textContent=lbl;
-}
-// Tick the relative sync time so it updates live (e.g. 55s → 56s → 57s) without
-// any reload. Cheap textContent swap; runs every second.
-let _syncTick=null;
-function startSyncTicker(){
-  if(_syncTick)clearInterval(_syncTick);
-  _syncTick=setInterval(updateSyncedTime,1000); // every second — instant feel
-}
-// updateOfflineBanner: sets the banner text in the current language.
-// Called from render() and whenever the language changes.
-function updateOfflineBanner(){
-  const el=document.getElementById('offline-banner-text');
-  if(!el)return;
-  // Fall back to English if key missing in a language block
-  const lang=S?.lang||localStorage.getItem('wt4_lang')||'en';
-  el.textContent=(TR[lang]?.offlineBanner)||TR.en.offlineBanner;
-}
+// Sync-badge + last-synced helpers live in ui/header.js (Phase 8f).
 // Expose to window so firebase.js (a separate ES module) can call these.
 // ES modules have isolated scopes — window is the only shared global.
 window._appBridge = { setCURRENT_USER, updateSyncUI, get render(){ return render; } };
@@ -142,25 +100,7 @@ function getUpcomingHolidays(limit = 3) {
 
 const DEFAULT_WAGE=10320,DEFAULT_TAX=3.3;
 
-// ── Language flag icons ────────────────────────────────────────────────────────
-// Emoji flags (🇺🇸 etc.) are regional-indicator pairs, and Windows ships no flag
-// glyphs — every Windows browser falls back to rendering the bare letters ("US",
-// "KR", …). These inline SVG data-URIs (flag-icons, MIT) render identically on
-// every platform and stay offline-safe (no CDN, cached with the shell). Keyed by
-// language code, so en→US, ko→KR, zh→CN, ne→NP.
-const FLAGS={
-    en:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20id%3D%22flag-icons-us%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cpath%20fill%3D%22%23bd3d44%22%20d%3D%22M0%200h640v480H0%22%2F%3E%3Cpath%20stroke%3D%22%23fff%22%20stroke-width%3D%2237%22%20d%3D%22M0%2055.3h640M0%20129h640M0%20203h640M0%20277h640M0%20351h640M0%20425h640%22%2F%3E%3Cpath%20fill%3D%22%23192f5d%22%20d%3D%22M0%200h364.8v258.5H0%22%2F%3E%3Cmarker%20id%3D%22us-a%22%20markerHeight%3D%2230%22%20markerWidth%3D%2230%22%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22m14%200%209%2027L0%2010h28L5%2027z%22%2F%3E%3C%2Fmarker%3E%3Cpath%20fill%3D%22none%22%20marker-mid%3D%22url(%23us-a)%22%20d%3D%22m0%200%2016%2011h61%2061%2061%2061%2060L47%2037h61%2061%2060%2061L16%2063h61%2061%2061%2061%2060L47%2089h61%2061%2060%2061L16%20115h61%2061%2061%2061%2060L47%20141h61%2061%2060%2061L16%20166h61%2061%2061%2061%2060L47%20192h61%2061%2060%2061L16%20218h61%2061%2061%2061%2060z%22%2F%3E%3C%2Fsvg%3E',
-    ko:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20xmlns%3Axlink%3D%22http%3A%2F%2Fwww.w3.org%2F1999%2Fxlink%22%20id%3D%22flag-icons-kr%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cdefs%3E%3CclipPath%20id%3D%22kr-a%22%3E%3Cpath%20fill-opacity%3D%22.7%22%20d%3D%22M-95.8-.4h682.7v512H-95.8z%22%2F%3E%3C%2FclipPath%3E%3C%2Fdefs%3E%3Cg%20fill-rule%3D%22evenodd%22%20clip-path%3D%22url(%23kr-a)%22%20transform%3D%22translate(89.8%20.4)scale(.9375)%22%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22M-95.8-.4H587v512H-95.8Z%22%2F%3E%3Cg%20transform%3D%22rotate(-56.3%20361.6%20-101.3)scale(10.66667)%22%3E%3Cg%20id%3D%22kr-c%22%3E%3Cpath%20id%3D%22kr-b%22%20fill%3D%22%23000001%22%20d%3D%22M-6-26H6v2H-6Zm0%203H6v2H-6Zm0%203H6v2H-6Z%22%2F%3E%3Cuse%20xlink%3Ahref%3D%22%23kr-b%22%20width%3D%22100%25%22%20height%3D%22100%25%22%20y%3D%2244%22%2F%3E%3C%2Fg%3E%3Cpath%20stroke%3D%22%23fff%22%20d%3D%22M0%2017v10%22%2F%3E%3Cpath%20fill%3D%22%23cd2e3a%22%20d%3D%22M0-12a12%2012%200%200%201%200%2024Z%22%2F%3E%3Cpath%20fill%3D%22%230047a0%22%20d%3D%22M0-12a12%2012%200%200%200%200%2024A6%206%200%200%200%200%200Z%22%2F%3E%3Ccircle%20cy%3D%22-6%22%20r%3D%226%22%20fill%3D%22%23cd2e3a%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22rotate(-123.7%20191.2%2062.2)scale(10.66667)%22%3E%3Cuse%20xlink%3Ahref%3D%22%23kr-c%22%20width%3D%22100%25%22%20height%3D%22100%25%22%2F%3E%3Cpath%20stroke%3D%22%23fff%22%20d%3D%22M0-23.5v3M0%2017v3.5m0%203v3%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E',
-    id:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20id%3D%22flag-icons-id%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cpath%20fill%3D%22%23e70011%22%20d%3D%22M0%200h640v240H0Z%22%2F%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22M0%20240h640v240H0Z%22%2F%3E%3C%2Fsvg%3E',
-    th:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20id%3D%22flag-icons-th%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cg%20fill-rule%3D%22evenodd%22%3E%3Cpath%20fill%3D%22%23f4f5f8%22%20d%3D%22M0%200h640v480H0z%22%2F%3E%3Cpath%20fill%3D%22%232d2a4a%22%20d%3D%22M0%20162.5h640v160H0z%22%2F%3E%3Cpath%20fill%3D%22%23a51931%22%20d%3D%22M0%200h640v82.5H0zm0%20400h640v80H0z%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E',
-    ru:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20id%3D%22flag-icons-ru%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22M0%200h640v160H0z%22%2F%3E%3Cpath%20fill%3D%22%230039a6%22%20d%3D%22M0%20160h640v160H0z%22%2F%3E%3Cpath%20fill%3D%22%23d52b1e%22%20d%3D%22M0%20320h640v160H0z%22%2F%3E%3C%2Fsvg%3E',
-    zh:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20xmlns%3Axlink%3D%22http%3A%2F%2Fwww.w3.org%2F1999%2Fxlink%22%20id%3D%22flag-icons-cn%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cdefs%3E%3Cpath%20id%3D%22cn-a%22%20fill%3D%22%23ff0%22%20d%3D%22M-.6.8%200-1%20.6.8-1-.3h2z%22%2F%3E%3C%2Fdefs%3E%3Cpath%20fill%3D%22%23ee1c25%22%20d%3D%22M0%200h640v480H0z%22%2F%3E%3Cuse%20xlink%3Ahref%3D%22%23cn-a%22%20width%3D%2230%22%20height%3D%2220%22%20transform%3D%22matrix(71.9991%200%200%2072%20120%20120)%22%2F%3E%3Cuse%20xlink%3Ahref%3D%22%23cn-a%22%20width%3D%2230%22%20height%3D%2220%22%20transform%3D%22matrix(-12.33562%20-20.5871%2020.58684%20-12.33577%20240.3%2048)%22%2F%3E%3Cuse%20xlink%3Ahref%3D%22%23cn-a%22%20width%3D%2230%22%20height%3D%2220%22%20transform%3D%22matrix(-3.38573%20-23.75998%2023.75968%20-3.38578%20288%2095.8)%22%2F%3E%3Cuse%20xlink%3Ahref%3D%22%23cn-a%22%20width%3D%2230%22%20height%3D%2220%22%20transform%3D%22matrix(6.5991%20-23.0749%2023.0746%206.59919%20288%20168)%22%2F%3E%3Cuse%20xlink%3Ahref%3D%22%23cn-a%22%20width%3D%2230%22%20height%3D%2220%22%20transform%3D%22matrix(14.9991%20-18.73557%2018.73533%2014.99929%20240%20216)%22%2F%3E%3C%2Fsvg%3E',
-    fr:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20id%3D%22flag-icons-fr%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cpath%20fill%3D%22%23000091%22%20d%3D%22M0%200h213.3v480H0z%22%2F%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22M213.3%200h213.4v480H213.3z%22%2F%3E%3Cpath%20fill%3D%22%23e1000f%22%20d%3D%22M426.7%200H640v480H426.7z%22%2F%3E%3C%2Fsvg%3E',
-    ne:'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20id%3D%22flag-icons-np%22%20viewBox%3D%220%200%20640%20480%22%3E%3Cdefs%3E%3CclipPath%20id%3D%22np-a%22%3E%3Cpath%20fill-opacity%3D%22.7%22%20d%3D%22M0-16h512v512H0z%22%2F%3E%3C%2FclipPath%3E%3C%2Fdefs%3E%3Cg%20clip-path%3D%22url(%23np-a)%22%20transform%3D%22translate(0%2015)scale(.9375)%22%3E%3Cg%20fill-rule%3D%22evenodd%22%3E%3Cpath%20fill%3D%22%23ce0000%22%20stroke%3D%22%23000063%22%20stroke-width%3D%2213.8%22%20d%3D%22M6.5%20489.5h378.8L137.4%20238.1l257.3.3L6.6-9.5v499z%22%2F%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22m180.7%20355.8-27%209%2021.2%2019.8-28.5-1.8%2011.7%2026.2-25.5-12.3.5%2028.6-18.8-20.9-10.7%2026.6-9.2-26.3-20.3%2020.6%201.8-27.7L49%20409l12.6-25-29.3.6%2021.5-18.3-27.3-10.5%2027-9L32.2%20327l28.4%201.8L49%20302.6l25.6%2012.3-.5-28.6%2018.8%2020.9%2010.7-26.6%209.1%2026.3%2020.4-20.6-1.9%2027.7%2027-11.4-12.7%2025%2029.4-.6-21.5%2018.3zm-32.4-184.7-11.3%208.4%205.6%204.6a94%2094%200%200%200%2030.7-36c1.8%2021.3-17.7%2069-68.7%2069.5a70.6%2070.6%200%200%201-71.5-70.3c10%2018.2%2016.2%2027%2032%2036.5l4.7-4.4-10.6-8.9%2013.7-3.6-7.4-12.4%2014.4%201-1.8-14.4%2012.6%207.4%204-13.5%209%2010.8%208.5-10.3%204.6%2014%2011.8-8.2-1.5%2014.3%2014.2-1.7-6.7%2013.2z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E',
-};
-// Renders a language flag as an isolated <img> (data-URI SVG), so each flag's
-// internal element ids can't collide when the same flag appears more than once.
-const flagImg=(code,cls)=>`<img class="${cls}" src="${FLAGS[code]||''}" alt="" aria-hidden="true" draggable="false">`;
+// FLAGS + flagImg moved to ui/icons.js (Phase 8f); flagImg imported above.
 
 // ── Deductions ───────────────────────────────────────────────────────────────
 // Two mutually-exclusive modes decide what's subtracted from gross pay:
@@ -432,57 +372,9 @@ function autoEff(ds, logsArg){ return autoEffIn(APP_ENV, ds, logsArg); }
 // its top offset differs from the chip that follows it. Called after render
 // and on resize so it stays correct on all screen sizes.
 
-// ── Header icons ──────────────────────────────────────────────────────────────
-// Inline SVGs so header controls match the app's stroked iconography instead of
-// emoji (which render inconsistently across platforms and clash with the UI).
-// All share: 16px box, currentColor, stroke-width 2, round caps/joins.
-const _svg=(inner,w=16)=>`<svg class="hdr-svg" width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
-const ICON_SUN   =_svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>');
-const ICON_MOON  =_svg('<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>');
-const ICON_GLOBE =_svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/>');
-// Google "G" — multicolor, matches the OAuth provider. Fixed colors (not currentColor).
-const ICON_GOOGLE=`<svg class="hdr-svg" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.76h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.76c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.09a6.6 6.6 0 0 1 0-4.18V7.07H2.18a11 11 0 0 0 0 9.86l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"/></svg>`;
-const ICON_OFFLINE=_svg('<path d="M18 10h-1.26a8 8 0 0 0-3.4-4.5"/><path d="M6.3 6.3A8 8 0 0 0 9 20h9a5 5 0 0 0 1.9-.37"/><path d="M2 2l20 20"/>',15);
-// Sync states — cloud (synced), cloud with arrows (pending), cloud-off (offline)
-const SYNC_ICONS={
-  synced:  _svg('<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>',15),
-  pending: _svg('<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/><path d="M9.5 14.5l1.6 1.6 3-3.2"/>',15),
-  offline: _svg('<path d="M18 10h-1.26a8 8 0 0 0-3.4-4.5"/><path d="M6.3 6.3A8 8 0 0 0 9 20h9a5 5 0 0 0 1.9-.37"/><path d="M2 2l20 20"/>',15),
-  idle:    '',
-};
+// Header stroke-icons + SYNC_ICONS moved to ui/icons.js (Phase 8f).
 
-// ── Header helpers: greeting + relative sync time ─────────────────────────────
-// Time-based greeting for the brand's secondary label. Falls back to English if
-// a locale hasn't defined the key (t() returns the key itself when missing).
-function greeting(){
-  const h=new Date().getHours();
-  // Morning 5–11, Afternoon 12–17, Evening 18–4 (no "good night").
-  const key=h<5?'greetEvening':h<12?'greetMorning':h<18?'greetAfternoon':'greetEvening';
-  const fallback={greetMorning:'Good morning',greetAfternoon:'Good afternoon',greetEvening:'Good evening'}[key];
-  const v=t(key);
-  const text=v===key?fallback:v;
-  // Punctuation: '~!' for en/ko/fr/zh, plain '!' elsewhere.
-  const lang=S?.lang||localStorage.getItem('wt4_lang')||'en';
-  const suffix=['en','ko','fr','zh'].includes(lang)?'~!':'!';
-  return text+suffix;
-}
-// "Last synced 2m ago" style relative label from the wt4_syncedAt timestamp.
-// Returns null when there's nothing to show (never synced / not signed in).
-function lastSyncedLabel(){
-  const ts=Number(localStorage.getItem('wt4_syncedAt')||0);
-  if(!ts) return null;
-  const secs=Math.max(0,Math.floor((Date.now()-ts)/1000));
-  if(secs<10)  return t2('syncJustNow','Just now');
-  if(secs<60)  return t2('syncSecsAgo','{n}s ago').replace('{n}',secs);
-  const mins=Math.floor(secs/60);
-  if(mins<60)  return t2('syncMinsAgo','{n}m ago').replace('{n}',mins);
-  const hrs=Math.floor(mins/60);
-  if(hrs<24)   return t2('syncHrsAgo','{n}h ago').replace('{n}',hrs);
-  const days=Math.floor(hrs/24);
-  return t2('syncDaysAgo','{n}d ago').replace('{n}',days);
-}
-// t2: translate-with-fallback (t() returns the key when a string is missing).
-function t2(key,fallback){ const v=t(key); return v===key?fallback:v; }
+// greeting + lastSyncedLabel + t2 live in ui/header.js (Phase 8f).
 
 // ── Modal context (Phase 7) ──────────────────────────────────────────────────
 // The app-owned surface the extracted modal modules receive (they can't import
@@ -539,6 +431,13 @@ function settingsCtx(){
            openImport:    () => buildImportModal(wpShareCtx()),
            openAllHolidays: () => buildAllHolidaysModal({ t, holName, todayStr: today, holidays: HOLIDAYS, lang: S.lang }) };
 }
+// The header/stats surface (Phase 8f). Bound ONCE at boot via initHeader — its
+// sync helpers run outside the render cycle. All members are stable refs; the
+// reassigned CURRENT_USER passes as the currentUser() accessor.
+function headerCtx(){
+  return { S, t, render, sv, switchTab, currentUser: () => CURRENT_USER,
+           getLogs, autoGross, autoEff, applyTax, getActiveDeductionPct, getDeductionNoun };
+}
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function render(){
@@ -560,66 +459,7 @@ function render(){
 }
 
 function buildApp(){
-  // Sync badge — only shown when signed in; status from firebase.js.
-  const ss=getSyncStatus();
-  const ssTip={synced:'Synced',pending:'Syncing…',offline:'Offline — saved locally',idle:''}[ss]||'';
-  const syncHTML=CURRENT_USER
-    ?`<span id="sync-badge" class="sync-badge sync-badge--${ss}" title="${ssTip}" aria-label="${ssTip}">${SYNC_ICONS[ss]||SYNC_ICONS.synced}</span>`
-    :'';
-  // Account trigger — avatar or initial; dropdown is a body-level portal (see attachListeners)
-  const accountHTML=CURRENT_USER
-    ?`<button class="hdr-icon-btn hdr-avatar-btn" id="account-btn" title="${CURRENT_USER.displayName||CURRENT_USER.email}" aria-label="Account">
-        ${CURRENT_USER.photoURL
-          ?`<img src="${CURRENT_USER.photoURL}" class="avatar" alt="">`
-          :`<span class="avatar-initials">${(CURRENT_USER.displayName||CURRENT_USER.email||'?')[0].toUpperCase()}</span>`}
-      </button>`
-    :`<button id="auth-login" class="hdr-signin${!navigator.onLine?' hdr-signin--disabled':''}"${!navigator.onLine?' disabled aria-disabled="true"':''} aria-label="${t('signIn')}">
-        ${navigator.onLine?ICON_GOOGLE:ICON_OFFLINE}
-        <span class="hdr-signin-label">${!navigator.onLine?t('offlineShort'):t('signIn')}</span>
-      </button>`;
-  // Theme + language triggers use inline SVGs to match the rest of the UI.
-  const themeHTML=`<button class="hdr-icon-btn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">${S.theme==='dark'?ICON_SUN:ICON_MOON}</button>`;
-  const langHTML=`<button class="hdr-icon-btn" id="lang-btn" title="Language" aria-label="Language">${ICON_GLOBE}</button>`;
-  // Brand secondary label — a time-based greeting for a premium, personal feel.
-  const greet=greeting();
-  // Last-synced sits in the left section, right after the greeting, separated by
-  // a faded vertical divider. Desktop only (hidden on mobile via CSS).
-  const syncedLbl=CURRENT_USER?lastSyncedLabel():null;
-  const lastSyncedHTML=syncedLbl
-    ?`<span class="hdr-sub-divider" aria-hidden="true"></span>
-      <span class="hdr-synced" id="hdr-synced" aria-live="polite">
-        <span class="hdr-synced-dot" aria-hidden="true"></span>
-        <span class="hdr-synced-text">${t2('lastSynced','Last synced')}</span>
-        <span class="hdr-synced-time" id="hdr-synced-time">${syncedLbl}</span>
-      </span>`
-    :'';
-  const logoSrc=S.theme==='dark'?'./logo-dark.svg':'./logo-light.svg';
-  return`<div class="hdr">
-    <div class="hdr-glow" aria-hidden="true"></div>
-    <div class="hdr-brand">
-      <span class="hdr-mark" aria-hidden="true">
-        <img src="${logoSrc}" width="100%" height="100%" alt="" draggable="false">
-      </span>
-      <div class="hdr-brand-text">
-        <div class="hdr-title">
-          <span class="hdr-logo" role="img" aria-label="Shiftr">Shift<span class="hdr-logo-r">r</span></span>
-        </div>
-        <div class="hdr-subrow">
-          <span class="hdr-greeting">${greet}</span>
-          ${lastSyncedHTML}
-        </div>
-      </div>
-    </div>
-    <div class="hdr-right">
-      <div class="hdr-cluster">
-        ${syncHTML}
-        ${themeHTML}
-        ${langHTML}
-        ${CURRENT_USER?`<span class="hdr-cluster-sep" aria-hidden="true"></span>${accountHTML}`:''}
-      </div>
-      ${CURRENT_USER?'':accountHTML}
-    </div>
-  </div>
+  return`${buildHeaderHTML()}
   ${buildStats()}
   <div class="tab-row" id="tab-row">
     <button class="tab${S.tab==='calendar'?' on':''}" data-tab="calendar">${t('tabCal')}</button>
@@ -706,108 +546,7 @@ function positionTabUnderline(animate){
 // The stats-hero count-up + glass-card tilt animations live in ui/motion.js
 // (Phase 8); attachListeners calls animateStatsHero / initCardTilt.
 
-function buildStats(){
-  const daysInM=new Date(S.calY,S.calM+1,0).getDate();
-  const totalDays=daysInM;
-  let days=0,hrs=0,gross=0;
-  const logs=getLogs();
-  for(let d=1;d<=daysInM;d++){
-    const ds=mkds(S.calY,S.calM,d);
-    const g=autoGross(ds,logs),e=autoEff(ds,logs);
-    if(g>0||(logs[ds]&&isZeroDay(logs[ds]))){days++;gross+=g;hrs+=e;}
-  }
-  const net=applyTax(gross);
-  const target=S.targetHrs||250;
-  const hrsProgress=Math.min(100,Math.round((hrs/target)*100));
-  const daysProgress=Math.min(100,Math.round((days/totalDays)*100));
-  const mn=t('mn')[S.calM];
-
-  // Delta vs previous month
-  let prevNet=0;
-  const prevM=S.calM===0?11:S.calM-1,prevY=S.calM===0?S.calY-1:S.calY;
-  const daysInPrev=new Date(prevY,prevM+1,0).getDate();
-  for(let d=1;d<=daysInPrev;d++){
-    const ds=mkds(prevY,prevM,d);
-    prevNet+=applyTax(autoGross(ds,logs));
-  }
-  const delta=net-prevNet;
-  const prevMn=t('mn')[prevM];
-  const deltaHTML=prevNet>0
-    ?`<div class="stat-pay-delta${delta<0?' stat-pay-delta--neg':''}">
-        ${delta>=0?'▲ +':'▼ '}₩${Math.abs(delta).toLocaleString()} ${t('deltaFrom', prevMn)}
-      </div>`
-    :'';
-
-  // Circular ring for pay card — thicker stroke, gradient, integrated glow
-  const RING_R=46,RING_C=58,RING_STROKE=9;
-  const circumference=2*Math.PI*RING_R;
-
-  return`<div class="stats-hero">
-    <div class="stat-pay-card">
-      <div class="stat-pay-left">
-        <div class="stat-pay-label">${t('statEstPayLabel', getActiveDeductionPct(), getDeductionNoun())} ${mn.toUpperCase()}</div>
-        <div class="stat-pay-value" id="stat-pay-value" data-target="${net}">₩0</div>
-        ${deltaHTML}
-      </div>
-      <div class="stat-pay-ring">
-        <svg viewBox="0 0 ${RING_C*2} ${RING_C*2}" width="124" height="124">
-          <defs>
-            <linearGradient id="ring-grad" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stop-color="#6c86ff"/>
-              <stop offset="100%" stop-color="#a78bfa"/>
-            </linearGradient>
-          </defs>
-          <circle cx="${RING_C}" cy="${RING_C}" r="${RING_R}" fill="none" stroke="var(--ring-track)" stroke-width="${RING_STROKE}"/>
-          <circle id="stat-pay-arc" cx="${RING_C}" cy="${RING_C}" r="${RING_R}" fill="none" stroke="url(#ring-grad)" stroke-width="${RING_STROKE}"
-            data-target="${hrsProgress}" data-circ="${circumference}"
-            stroke-dasharray="0 ${circumference}" stroke-dashoffset="${circumference/4}"
-            stroke-linecap="round"/>
-          <text id="stat-pay-pct" x="${RING_C}" y="${RING_C+1}" text-anchor="middle" dominant-baseline="middle"
-            data-target="${hrsProgress}"
-            fill="var(--text)" font-size="19" font-weight="700" font-family="'Space Grotesk',Inter,system-ui,sans-serif">0%</text>
-        </svg>
-        <div class="stat-pay-ring-sub">${hrs.toFixed(1)} / ${target}${t('hoursUnit')}</div>
-      </div>
-    </div>
-    <div class="stat-mini-col">
-      <div class="stat-mini-card">
-        <div>
-          <div class="stat-mini-top"><div class="stat-mini-icon"><i class="fa-solid fa-calendar-days"></i></div></div>
-          <div class="stat-mini-label">${t('statDays').toUpperCase()}</div>
-          <div class="stat-mini-value stat-count" data-target="${days}" data-dp="0">0</div>
-          <div class="stat-mini-sub">/ ${t('dayCount', totalDays)}</div>
-        </div>
-        <div class="stat-progress-bar"><div class="stat-progress-fill stat-progress-fill--blue stat-bar" data-target="${daysProgress}" style="width:0%"></div></div>
-      </div>
-      <div class="stat-mini-card">
-        <div>
-          <div class="stat-mini-top"><div class="stat-mini-icon stat-mini-icon--purple"><i class="fa-solid fa-clock"></i></div></div>
-          <div class="stat-mini-label">${t('statHours').toUpperCase()}</div>
-          <div class="stat-mini-value stat-count" data-target="${hrs.toFixed(1)}" data-dp="1">0.0</div>
-          <div class="stat-mini-sub">/ ${target}${t('hoursUnit')}</div>
-        </div>
-        <div class="stat-progress-bar"><div class="stat-progress-fill stat-progress-fill--purple stat-bar" data-target="${hrsProgress}" style="width:0%"></div></div>
-      </div>
-    </div>
-    <div class="stat-mini-compact">
-      <div class="smc-item">
-        <div class="stat-mini-icon"><i class="fa-solid fa-calendar-days"></i></div>
-        <div class="smc-text">
-          <div class="smc-value stat-count" data-target="${days}" data-dp="0">0</div>
-          <div class="smc-sub">${t('statDays').toUpperCase()} / ${totalDays}</div>
-        </div>
-      </div>
-      <div class="smc-divider"></div>
-      <div class="smc-item">
-        <div class="stat-mini-icon stat-mini-icon--purple"><i class="fa-solid fa-clock"></i></div>
-        <div class="smc-text">
-          <div class="smc-value stat-count" data-target="${hrs.toFixed(1)}" data-dp="1">0.0</div>
-          <div class="smc-sub">${t('statHours').toUpperCase()} / ${target}${t('hoursUnit')}</div>
-        </div>
-      </div>
-    </div>
-  </div>`;
-}
+// buildStats (the net-pay stats hero) lives in ui/header.js (Phase 8f).
 
 // ── Overview tab ─────────────────────────────────────────────────────────────
 // The full Overview surface (live dashboard render, first-run empty state,
@@ -907,102 +646,12 @@ function attachListeners(){
   if(S.tab==='settings') wireSettings(settingsCtx());
 }
 
-// Header controls, auth, portals, and the outside-click closer. Nodes here
-// persist across tab switches, so this runs only once per full render.
-function attachHeaderListeners(){
-  document.getElementById('theme-toggle').addEventListener('click',()=>{
-    S.theme=S.theme==='dark'?'light':'dark';sv('wt4_theme',S.theme);scheduleSync();render();
-  });
-  document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{
-    if(b.dataset.tab===S.tab)return;      // already active — do nothing
-    switchTab(b.dataset.tab);
-  }));
-
-  // ── Auth ────────────────────────────────────────────────────────────────────
-  const loginBtn=document.getElementById('auth-login');
-  if(loginBtn)loginBtn.addEventListener('click',()=>signInWithGoogle());
-  const logoutBtn=document.getElementById('auth-logout');
-  if(logoutBtn)logoutBtn.addEventListener('click',()=>signOutUser());
-
-  // ── Portal dropdown system ────────────────────────────────────────────────────
-  // Dropdowns are appended directly to <body> so they are never clipped by
-  // backdrop-filter or overflow:hidden on ancestor elements (like .hdr, .card).
-  document.querySelectorAll('.portal-dropdown').forEach(el=>el.remove());
-
-  function createPortalDropdown(id, html){
-    const el=document.createElement('div');
-    el.id=id;
-    el.className='hdr-dropdown portal-dropdown';
-    el.innerHTML=html;
-    document.body.appendChild(el);
-    return el;
-  }
-
-  function positionDropdown(menu, trigger){
-    const r=trigger.getBoundingClientRect();
-    menu.style.position='fixed';
-    menu.style.top=(r.bottom+6)+'px';
-    // Align right edge of menu to right edge of trigger
-    const menuW=menu.offsetWidth||200;
-    let left=r.right-menuW;
-    if(left<8)left=8; // don't go off-screen left
-    menu.style.left=left+'px';
-    menu.style.right='auto';
-  }
-
-  function closeAllPortals(){
-    document.querySelectorAll('.portal-dropdown').forEach(m=>m.classList.remove('open'));
-  }
-
-  // ── Language portal ──────────────────────────────────────────────────────────
-  const langBtn=document.getElementById('lang-btn');
-  if(langBtn){
-    const langPortal=createPortalDropdown('lang-menu',
-      ['en','ko','id','th','ru','zh','fr','ne'].map(l=>{
-        const names={en:'English',ko:'한국어',id:'Indonesia',th:'ภาษาไทย',ru:'Русский',zh:'中文',fr:'Français',ne:'नेपाली'};
-        return `<button class="hdr-dropdown-item${S.lang===l?' hdr-dropdown-item--active':''}" data-lang="${l}">${flagImg(l,'flag-ico')}${names[l]}</button>`;
-      }).join(''));
-    // Wire language buttons inside portal
-    langPortal.querySelectorAll('[data-lang]').forEach(b=>b.addEventListener('click',e=>{
-      e.stopPropagation();
-      S.lang=b.dataset.lang;sv('wt4_lang',S.lang);scheduleSync();
-      closeAllPortals();
-      render();
-    }));
-    langBtn.addEventListener('click',e=>{
-      e.stopPropagation();
-      const wasOpen=langPortal.classList.contains('open');
-      closeAllPortals();
-      if(!wasOpen){langPortal.classList.add('open');positionDropdown(langPortal,langBtn);}
-    });
-  }
-
-  // ── Account portal ───────────────────────────────────────────────────────────
-  const accountBtn=document.getElementById('account-btn');
-  if(accountBtn&&CURRENT_USER){
-    const accountPortal=createPortalDropdown('account-menu',
-      `<div class="hdr-dropdown-user">
-        <div class="hdr-dropdown-name">${CURRENT_USER.displayName||''}</div>
-        <div class="hdr-dropdown-email">${CURRENT_USER.email||''}</div>
-       </div>
-       <div class="hdr-dropdown-divider"></div>
-       <button class="hdr-dropdown-item hdr-dropdown-item--danger" id="auth-logout-portal">${t('signOut')}</button>`);
-    accountPortal.querySelector('#auth-logout-portal')?.addEventListener('click',()=>signOutUser());
-    accountBtn.addEventListener('click',e=>{
-      e.stopPropagation();
-      const wasOpen=accountPortal.classList.contains('open');
-      closeAllPortals();
-      if(!wasOpen){accountPortal.classList.add('open');positionDropdown(accountPortal,accountBtn);}
-    });
-  }
-
-  // Close portals on outside click (document-level — bind once)
-  document.addEventListener('click',closeAllPortals);
-}
+// attachHeaderListeners lives in ui/header.js (Phase 8f).
 
 // (Settings-tab content listeners live in ui/views/settings.js — wireSettings.)
 
 applyTheme();
+initHeader(headerCtx());   // bind the header module before the first render
 // Seed cache into HOLIDAYS synchronously (already done above), then render.
 // prefetchHolidays runs in the background and re-renders if new data arrives.
 

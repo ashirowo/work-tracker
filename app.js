@@ -1,7 +1,3 @@
-// ── firebase.js integration ──────────────────────────────────────────────────
-// scheduleSync() is called after every data mutation so changes automatically
-// propagate to Firestore when the user is signed in. If not signed in or offline,
-// the call is a no-op and localStorage continues working as usual.
 import { scheduleSync, deleteCloudData,
          createShare, deleteShare, listMyShares } from './firebase.js';
 import { packShare, unpackShare, normalizeShareCode, formatShareCode } from './share.js';
@@ -40,9 +36,6 @@ import { buildSettings, wireSettings } from './ui/views/settings.js';
 import { initHeader, buildHeaderHTML, buildStats, attachHeaderListeners, updateSyncUI, updateOfflineBanner, startSyncTicker } from './ui/header.js';
 
 // ── App signature footer ─────────────────────────────────────────────────────
-// Premium credit footer shared beneath the last card on the Calendar, Overview,
-// and Settings tabs. Bump APP_VERSION on release — it surfaces in the pill on
-// the right. The credit text stays localized via t('calHint').
 const APP_VERSION = 'v2.1.4';
 function appFooter(){
   return `
@@ -62,13 +55,12 @@ function appFooter(){
 // which triggers render() so every part of the UI derives from this value.
 let CURRENT_USER = null;
 function setCURRENT_USER(user){ CURRENT_USER = user; render(); }
-// Sync-badge + last-synced helpers live in ui/header.js (Phase 8f).
 // Expose to window so firebase.js (a separate ES module) can call these.
 // ES modules have isolated scopes — window is the only shared global.
 window._appBridge = { setCURRENT_USER, updateSyncUI, get render(){ return render; } };
 
 // ── Dynamic Korean Public Holidays ───────────────────────────────────────────
-// The fetch/cache/cooldown lifecycle lives in data/holidays.js (Phase 5). The
+// The fetch/cache/cooldown lifecycle lives in data/holidays.js. The
 // MAPS stay app-owned (the golden oracle injects HOLIDAYS per fixture; isHol
 // below is sliced) — the service fills them and calls back render() when a
 // fetch actually lands new data.
@@ -95,12 +87,7 @@ function getUpcomingHolidays(limit = 3) {
   return getUpcomingIn(HOLIDAYS, today(), limit).map(h => ({ ...h, name: holName(h.ds) }));
 }
 
-// ── All-Holidays modal ────────────────────────────────────────────────────────
-
-
 const DEFAULT_WAGE=10320,DEFAULT_TAX=3.3;
-
-// FLAGS + flagImg moved to ui/icons.js (Phase 8f); flagImg imported above.
 
 // ── Deductions ───────────────────────────────────────────────────────────────
 // Two mutually-exclusive modes decide what's subtracted from gross pay:
@@ -111,8 +98,8 @@ const DEFAULT_WAGE=10320,DEFAULT_TAX=3.3;
 // only the source of activeRate differs. Mode defaults to 'tax' so existing
 // users see zero change until they opt in.
 //
-// The rates, statutory defaults, and math live in domain/deductions.js
-// (Phase 3); these adapters bind stored settings (the ins||getInsurance()
+// The rates, statutory defaults, and math live in domain/deductions.js;
+// these adapters bind stored settings (the ins||getInsurance()
 // defaulting is storage glue, not math).
 function getDeductionMode(){ return ld('wt4_deduction_mode', 'tax'); }
 function getInsurance(){
@@ -136,14 +123,11 @@ function getActiveDeductionPct(){return Math.round(deductionRate()*100*100)/100;
 function getDeductionNoun(){return t(getDeductionMode()==='insurance'?'deductionModeInsurance':'deductionModeTax');}
 function ld(k,d){try{const v=localStorage.getItem(k);return v!==null?JSON.parse(v):d;}catch{return d;}}
 function sv(k,v){localStorage.setItem(k,JSON.stringify(v));}
-// pad/mkds/pd/dowOf/isSun/isSat/getMonday moved to core/dates.js (Phase 2).
-// today() stays HERE: the golden oracle reassigns it to a pinned fixture date,
-// which an imported binding cannot be.
+// today() stays HERE (not imported from core/dates.js): the golden oracle
+// reassigns it to a pinned fixture date, which an imported binding cannot be.
 function today(){const d=new Date();return mkds(d.getFullYear(),d.getMonth(),d.getDate());}
 function getLogs(){return ld('wt4_logs',{});}
 function saveLogs(l){sv('wt4_logs',l);scheduleSync();}
-
-// ── One-tap default inference — moved to domain/quick-log.js (Phase 4) ───────
 function defaultLogFor(dateStr){ return defaultLogForIn(APP_ENV, dateStr); }
 function buildQuickLogEntry(dateStr){ return buildQuickLogEntryIn(APP_ENV, dateStr); }
 function getShifts(){return ld('wt4_shifts',{});}
@@ -153,8 +137,8 @@ function saveShifts(s){sv('wt4_shifts',s);scheduleSync();}
 // wageFor(dateStr) returns the wage active on that date (most recent entry ≤ date).
 // Migration: if the old scalar wt4_wage key is present, import it as the
 // initial entry dated '2000-01-01' so all historical logs keep their value.
-// Timeline resolution + both read-migrations live in domain/wage-history.js
-// (Phase 3); this adapter persists when a migration dirtied the data.
+// Timeline resolution + both read-migrations live in domain/wage-history.js;
+// this adapter persists when a migration dirtied the data.
 function getWages(){
   const { wages, dirty, fromLegacy } = normalizeWages(ld('wt4_wages', null), ld('wt4_wage', null), DEFAULT_WAGE);
   if(dirty){ sv('wt4_wages', wages); if(fromLegacy) localStorage.removeItem('wt4_wage'); }
@@ -183,7 +167,7 @@ function applyDeductions(g){return applyDeductionRate(g,deductionRate());}
 function applyTax(g){return applyDeductions(g);}
 
 // ── Shift: anchor-based propagation forward indefinitely ─────────────────────
-// The inference algorithm lives in domain/shift-pattern.js (Phase 3).
+// The inference algorithm lives in domain/shift-pattern.js.
 function shiftFor(s){ return shiftForIn(getShifts(), s); }
 
 function setShiftFromWeek(ws,shift){
@@ -204,7 +188,7 @@ function allWeekdaysLogged(s){ return allWeekdaysLoggedIn(APP_ENV, s); }
 // every existing call site is untouched; it packages the app-side environment
 // (language, holiday set, shift inference, holAuto, active deduction) into the
 // explicit ctx that calc.js's pure implementation requires.
-// Phase 2a: the calculator is profile-driven. getProfile() reads wt4_profile
+// The calculator is profile-driven. getProfile() reads wt4_profile
 // and falls back WHOLESALE to the default (today's rulebook) when absent or
 // unrecognized — every existing user is grandfathered with zero change.
 // wt4_profile does not sync yet; it joins SYNC_KEYS a release after the
@@ -213,7 +197,7 @@ function getProfile(){
   const p = ld('wt4_profile', null);
   return isUsableProfile(p) ? p : DEFAULT_PROFILE;
 }
-// Phase 4 (structural): the projection primitives live in domain/earnings.js —
+// The projection primitives live in domain/earnings.js —
 // every number the Overview projections use comes from an engine probe of the
 // ACTIVE profile, through these env-bound adapters.
 function probeHours(){ return probeHoursIn(getProfile()); }
@@ -223,49 +207,21 @@ function bucketKeys(){ return bucketKeysIn(getProfile()); }
 function bucketFor(ds){ return bucketForIn(APP_ENV, ds); }
 function bucketDeterministicEff(bucket){ return bucketDeterministicEffIn(APP_ENV, bucket); }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Phase 5: pay-rules wizard — the authoring UI over compile.js.
-// Pure state → HTML → answers → compiled profile. Shared verbatim between the
-// onboarding step and the Settings "Edit pay rules" editor.
-// ═════════════════════════════════════════════════════════════════════════════
-// The wizard's pure layer lives in domain/wizard-core.js (Phase 6). These five
-// keep their names because the golden oracle slices them; each delegates.
+// The wizard's pure layer lives in domain/wizard-core.js; these adapters keep
+// their names because the golden oracle slices declarations by name.
 function wizT(lang,k){ return wizTCore(lang,k); }
 function WIZ_DEFAULT_RULES(){ return WIZ_DEFAULT_RULES_Core(); }
 function wizardAnswersFrom(rules){ return wizardAnswersFromCore(rules); }
 function wizardProfileFrom(rules, pattern){ return wizardProfileFromCore(rules, pattern); }
 function rulesStateFromProfile(profile){ return rulesStateFromProfileCore(profile); }
-// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-// The workplace form \u2014 a configuration panel, not a form. Shared verbatim by
-// onboarding step 3 and the Settings "Edit workplace" modal.
-//
-// RENDERS ONCE. Every interaction after mount is a surgical DOM update: class
-// toggles for selection, textContent swaps for the live preview, and animated
-// grid-row FOLDS for the progressive sections (Customize questions, the night
-// panel, the unpaid break). The form is never re-rendered, so scroll position,
-// focus, and the glass panels never jump.
-//
-// Context-aware: pass {pattern:'day'} and everything night-related \u2014 the night
-// question, the schedule panel, the night preview line \u2014 simply doesn't exist.
-// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-// WZI moved to ui/icons.js (Phase 6).
-// \u2500\u2500 Rate steppers \u2014 the Customize interaction \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-// Each pay rule is one row: icon \u00b7 label \u00b7 plain-language caption ("+50%") \u00b7
-// a \u00d7-multiplier stepper that snaps along a \u00d70.25 detent grid. Legacy profiles
-// may hold off-grid multipliers (\u00d71.6), so a step first snaps to the grid in
-// the direction of travel instead of drifting by a fixed increment.
-// WZ_STEP/WZ_BRK + the stepper/break/normalize helpers live in
-// domain/wizard-core.js (Phase 6) \u2014 imported above; the form markup below uses them.
-// The workplace form + night-schedule page moved to ui/workplace-form.js (Phase 6).
 
-// Phase 3b: the "Wage Calculation Rules" card is generated from the ACTIVE
-// profile via engine probes — correct for any custom profile, not just the
-// factory default (verified against the legacy table by tests/rules-replay).
+// The "Wage Calculation Rules" card is generated from the ACTIVE profile via
+// engine probes — correct for any custom profile, not just the factory default.
 function rulesRows(){
   return buildRulesRows(getProfile(), TR[S.lang].seg,
     { holAuto: isHolAuto(), dedPct: getActiveDeductionPct(), dedNoun: getDeductionNoun() });
 }
-// The app's capability record for the domain layer (Phase 4). Members are the
+// The app's capability record for the domain layer. Members are the
 // app's own functions — late-bound, never data snapshots — so read-per-call
 // semantics stay byte-identical. Arrow wrappers where the target is reassigned
 // (the oracle re-pins today) or dynamic (S.lang).
@@ -347,17 +303,8 @@ function isHolAuto(){return S.holAuto!==false;}
 function getTaxPct(){return S.taxRate;} // percentage for display (e.g. 3.3)
 function applyTheme(){document.documentElement.setAttribute('data-theme',S.theme);}
 
-// ── Single source of truth for earnings on a given date ────────────────────────────
-// liveGross(ds, logs?) always recomputes gross from stored hours × wageFor(ds).
-// This ensures wage history changes are reflected everywhere immediately —
-// no stale gross/net values baked into log entries are ever used for display.
-//
-// For logged days:  recompute via calcWage using stored regHrs/otHrs/shiftOverride.
-// For auto-credits: 8h × wageFor(ds) (holidays and qualifying Sundays).
-// For everything else: 0.
-//
-// Pass a pre-fetched logs object to avoid repeated localStorage reads in loops.
-// (bodies live in domain/earnings.js since Phase 4 — same rules, env-bound)
+// liveGross recomputes gross from stored hours and the wage active on that date,
+// so wage-history edits reflect everywhere immediately; rules live in domain/earnings.js.
 function liveGross(ds, logsArg){ return liveGrossIn(APP_ENV, ds, logsArg); }
 
 // autoGross / autoEff: wrappers used throughout the render layer.
@@ -367,19 +314,9 @@ function autoGross(ds, logsArg){
 }
 function autoEff(ds, logsArg){ return autoEffIn(APP_ENV, ds, logsArg); }
 
-// ── Holiday separator visibility ─────────────────────────────────────────────
-// Hides a .hol-sep when it has wrapped to the start of a new row — i.e. when
-// its top offset differs from the chip that follows it. Called after render
-// and on resize so it stays correct on all screen sizes.
-
-// Header stroke-icons + SYNC_ICONS moved to ui/icons.js (Phase 8f).
-
-// greeting + lastSyncedLabel + t2 live in ui/header.js (Phase 8f).
-
-// ── Modal context (Phase 7) ──────────────────────────────────────────────────
-// The app-owned surface the extracted modal modules receive (they can't import
-// app.js). Stable function/state refs are passed directly; CURRENT_USER is
-// reassigned, so it arrives as an accessor. Each modal destructures its subset.
+// Modal context — the app-owned surface the extracted modal modules receive
+// (they can't import app.js). Stable refs pass directly; CURRENT_USER is
+// reassigned, so it arrives as the currentUser() accessor.
 function modalCtx(){
   return { S, t, render, today, getWages, saveWages, getWage, showSuccess,
            getLogs, saveLogs, shiftFor, liveGross, applyTax, wageFor, calcWage,
@@ -395,28 +332,28 @@ function wpShareCtx(){
 }
 // Open the day-log modal for a date (calendar cells, log-edit, Overview CTA).
 function openDayModal(date){ S.modal={date, existing:getLogs()[date]||null}; buildModal(modalCtx()); }
-// The Calendar view's surface (Phase 8).
+// The Calendar view's surface.
 function calendarCtx(){
   return { S, t, render, today, getLogs, saveLogs, getShifts, saveShifts, shiftFor,
            toggleShift, isHol, holName, isHolAuto, allWeekdaysLogged, defaultLogFor,
            buildQuickLogEntry, autoEff, appFooter, ensureHolidays, HOLIDAYS,
            showUndoToast, openDayModal };
 }
-// The Overview view's surface (Phase 8d). `env` is APP_ENV — the earnings
+// The Overview view's surface. `env` is APP_ENV — the earnings
 // capability record domain/projections.js computes over.
 function overviewCtx(){
   return { S, t, env:APP_ENV, today, getLogs, shiftFor, applyTax, liveGross,
            autoGross, appFooter, switchTab,
            openDayModal, openAllShifts: () => buildAllShiftsModal(modalCtx()) };
 }
-// The onboarding flow's surface (Phase 7f). openImportModal wraps the
+// The onboarding flow's surface. openImportModal wraps the
 // grandfathered-user join link so onboarding needn't know wpShareCtx.
 function onboardingCtx(){
   return { S, render, ld, sv, today, prefetchHolidays, flagImg, DEFAULT_WAGE, DEFAULT_TAX,
            currentUser: () => CURRENT_USER,
            openImportModal: (prefill, opts) => buildImportModal(wpShareCtx(), prefill, opts) };
 }
-// The Settings view's surface (Phase 8e). Storage/state + app helpers pass as
+// The Settings view's surface. Storage/state + app helpers pass as
 // stable refs; modal opens route through ctx openers (no modal imports in the
 // view). HOLIDAYS is the live app-owned map (mutated in place by the service).
 function settingsCtx(){
@@ -431,7 +368,7 @@ function settingsCtx(){
            openImport:    () => buildImportModal(wpShareCtx()),
            openAllHolidays: () => buildAllHolidaysModal({ t, holName, todayStr: today, holidays: HOLIDAYS, lang: S.lang }) };
 }
-// The header/stats surface (Phase 8f). Bound ONCE at boot via initHeader — its
+// The header/stats surface. Bound ONCE at boot via initHeader — its
 // sync helpers run outside the render cycle. All members are stable refs; the
 // reassigned CURRENT_USER passes as the currentUser() accessor.
 function headerCtx(){
@@ -543,50 +480,12 @@ function positionTabUnderline(animate){
   }
 }
 
-// The stats-hero count-up + glass-card tilt animations live in ui/motion.js
-// (Phase 8); attachListeners calls animateStatsHero / initCardTilt.
-
-// buildStats (the net-pay stats hero) lives in ui/header.js (Phase 8f).
-
-// ── Overview tab ─────────────────────────────────────────────────────────────
-// The full Overview surface (live dashboard render, first-run empty state,
-// count-up/entrance motion, both Chart.js renderers, and the tab's listeners)
-// lives in ui/views/overview.js since Phase 8d; its math lives in
-// domain/projections.js (Phase 8c). app.js supplies the surface via
-// overviewCtx() and calls buildOverview()/wireOverview() from the shell.
-
-// ── Settings tab → ui/views/settings.js (Phase 8e) ───────────────────────────
-// buildSettings + buildExportCardInline + getLang + getReportLanguageOptions and
-// the settings wiring (wireSettings) live in the view module; RULE_ICONS /
-// ruleRowsHTML moved to ui/icons.js. app.js supplies the surface via
-// settingsCtx() and calls buildSettings()/wireSettings() from the shell.
-
-// ── Modal ─────────────────────────────────────────────────────────────────────
-// Fully self-contained: no render() calls. All DOM updates happen in-place.
-// State is kept in a local `ms` object attached to the overlay element.
-
-// ── Wage modal (add / edit / delete) ─────────────────────────────────────────
-
-// ── Workplace modal (Settings → Edit workplace) ──────────────────────────────
-// A premium configuration panel: pinned glass header + footer with the shared
-// workplace form scrolling between them, over the app's standard blurred
-// backdrop. Settings underneath never re-renders or shifts while it's open.
-// Fixed-day users (every shift anchor is 'day') get the day-pattern form:
-// no night question, no night panel, day-relevant preview probes.
 function storedPatternIsFixedDay(){
   // Mirrors shiftFor()'s fixed-mode rule for the current week: the two most
   // recent anchors share a value → fixed pattern. A single anchor is rotation
   // parity (its value alone says nothing about the pattern).
   return recentAnchorsFixedDay(ld('wt4_shifts',{}), getMonday(today()));
 }
-
-
-// ── Reset all data modal ─────────────────────────────────────────────────────
-// Destructive action: clears all wt4_* localStorage keys (app data + settings),
-// optionally deletes the user's Firestore document, then reloads so onboarding
-// runs fresh. Requires typing a confirmation word to enable the final button.
-
-
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
 // _headerBound guards listeners on nodes that survive a tab switch (the header
@@ -645,10 +544,6 @@ function attachListeners(){
   // recreated). Calendar/Overview wire above; only Settings needs it here.
   if(S.tab==='settings') wireSettings(settingsCtx());
 }
-
-// attachHeaderListeners lives in ui/header.js (Phase 8f).
-
-// (Settings-tab content listeners live in ui/views/settings.js — wireSettings.)
 
 applyTheme();
 initHeader(headerCtx());   // bind the header module before the first render

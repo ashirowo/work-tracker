@@ -150,7 +150,6 @@ function _asmRefresh() {
 
   const data = _asmComputeData();
 
-  // Rows
   const body = ov.querySelector('.asm-body');
   const tableHdr = body.querySelector('.asm-table-hdr').outerHTML;
   body.innerHTML = tableHdr + _asmRowsHTML(data);
@@ -221,11 +220,9 @@ function _asmRefresh() {
     if (activeOpt) filterValEl.textContent = activeOpt.textContent.trim();
   }
 
-  // Count badge
   const badge = ov.querySelector('.asm-count-badge');
   if (badge) badge.textContent = `${t('dayCount', data.total)}`;
 
-  // Subtitle
   const sub = ov.querySelector('.asm-subtitle');
   if (sub) sub.textContent = t('allShiftsCount', data.total);
 
@@ -233,7 +230,6 @@ function _asmRefresh() {
   const sortValueEl = ov.querySelector('#asm-sort-value');
   if (sortValueEl) {
     const sortMenu = ov.querySelector('#asm-sort-menu');
-    // Find label for current sort
     const activeOpt = sortMenu?.querySelector(`[data-sort="${_allShiftsSort}"]`);
     if (activeOpt) sortValueEl.textContent = activeOpt.textContent.trim();
     // Toggle active class + checkmark
@@ -348,10 +344,7 @@ export function buildAllShiftsModal(ctx, restore) {
 
   document.body.appendChild(ov);
 
-  // Backdrop
   ov.addEventListener('click', e => { if (e.target.id === 'all-shifts-ov') closeAllShiftsModal(); });
-
-  // Close button
   ov.querySelector('#asm-close').addEventListener('click', closeAllShiftsModal);
 
   // Sort — custom dropdown

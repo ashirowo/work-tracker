@@ -902,7 +902,6 @@ export function wireSettings(ctx){
     swScroll.addEventListener('scroll',checkFull,{passive:true});
   }
 
-  // Show wage add modal
   const showWageAddBtn=document.getElementById('show-wage-add-form');
   if(showWageAddBtn)showWageAddBtn.addEventListener('click',()=>{
     S.wageModal={mode:'add'};render();
@@ -1024,7 +1023,6 @@ export function wireSettings(ctx){
     });
   })();
 
-  // Tax rate save
   // Animate tax ring arc smoothly given a 0-45 value
   function animateRing(pct,idBase){
     const arc=document.getElementById(idBase+'-arc');
@@ -1053,11 +1051,9 @@ export function wireSettings(ctx){
   function applyTaxRate(v){
     v=Math.min(45,Math.max(0,parseFloat(v.toFixed(2))));
     previewTaxRate(v);
-    // Persist
     S.taxRate=v;sv('wt4_tax_rate',v);scheduleSync();
   }
 
-  // Save button — reads input and applies
   const saveTaxBtn=document.getElementById('save-tax-rate');
   if(saveTaxBtn)saveTaxBtn.addEventListener('click',()=>{
     const inp=document.getElementById('tax-rate-in');
@@ -1223,7 +1219,6 @@ export function wireSettings(ctx){
     requestAnimationFrame(refreshInsPreview);
   }
 
-  // Save insurance rates
   const saveInsBtn=document.getElementById('save-insurance');
   if(saveInsBtn)saveInsBtn.addEventListener('click',()=>{
     const clamp=v=>Math.min(30,Math.max(0,parseFloat(v)||0));
@@ -1272,7 +1267,6 @@ export function wireSettings(ctx){
       b.classList.toggle('s3-pill--active', parseInt(b.dataset.targetPreset)===v);
     });
   }
-  // Target hours save
   const saveTargetBtn=document.getElementById('save-target-hrs');
   if(saveTargetBtn)saveTargetBtn.addEventListener('click',()=>{
     const inp=document.getElementById('target-hrs-in');
@@ -1388,7 +1382,6 @@ export function wireSettings(ctx){
     setTimeout(render,HOL_TOGGLE_MS);               // refresh stats after the slide
   });
 
-  // Danger Zone — open reset confirmation modal
   const openResetBtn=document.getElementById('open-reset-modal');
   if(openResetBtn)openResetBtn.addEventListener('click',()=>{
     S.resetModal=true;render();

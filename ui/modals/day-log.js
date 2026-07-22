@@ -224,7 +224,6 @@ export function buildModal(ctx){
 
   // ── Wire events — all update modal DOM only, never call render() ───────────
 
-  // Backdrop click
   ov.addEventListener('click',e=>{if(e.target.id==='modal-ov')closeModal();});
   document.getElementById('m-cancel').addEventListener('click',()=>closeModal());
   document.getElementById('m-cancel-x')?.addEventListener('click',()=>closeModal());
@@ -237,7 +236,6 @@ export function buildModal(ctx){
     }
   });
 
-  // Delete
   const delBtn=document.getElementById('m-del');
   if(delBtn) delBtn.addEventListener('click',()=>{
     const l=getLogs();
@@ -333,7 +331,6 @@ export function buildModal(ctx){
     });
   }
 
-  // Calculation-details disclosure
   const discBtn=document.getElementById('wm2-disc-btn');
   if(discBtn) discBtn.addEventListener('click',()=>{
     ms.breakdownOpen=!ms.breakdownOpen;
@@ -341,7 +338,6 @@ export function buildModal(ctx){
     discBtn.setAttribute('aria-expanded',String(ms.breakdownOpen));
   });
 
-  // Save
   const saveBtn=document.getElementById('m-save');
   if(saveBtn) saveBtn.addEventListener('click',()=>{
     const sh=ms.shift;
@@ -371,10 +367,6 @@ export function buildModal(ctx){
     saveLogs(logs);closeModal(true);
   });
 }
-
-
-
-// animateModalClose moved to ui/dom.js (Phase 6).
 
 function closeModal(changed){
   const ret = S.modal?._returnToAllShifts;

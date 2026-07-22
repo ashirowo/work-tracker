@@ -133,7 +133,6 @@ export function buildCal(ctx){
     if(tod)cls+=' today';
     if(isNight&&(workedLog||autoSun||autoHol))cls+=' night-shift';
     if(isDouble&&(workedLog||autoSun||autoHol))cls+=' double-shift';
-    // Shift icon
     let shiftIcon='';
     if(workedLog){
       if(dayShift==='double'){ shiftIcon=`<div class="dc-shift dc-shift--double"><i class="fa-solid fa-rotate"></i></div>`; hasDoubleThisMonth=true; }
@@ -144,7 +143,6 @@ export function buildCal(ctx){
     } else if(!future&&!hol&&dw!==0){
       shiftIcon=`<div class="dc-shift dc-shift--off">·</div>`;
     }
-    // Holiday dot in top-right corner
     const holDot=hol?`<div class="dc-hol-dot"></div>`:'';
     const todayBadge=tod?`<div class="dc-today-badge">${t('todayBadge')}</div>`:'';
     // Effective hours pill — shown on logged/auto-credited days (not rest or sunday-only)

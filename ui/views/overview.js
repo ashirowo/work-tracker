@@ -91,7 +91,6 @@ export function buildOverview(ctx){
   }).join(''):`<div class="rs-empty">${t('ovNoData')}</div>`;
 
 
-  // Mini ring SVG helper
   function miniRing(pct,color='#6c8eff'){
     const r=18,circ=2*Math.PI*r,dash=Math.round((Math.min(100,pct)/100)*circ);
     return`<svg viewBox="0 0 44 44" width="44" height="44" style="flex-shrink:0;transform:rotate(-90deg)">

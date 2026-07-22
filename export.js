@@ -127,7 +127,6 @@ export function monthsWithData() {
   const logDates = Object.keys(logs).sort();
   const earliestLogDate = logDates[0] || null;
 
-  // From logs
   logDates.forEach(ds => {
     if (ds <= today) set.add(ds.slice(0, 7));
   });

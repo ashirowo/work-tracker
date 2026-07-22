@@ -16,6 +16,11 @@ import { wizT } from '../domain/wizard-core.js';
 import { SHM_IC_CHECK } from './icons.js';
 import { animateModalClose } from './dom.js';
 
+// The XXXX-XXXX code mask. Typing inserts the hyphen after the 4th char; pasting
+// accepts JDAYJ9KW, JDAY-J9KW, or a whole share link (everything after 'join=');
+// Backspace/Delete hop over the auto-hyphen. onChange(complete, changed) fires
+// after every edit — `complete` gates the lookup button, `changed` lets the
+// caller disarm a stale preview. Enter calls onEnter.
 export function wireShareCodeInput(inp,{onChange,onEnter}){
   const sig=(v,pos)=>v.slice(0,pos).replace(/[^0-9A-Za-z]/g,'').length;
   let last=null;

@@ -149,13 +149,9 @@ function wageFor(dateStr){ return wageForIn(getWages(), dateStr, DEFAULT_WAGE); 
 // Current wage (for display in settings / modal default)
 function getWage(){ return wageFor(today()); }
 function isHol(s){return!!HOLIDAYS[s];}
-// The API returns the Korean local name directly (localName field).
-// We use that for all languages since it's already in Korean from the government API.
-// For English/Indonesian we use the English name (name field) which we store as the value.
-// Since date.nager.at gives localName (Korean) as the value, we store both.
-// Implementation: we store localName as primary. To get English, we keep a parallel en map.
+// Two parallel maps from the gov API: HOL_KO_DYN holds the Korean name
+// (localName — the source of truth for translation), HOLIDAYS the English name.
 function holName(s){
-  // Always look up the Korean name first (source of truth from the API)
   const ko = HOL_KO_DYN[s];
   if(!ko) return HOLIDAYS[s] || s; // legacy fallback for pre-fetched data
   if(S.lang === 'ko') return ko;

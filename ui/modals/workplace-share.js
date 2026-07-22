@@ -90,7 +90,6 @@ export function buildWorkplaceModal(ctx){
 // mutate profile data themselves. Import commits via the SAME write the
 // wizard uses (sv('wt4_profile') + scheduleSync) — the engine sees nothing new.
 // ═════════════════════════════════════════════════════════════════════════════
-// escHTML moved to ui/dom.js (Phase 6).
 const SHARE_LOCALE={en:'en-US',ko:'ko-KR',id:'id-ID',th:'th-TH',ru:'ru-RU',zh:'zh-CN',fr:'fr-FR',ne:'ne-NP'};
 const shareFmtDate=ms=>new Date(ms).toLocaleDateString(SHARE_LOCALE[S.lang]||'en-US',{year:'numeric',month:'short',day:'numeric'});
 // The share link. The code rides the HASH so the SW-cached shell at '/' serves
@@ -109,19 +108,6 @@ async function copyToClipboard(text,toast){
   }
   if(toast) showExportToast(toast);   // omitted when the button gives inline feedback
 }
-
-// ── Shared share-code entry (Settings import modal ⟷ onboarding join) ────────
-// ONE implementation of the code mask, the lookup/error mapping, and the
-// stage-state markup, so the two entry points cannot drift apart.
-// SHM_IC_CHECK / SHM_IC_SEARCH moved to ui/icons.js (Phase 6).
-
-// The XXXX-XXXX mask. Typing inserts the hyphen after the 4th character;
-// pasting accepts JDAYJ9KW, JDAY-J9KW, or a whole share link (everything
-// after 'join=' — the field itself only ever holds a code); Backspace/Delete
-// hop over the auto-hyphen instead of fighting it. After every edit
-// onChange(complete, changed) fires — `complete` gates the lookup button,
-// `changed` lets the caller disarm a stale preview. Enter calls onEnter.
-// Share-code entry widgets moved to ui/share-widgets.js (Phase 6).
 
 // ── Share workplace ───────────────────────────────────────────────────────────
 export function buildShareModal(ctx){

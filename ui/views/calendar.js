@@ -173,7 +173,7 @@ export function buildCal(ctx){
   const todayBtn=isCurrentMonth?'':
     `<button class="cal-nav cal-nav--today" id="cal-today">${t('todayBadge')}</button>`;
 
-  return`<div class="card">
+  return`<div class="card cal-card">
     <div class="cal-hdr">
       <div class="cal-hdr-left">
         <button class="cal-nav" id="cal-prev">‹</button>

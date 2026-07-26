@@ -108,6 +108,10 @@
   /* Minimum comfortable touch target (Apple HIG 44pt). Applied through
      invisible ::after hit areas so small controls stay visually small. */
   --tap-min:44px;
+
+  /* Height of the fixed mobile bottom nav, excluding the safe-area inset.
+     .app reserves this so content and the footer clear the bar. */
+  --nav-h:56px;
 }
 
 :root[data-theme="dark"]{
@@ -150,6 +154,7 @@
   --tab-active-bg:rgba(255,255,255,0.07);
   --input-bg:rgba(0,0,0,0.32);
   --card-border-top:rgba(255,255,255,0.14);
+  --bg-nav:rgba(10,12,22,0.86);
 
   /* Elevation system — layered shadows for premium depth */
   --shadow-sm:0 1px 2px rgba(0,0,0,0.5),0 4px 12px -4px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.04);
@@ -203,6 +208,7 @@
   --shadow-glow:0 0 0 1px rgba(73,119,253,0.07),0 6px 16px -6px rgba(73,119,253,0.10);
   --ring-glow:drop-shadow(0 0 6px rgba(73,119,253,0.25));
   --card-border-top:rgba(255,255,255,0.9);
+  --bg-nav:rgba(248,249,255,0.9);
 
   /* folded in from the duplicate :root[data-theme="light"] block */
   --ring-track:rgba(99,115,177,0.12);
@@ -2382,6 +2388,11 @@ body.modal-open{overflow:hidden;touch-action:none;}
   -webkit-box-orient:vertical;
   overflow:hidden;
   line-height:1.25;
+  /* Reserve both lines even when the label only needs one. "HOURS WORKED" and
+     "TARGET HOURS" wrap while "REMAINING" doesn't, which pushed their values
+     onto a lower baseline than their neighbours' and made the row read as
+     misaligned. Holding two lines' height puts every value on one baseline. */
+  min-height:calc(var(--fs-50) * 1.25 * 2);
 }
 .ov-breakdown-stat-val{
   font-family:'Space Grotesk','Inter',system-ui,sans-serif;
@@ -9313,4 +9324,60 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 @media (prefers-reduced-motion:reduce){
   .modal{animation:none!important;}
   .modal.sheet-settling{transition:none;}
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   30. BOTTOM NAVIGATION (mobile)
+
+   The tab row was `position:relative`, inline between the hero and the view —
+   so it scrolled away with the content. Settings is ~4700px (5.8 screens) and
+   Overview ~1900px, which meant the only way to switch tabs from the bottom of
+   either was to scroll all the way back up.
+
+   Below 540px it becomes a fixed bottom bar. Same markup, same labels, same
+   sliding gradient indicator — only the position and the surface change. The
+   indicator moves from the row's bottom edge to its top edge, which is where
+   it reads as "current tab" on a bottom-anchored bar.
+
+   z-index 60 sits below the modal overlay (100) so sheets still cover it, and
+   below the offline banner (200).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width:540px){
+  .tab-row{
+    position:fixed;
+    left:0;
+    right:0;
+    bottom:0;
+    z-index:60;
+    margin-bottom:0;
+    gap:var(--space-1);
+    padding:var(--space-1) var(--space-2) calc(var(--space-1) + env(safe-area-inset-bottom));
+    background:var(--bg-nav);
+    border-bottom:none;
+    border-top:1px solid var(--border);
+    backdrop-filter:blur(20px) saturate(140%);
+    -webkit-backdrop-filter:blur(20px) saturate(140%);
+    box-shadow:0 -4px 20px rgba(0,0,0,0.18);
+  }
+  .tab{
+    padding:var(--space-3) var(--space-1);
+    line-height:1.2;
+  }
+  /* Indicator to the top edge of the bar. */
+  .tab-underline{
+    bottom:auto;
+    top:0;
+  }
+
+  /* Reserve the bar's height so the footer and the last card clear it. */
+  .app{
+    padding-bottom:calc(var(--nav-h) + env(safe-area-inset-bottom) + var(--space-5));
+  }
+
+  /* A sheet covers the nav, so the two must not both claim the safe area. */
+  body.modal-open .tab-row{
+    pointer-events:none;
+  }
 }

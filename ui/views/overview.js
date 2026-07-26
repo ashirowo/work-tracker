@@ -1056,14 +1056,25 @@ async function renderMonthBarChart(){
   // so they never overlap.
   const mLabel=t('mn')[curMo].slice(0,3);
   const n=bars.length;
-  const MAX_LABELS=6;               // most labels we ever show at once
-  const LABEL_ALL_THRESHOLD=8;      // at/under this many bars, label every one
+
+  // How many labels actually FIT, rather than a fixed count. "Jul 21" at 10px
+  // is ~38px wide; 48px leaves a gap so neighbours never touch.
+  const LABEL_W=48;
+  const chartW=canvas.offsetWidth||320;
+  const maxLabels=Math.max(2,Math.floor(chartW/LABEL_W));
+
   let showAt;
-  if(n<=LABEL_ALL_THRESHOLD){
+  if(n<=maxLabels){
     showAt=()=>true;
   }else{
-    const step=Math.ceil((n-1)/(MAX_LABELS-1)); // gap between labelled bars
-    showAt=(i)=> i===0 || i===n-1 || i%step===0;
+    // Evenly spaced positions spanning first..last inclusive. The previous
+    // version combined `i%step===0` with an always-on last label, so whenever
+    // n-1 fell just past a step boundary the final two labels landed adjacent
+    // and overprinted (seen as "Jul 21Jul 23" with 19 bars: step 4 put labels
+    // at 16 and 18). Choosing the indices directly can't produce that.
+    const idx=new Set();
+    for(let k=0;k<maxLabels;k++) idx.add(Math.round(k*(n-1)/(maxLabels-1)));
+    showAt=(i)=>idx.has(i);
   }
   const allLabels=[], allValues=[];
   bars.forEach((b,i)=>{

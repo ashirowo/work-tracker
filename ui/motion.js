@@ -317,3 +317,107 @@ export function initCardTilt(){
     });
   });
 }
+
+// ── Bottom-sheet drag gesture (mobile) ───────────────────────────────────────
+// Below 540px the modals render as bottom sheets (see style.css §29). This adds
+// the matching physical behaviour: drag the sheet down with a finger, release to
+// either dismiss it or let it spring back.
+//
+// The hard part of a sheet gesture is not fighting the scroll container inside
+// it. A drag is only allowed to begin when the scrollable body is already at the
+// top; otherwise the touch belongs to the scroller and we stay out of its way.
+// Once a drag owns the gesture we preventDefault so the page doesn't rubber-band
+// underneath it.
+//
+// Dismissal follows the usual two-signal rule — either the sheet was dragged
+// past a quarter of its height, or it was flicked hard enough (velocity) that
+// distance stops mattering. Upward drags are resisted rather than blocked, so
+// the sheet feels attached to the finger instead of hitting a wall.
+//
+// Idempotent: re-attaching to the same panel is a no-op.
+export function attachSheetGestures(overlay, onDismiss){
+  if(!overlay) return;
+  const panel = overlay.querySelector('.modal');
+  if(!panel || panel.dataset.sheetBound) return;
+  if(!window.matchMedia || !window.matchMedia('(max-width: 540px)').matches) return;
+  panel.dataset.sheetBound = '1';
+
+  // The element that scrolls inside the sheet, if any.
+  const scroller = panel.querySelector('.wm-scroll, .asm-scroll, .sexp-bs-body') || panel;
+
+  const DISMISS_RATIO = 0.25;   // of panel height
+  const FLICK_V       = 0.55;   // px/ms downward
+
+  let startY = 0, lastY = 0, lastT = 0, dy = 0, vel = 0, dragging = false, decided = false;
+
+  const setY = y => { panel.style.transform = y ? `translateY(${y}px)` : ''; };
+
+  panel.addEventListener('touchstart', e => {
+    if(e.touches.length !== 1) return;
+    // Only claim the gesture when the body is scrolled to the top; otherwise
+    // this touch is a scroll, not a sheet drag.
+    if(scroller.scrollTop > 0) return;
+    startY = lastY = e.touches[0].clientY;
+    lastT  = e.timeStamp;
+    dy = 0; vel = 0; dragging = true; decided = false;
+    panel.classList.remove('sheet-settling');
+  }, { passive: true });
+
+  panel.addEventListener('touchmove', e => {
+    if(!dragging) return;
+    const y = e.touches[0].clientY;
+    const raw = y - startY;
+
+    // First meaningful movement decides who owns the gesture. An upward drag,
+    // or a downward one that started mid-scroll, is handed back to the scroller.
+    if(!decided){
+      if(Math.abs(raw) < 4) return;
+      decided = true;
+      if(raw < 0 || scroller.scrollTop > 0){ dragging = false; return; }
+      panel.classList.add('sheet-dragging');
+    }
+
+    // Resist upward travel instead of clamping to 0 — the sheet stays attached
+    // to the finger, it just doesn't want to go that way.
+    dy = raw < 0 ? raw / 3 : raw;
+    // Instantaneous velocity, smoothed. dt is floored at one frame and the
+    // result clamped: touch streams occasionally deliver two samples in the
+    // same millisecond, and dividing by that near-zero gap yields a huge
+    // spike that reads as a flick and dismisses a sheet the user was barely
+    // nudging.
+    const dt = Math.max(e.timeStamp - lastT, 8);
+    const inst = Math.max(-3, Math.min(3, (y - lastY) / dt));
+    vel = vel * 0.4 + inst * 0.6;
+    lastY = y; lastT = e.timeStamp;
+    setY(dy);
+    if(e.cancelable) e.preventDefault();   // stop the page rubber-banding
+  }, { passive: false });
+
+  const end = () => {
+    if(!dragging){ return; }
+    dragging = false;
+    panel.classList.remove('sheet-dragging');
+    if(!decided || dy <= 0){ setY(0); vel = 0; return; }
+
+    const past = dy > panel.getBoundingClientRect().height * DISMISS_RATIO;
+    const flicked = vel > FLICK_V;
+    vel = 0;
+
+    if(past || flicked){
+      // Hand off to the normal close path so focus restore and cleanup still
+      // run; the CSS slide-out covers the remaining travel.
+      panel.style.transform = '';
+      onDismiss();
+    }else{
+      panel.classList.add('sheet-settling');
+      setY(0);
+      panel.addEventListener('transitionend', function h(){
+        panel.classList.remove('sheet-settling');
+        panel.removeEventListener('transitionend', h);
+      });
+    }
+  };
+
+  panel.addEventListener('touchend', end, { passive: true });
+  panel.addEventListener('touchcancel', end, { passive: true });
+}

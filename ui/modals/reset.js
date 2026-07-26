@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { animateModalClose } from '../dom.js';
+import { attachSheetGestures } from '../motion.js';
 import { signOutUser, deleteCloudData } from '../../firebase.js';
 
 export function buildResetModal(ctx){
@@ -113,6 +114,8 @@ export function buildResetModal(ctx){
 
   document.querySelectorAll('#reset-modal-ov').forEach(el => el.remove());
   document.body.appendChild(ov);
+  // Mobile: drag the sheet down to dismiss (no-op above 540px).
+  attachSheetGestures(ov, () => closeResetModal());
 
   ov.addEventListener('click',e=>{if(e.target.id==='reset-modal-ov')closeResetModal();});
   document.getElementById('reset-cancel').addEventListener('click',()=>closeResetModal());

@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { animateModalClose } from '../dom.js';
+import { attachSheetGestures } from '../motion.js';
 
 export function buildWageModal(ctx){
   const { S, t, render, getWages, saveWages, getWage, today, showSuccess } = ctx;
@@ -108,6 +109,8 @@ export function buildWageModal(ctx){
 
   document.querySelectorAll('#wage-modal-ov').forEach(el=>el.remove());
   document.body.appendChild(ov);
+  // Mobile: drag the sheet down to dismiss (no-op above 540px).
+  attachSheetGestures(ov, () => closeWageModal());
   ov.addEventListener('click',e=>{if(e.target.id==='wage-modal-ov')closeWageModal();});
   document.getElementById('wm-cancel').addEventListener('click',()=>closeWageModal());
   document.getElementById('wm-cancel-2')?.addEventListener('click',()=>closeWageModal());

@@ -9220,3 +9220,103 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   border-top-color:rgba(255,255,255,0.9);
   box-shadow:inset 0 1px 0 rgba(255,255,255,0.8);
 }
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   29. BOTTOM SHEETS (mobile)
+
+   Every dialog was a vertically centred panel — a desktop pattern. On a phone
+   it floats with no anchor, leaves dead strips top and bottom, and puts the
+   primary action mid-screen, away from the thumb.
+
+   Below 540px the same panels become bottom sheets: full width, anchored to
+   the bottom edge, rounded on the top corners only, with a grab handle and a
+   slide-up entrance. Above 540px nothing changes — the centred dialog is the
+   right shape for a wide viewport, so it stays.
+
+   No modal markup changed: this rides on .modal-overlay / .modal, which every
+   dialog already uses.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width:540px){
+  .modal-overlay{
+    align-items:flex-end;
+    justify-content:stretch;
+    padding:0;
+  }
+
+  .modal{
+    position:relative;
+    width:100%;
+    max-width:none;
+    /* dvh, not vh: on mobile Safari vh includes the collapsing URL bar, which
+       makes a bottom-anchored sheet sit under it. */
+    max-height:92dvh;
+    border-radius:var(--radius-2xl) var(--radius-2xl) 0 0;
+    border-bottom:none;
+    border-left:none;
+    border-right:none;
+    /* Clear the home indicator on gesture-nav devices. */
+    padding-bottom:calc(var(--space-4) + env(safe-area-inset-bottom));
+    box-shadow:0 -8px 40px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.07);
+    animation:sheet-in var(--dur-base) var(--ease-out) both;
+    /* Driven by the drag gesture; see attachSheetGestures in ui/motion.js. */
+    touch-action:pan-y;
+  }
+
+  /* Grab handle. Absolutely positioned so it stays put in panels whose body
+     scrolls (.wm-scroll) rather than scrolling away with the content. */
+  .modal::before{
+    content:"";
+    position:absolute;
+    top:var(--space-2);
+    left:50%;
+    transform:translateX(-50%);
+    width:36px;
+    height:4px;
+    border-radius:var(--radius-full);
+    background:var(--border-strong);
+    z-index:4;
+    pointer-events:none;
+  }
+  /* Make room for the handle above whatever the panel puts first. */
+  .modal > .wm-scroll,
+  .modal > .asm-scroll,
+  .modal > .sexp-bs-body{
+    padding-top:var(--space-5);
+  }
+  .modal:not(:has(> .wm-scroll)):not(:has(> .asm-scroll)):not(:has(> .sexp-bs-body)){
+    padding-top:var(--space-5);
+  }
+
+  .modal-overlay.closing .modal{
+    animation:sheet-out var(--dur-fast) var(--ease-standard) both;
+  }
+
+  /* While the finger is on the sheet, the transform is written directly and
+     must not be fought by the entrance animation or a transition. */
+  .modal.sheet-dragging{
+    animation:none;
+    transition:none;
+  }
+  /* Release without dismissal — spring back to rest. */
+  .modal.sheet-settling{
+    animation:none;
+    transition:transform var(--dur-base) var(--ease-spring);
+  }
+}
+
+@keyframes sheet-in{
+  from{transform:translateY(100%);}
+  to{transform:translateY(0);}
+}
+@keyframes sheet-out{
+  from{transform:translateY(0);}
+  to{transform:translateY(100%);}
+}
+
+/* Reduced motion: keep the sheet's position, drop the travel. */
+@media (prefers-reduced-motion:reduce){
+  .modal{animation:none!important;}
+  .modal.sheet-settling{transition:none;}
+}

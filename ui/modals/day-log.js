@@ -11,6 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { animateModalClose } from '../dom.js';
+import { attachSheetGestures } from '../motion.js';
 import { dowOf, pd } from '../../core/dates.js';
 
 // Bound from ctx on each open:
@@ -225,6 +226,8 @@ export function buildModal(ctx){
   // ── Wire events — all update modal DOM only, never call render() ───────────
 
   ov.addEventListener('click',e=>{if(e.target.id==='modal-ov')closeModal();});
+  // Mobile: drag the sheet down to dismiss (no-op above 540px).
+  attachSheetGestures(ov, closeModal);
   document.getElementById('m-cancel').addEventListener('click',()=>closeModal());
   document.getElementById('m-cancel-x')?.addEventListener('click',()=>closeModal());
 

@@ -9124,11 +9124,12 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 
    The grid was nested three paddings deep — #app 12 → .card 22 → .cal-grid 8
    — which ate 84px (22%) of a 375px screen and squeezed day cells to 38x38.
-   That was below the touch minimum and forced the effective-hours pill to be
-   hidden below 540px, so mobile lost the most useful number on the calendar.
+   That was below the touch minimum.
 
    Trimming only the calendar card (other cards keep their generous 22px)
-   returns roughly 28px of width: cells land at ~44px and the pill fits again.
+   returns roughly 28px of width, which goes into the tap target: cells land at
+   ~45px square instead of 38px. The effective-hours pill stays hidden below
+   540px as before — the extra room buys a comfortable target, not more content.
    ══════════════════════════════════════════════════════════════════════════ */
 
 @media (max-width:540px){
@@ -9149,25 +9150,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
     padding-right:var(--space-1);
   }
 
-  /* With the width reclaimed the pill is legible again — bring it back. */
-  .dc-eff-pill{
-    display:block;
-    font-size:var(--fs-50);
-    padding:0 var(--space-1);
-    line-height:1.35;
-    margin-top:1px;
-  }
-  /* `.dc` is square via aspect-ratio:1. Once the pill is back the content is
-     ~44px tall, and a square cell would have to grow its width to match —
-     overflowing the 7-column track. Release the ratio on mobile and let the
-     cell be 1fr wide by a fixed height instead: 45x52 clears the touch
-     minimum on both axes without breaking the grid. */
-  .dc{
-    aspect-ratio:auto;
-    min-height:52px;
-    gap:0;
-    padding:var(--space-0h) 0;
-  }
+  /* The effective-hours pill stays hidden on mobile (see the display:none in
+     the calendar section). The reclaimed width goes entirely into the tap
+     target instead: .dc keeps its aspect-ratio:1, and a wider 1fr column now
+     makes the square ~45px rather than 38px — clearing the touch minimum on
+     both axes without changing the cell's shape. */
 }
 
 

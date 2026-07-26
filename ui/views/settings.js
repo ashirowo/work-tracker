@@ -181,7 +181,7 @@ export function buildSettings(ctx){
     <!-- INCOME TAX RATE -->
     <div class="s3-card ded-card${dedMode==='tax'?' ded-card--active':' ded-card--inactive'}" id="ded-card-tax">
       <div class="s3-eyebrow">
-        <div class="s3-icon-badge s3-icon-badge--blue s3-icon-badge--lg" style="font-size:15px;font-weight:800;color:#5ba8ff;">%</div>
+        <div class="s3-icon-badge s3-icon-badge--blue s3-icon-badge--lg" style="font-size:var(--fs-500);font-weight:var(--fw-black);color:var(--info);">%</div>
         <span>${t('deductionsLabel').toUpperCase()}</span>
         <button class="ded-pick${dedMode==='tax'?' ded-pick--on':''}" id="ded-pick-tax" data-ded-mode="tax"
           role="switch" aria-checked="${dedMode==='tax'}" aria-label="${t('deductionModeTax')}">

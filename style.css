@@ -173,17 +173,20 @@
   --text-muted:#5d6996;      /* was #6370a0 (4.31:1 — just failed AA). Now 4.78:1 */
   --text-hint:#636b89;       /* was #b0b8d8 (1.96:1 — illegible). Now 5.26:1 on
                                 white / 4.70:1 on the page tint. */
-  --primary:#4977fd;
-  --primary-2:#8b5cf6;
-  --primary-glow:rgba(73,119,253,0.15);
-  --primary-bg:rgba(73,119,253,0.08);
-  --grad-primary:linear-gradient(135deg,#5b86ff 0%,#4977fd 45%,#8b5cf6 100%);
-  --grad-primary-soft:linear-gradient(135deg,rgba(73,119,253,0.10) 0%,rgba(139,92,246,0.07) 100%);
-  --success:#18a958;
-  --success-bg:rgba(24,169,88,0.08);
-  --success-glow:rgba(24,169,88,0.15);
-  --danger:#e8294a;
-  --danger-bg:rgba(232,41,74,0.07);
+  --primary:#2f57c9;        /* was #4977fd (3.93:1 on white). Now 6.31:1 on white,
+                               and still clears AA where it sits on --primary-bg. */
+  --primary-2:#7c4fe0;      /* darkened with --primary so gradients stay coherent */
+  --primary-glow:rgba(47,87,201,0.15);
+  --primary-bg:rgba(47,87,201,0.07);
+  --grad-primary:linear-gradient(135deg,#4a72e8 0%,#3560d8 45%,#7c4fe0 100%);
+  /* White button labels sat at 3.33-4.23:1 on the old gradient. Under the
+     centred label this now measures 5.50:1. */
+  --grad-primary-soft:linear-gradient(135deg,rgba(53,96,216,0.10) 0%,rgba(124,79,224,0.07) 100%);
+  --success:#0f7a3f;        /* was #18a958 (3.06:1) — carries every pay figure. Now 5.42:1 */
+  --success-bg:rgba(15,122,63,0.08);
+  --success-glow:rgba(15,122,63,0.15);
+  --danger:#d81b3c;         /* was #e8294a (4.33:1 — marginal). Now 5.07:1 */
+  --danger-bg:rgba(216,27,60,0.07);
   --warning:#ffc94d;
   --warning-bg:rgba(255,201,77,0.08);
   --info:#2060e8;
@@ -192,7 +195,7 @@
   --night-text:#6040c8;
   --night-bg:rgba(96,64,200,0.07);
   --night-border:rgba(96,64,200,0.25);
-  --day-text:#d98e00;
+  --day-text:#9c6200;       /* was #d98e00 (2.69:1). Now 5.05:1 on white, 4.52:1 on page */
   --day-bg:rgba(225,155,10,0.10);
   --day-border:rgba(225,155,10,0.32);
   --tab-active-bg:#ffffff;
@@ -558,7 +561,7 @@ body.modal-open{overflow:hidden;touch-action:none;}
 .modal-badge svg{filter:drop-shadow(0 0 6px rgba(124,147,255,0.45));width:20px;height:20px;}
 :root[data-theme="light"] .wm-header-badge,
 :root[data-theme="light"] .modal-badge{
-  color:#4977fd;
+  color:#3560d8;
   background:
     radial-gradient(120% 120% at 50% 30%, rgba(73,119,253,0.16) 0%, rgba(139,92,246,0.10) 100%),
     rgba(73,119,253,0.05);
@@ -590,7 +593,7 @@ body.modal-open{overflow:hidden;touch-action:none;}
 }
 .wm-header-badge--danger svg{filter:drop-shadow(0 0 5px rgba(255,107,133,0.4));}
 :root[data-theme="light"] .wm-header-badge--danger{
-  color:#e8294a;
+  color:#d81b3c;
   background:
     radial-gradient(120% 120% at 50% 35%, rgba(232,41,74,0.12) 0%, rgba(232,41,74,0.06) 100%),
     rgba(232,41,74,0.04);
@@ -1903,7 +1906,7 @@ body.modal-open{overflow:hidden;touch-action:none;}
 .dc-shift--night{ color:rgba(167,139,250,0.9); }
 .dc-shift--double{ color:#00d2be;opacity:0.9; }
 .dc-shift--auto{ color:rgba(91,168,255,0.65);font-size:var(--fs-50); }
-.dc-shift--off{ color:var(--text-hint);font-size:var(--fs-50);opacity:0.3; }
+.dc-shift--off{ color:var(--text-hint);font-size:var(--fs-50);opacity:0.6; }
 
 /* ── Holiday dot indicator — top-right corner, 5px ── */
 .dc-hol-dot{
@@ -2104,17 +2107,17 @@ body.modal-open{overflow:hidden;touch-action:none;}
   box-shadow:0 0 3px rgba(232,41,74,0.25);
 }
 /* Shift icon colors for light */
-[data-theme="light"] .dc-shift--day{ color:#d98e00; }
+[data-theme="light"] .dc-shift--day{ color:#9c6200; }
 [data-theme="light"] .dc-shift--night{ color:rgba(96,64,200,0.80); }
 [data-theme="light"] .dc-shift--double{ color:rgba(0,150,135,0.85); }
 [data-theme="light"] .cal-leg-item--double{ color:rgba(0,150,135,0.85); }
 [data-theme="light"] .dc-shift--auto{ color:rgba(32,96,232,0.60); }
 [data-theme="light"] .cal-leg-item--auto{ color:rgba(32,96,232,0.85); }
-[data-theme="light"] .dc-shift--off{ color:rgba(99,115,177,0.30); }
+[data-theme="light"] .dc-shift--off{ color:rgba(88,102,158,0.62); }
 /* Eff-hour pill — light */
 [data-theme="light"] .dc-eff-pill--day{
   background:rgba(225,155,10,0.12);
-  color:#d98e00;
+  color:#9c6200;
   border-color:rgba(225,155,10,0.24);
 }
 [data-theme="light"] .dc-eff-pill--night{
@@ -2162,7 +2165,7 @@ body.modal-open{overflow:hidden;touch-action:none;}
 [data-theme="light"] .hchip-num{
   background:rgba(232,41,74,0.09);
   border-color:rgba(232,41,74,0.20);
-  color:#e8294a;
+  color:#d81b3c;
 }
 
 [data-theme="light"] .cal-month{
@@ -3222,7 +3225,7 @@ body.modal-open{overflow:hidden;touch-action:none;}
   text-shadow:0 0 18px rgba(255,201,77,0.25);
 }
 [data-theme="light"] .ov-stat4-val--gold{
-  color:#d98e00;
+  color:#9c6200;
   text-shadow:0 0 18px rgba(225,168,0,0.18);
 }
 .ov-stat4-val--teal{
@@ -3319,7 +3322,7 @@ body.modal-open{overflow:hidden;touch-action:none;}
 .ov-view-all-link:hover{ opacity:0.75; }
 .ov-view-all-link:hover svg{ transform:translateX(2px); opacity:1; }
 [data-theme="light"] .ov-view-all-link{
-  background:linear-gradient(90deg,#4977fd,#8b5cf6);
+  background:linear-gradient(90deg,#3560d8,#7c4fe0);
   -webkit-background-clip:text;
   background-clip:text;
 }
@@ -3674,7 +3677,7 @@ body.modal-open{overflow:hidden;touch-action:none;}
 .sexp-bs-preset-label{font-size:var(--fs-400);font-weight:600;color:var(--text);}
 .sexp-bs-preset-sub{font-size:var(--fs-200);color:var(--text-muted);}
 .sexp-bs-preset-chevron{flex-shrink:0;color:var(--text-hint);}
-.sexp-bs-preset--active .sexp-bs-preset-label{color:#4977fd;}
+.sexp-bs-preset--active .sexp-bs-preset-label{color:#3560d8;}
 [data-theme="light"] .sexp-bs-preset--active .sexp-bs-preset-label{color:#3560e8;}
 
 /* ── Custom range view ── */
@@ -6469,8 +6472,11 @@ tr.wage-row--editing td{background:var(--primary-glow);}
   flex-shrink:0;
 }
 .s3-icon-badge--purple{background:rgba(138,100,255,0.2);color:#a78bfa;}
+[data-theme="light"] .s3-icon-badge--purple{background:rgba(96,64,200,0.12);color:#5733b8;}
 .s3-icon-badge--blue  {background:rgba(91,168,255,0.18);color:#5ba8ff;}
+[data-theme="light"] .s3-icon-badge--blue{background:rgba(32,96,232,0.10);color:#1d55cc;}
 .s3-icon-badge--teal  {background:rgba(62,224,140,0.15);color:#3ee08c;}
+[data-theme="light"] .s3-icon-badge--teal{background:rgba(15,122,63,0.10);color:#0d6b37;}
 .s3-icon-badge--danger {background:var(--danger-bg);color:var(--danger);}
 .s3-icon-badge--warning{background:var(--warning-bg);color:var(--warning);}
 
@@ -6731,7 +6737,7 @@ tr.wage-row--editing td{background:var(--primary-glow);}
 :root[data-theme="light"] .sw-add-btn{
   background:rgba(235,238,255,0.8);
   border-color:rgba(73,119,253,0.2);
-  color:rgba(60,90,200,0.85);
+  color:var(--primary);
   box-shadow:0 2px 8px rgba(20,30,80,0.06),inset 0 1px 0 rgba(255,255,255,0.9);
 }
 :root[data-theme="light"] .sw-add-btn::before{

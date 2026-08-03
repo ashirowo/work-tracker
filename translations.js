@@ -3460,3 +3460,26 @@ vi: {
   },
 }
 };
+
+// The languages this build actually ships — TR itself is the source of truth,
+// so a pack added or removed above needs no second list kept in step here.
+export const LANGS = Object.freeze(Object.keys(TR));
+
+// Clamp a stored/synced language code to one we can actually render.
+//
+// The set is not append-only: the mobile release swapped French and Nepali out
+// for Japanese and Vietnamese, and every user still holding 'fr' or 'ne' in
+// wt4_lang booted straight into `TR[S.lang][k]` on undefined — a white screen,
+// not a missing string. Anything reading a language code out of storage or off
+// the cloud goes through here.
+//
+// Unknown codes land on English, not on the app's Korean default: a code we no
+// longer have is one the user deliberately picked over Korean, so English is
+// the likelier of the two to be readable to them (the same reasoning as the
+// `|| TR.en` string fallbacks elsewhere).
+//
+// Tested against LANGS rather than `TR[code]`, which the argument's own source
+// makes necessary: a code arriving from storage or Firestore can be any string
+// at all, and 'constructor' or 'toString' would pass a truthiness check on the
+// prototype and then render every label as its raw key.
+export function normLang(code){ return LANGS.includes(code) ? code : 'en'; }

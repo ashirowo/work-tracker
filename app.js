@@ -1,7 +1,7 @@
 import { scheduleSync, deleteCloudData,
          createShare, deleteShare, listMyShares } from './firebase.js';
 import { packShare, unpackShare, normalizeShareCode, formatShareCode } from './share.js';
-import { TR } from './translations.js';
+import { TR, normLang } from './translations.js';
 import { buildRulesRows } from './calc.js';
 import { DEFAULT_PROFILE, isUsableProfile } from './profile.js';
 import { needsNightSchedule } from './profile-v2.js';
@@ -237,7 +237,7 @@ function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride,holCreditOverride){
 let S={
   // 'ko', not 'en' — the app's default language (see detectLang in
   // onboarding/onboarding.js). Reached only when no preference is stored yet.
-  lang:ld('wt4_lang','ko'),theme:ld('wt4_theme','dark'),holAuto:ld('wt4_hol_auto',true),
+  lang:normLang(ld('wt4_lang','ko')),theme:ld('wt4_theme','dark'),holAuto:ld('wt4_hol_auto',true),
   taxRate:ld('wt4_tax_rate',DEFAULT_TAX),
   targetHrs:ld('wt4_target_hrs',250),
   tab:'calendar',calY:new Date().getFullYear(),calM:new Date().getMonth(),
@@ -247,7 +247,16 @@ let S={
   resetModal:false, // transient: whether the "Reset all data" confirmation modal is open
   rulesCollapsed:ld('wt4_rules_collapsed',false), // settings: Wage Calc Rules card collapsed?
 };
-function t(k,...a){const fn=TR[S.lang][k];return typeof fn==='function'?fn(...a):(fn||k);}
+// Write the clamped language back, so a code this build dropped is gone for
+// good rather than re-clamped on every load. Without this the stale value
+// survives in wt4_lang and pushToCloud keeps syncing it to every other device.
+if(S.lang!==ld('wt4_lang',S.lang)) sv('wt4_lang',S.lang);
+// S.lang is clamped above, so TR[S.lang] is always a real pack — the `|| TR.en`
+// here covers the paths that reassign S.lang afterwards from storage the cloud
+// has since rewritten (see completeRestored in onboarding). A missing pack must
+// degrade to English strings; it must never throw, because t() runs before the
+// first paint and taking it down takes down the whole app with it.
+function t(k,...a){const fn=(TR[S.lang]||TR.en)[k];return typeof fn==='function'?fn(...a):(fn||k);}
 // Success feedback uses the same floating toast as exports (showExportToast):
 // a self-dismissing checkmark pill at the bottom of the screen, instead of an
 // inline message inside the card. Call sites may pass either a ready-made

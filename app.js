@@ -17,7 +17,7 @@ import { createHolidayService, translateHolidayName, getUpcomingIn, upcomingHolC
 import { wizT as wizTCore, WIZ_DEFAULT_RULES as WIZ_DEFAULT_RULES_Core,
          wizardAnswersFrom as wizardAnswersFromCore, wizardProfileFrom as wizardProfileFromCore,
          rulesStateFromProfile as rulesStateFromProfileCore } from './domain/wizard-core.js';
-import { WZI, SHM_IC_CHECK, SHM_IC_SEARCH, ruleRowsHTML, flagImg } from './ui/icons.js';
+import { WZI, NAV, SHM_IC_CHECK, SHM_IC_SEARCH, ruleRowsHTML, flagImg } from './ui/icons.js';
 import { animateModalClose, escHTML } from './ui/dom.js';
 import { workplaceFormHTML, wireWorkplaceForm, obxNeedsSchedPage,
          obxWorkplaceHTML, obxWireWorkplace, obxNightHTML, obxWireNight } from './ui/workplace-form.js';
@@ -30,8 +30,9 @@ import { buildModal } from './ui/modals/day-log.js';
 import { buildWorkplaceModal, buildShareModal, buildImportModal } from './ui/modals/workplace-share.js';
 import { initOnboarding } from './onboarding/onboarding.js';
 import { animateStatsHero, initCardTilt } from './ui/motion.js';
+import { initTabPager, pagerSwitch } from './ui/tab-pager.js';
 import { buildCal, wireCalendar, updateHolSeps } from './ui/views/calendar.js';
-import { buildOverview, wireOverview } from './ui/views/overview.js';
+import { buildOverview, wireOverview, dropOverview } from './ui/views/overview.js';
 import { buildSettings, wireSettings } from './ui/views/settings.js';
 import { initHeader, buildHeaderHTML, buildStats, attachHeaderListeners, updateSyncUI, updateOfflineBanner, startSyncTicker } from './ui/header.js';
 
@@ -234,7 +235,9 @@ function calcWage(dateStr,regHrs,otHrs,wage,shiftOverride,holCreditOverride){
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let S={
-  lang:ld('wt4_lang','en'),theme:ld('wt4_theme','dark'),holAuto:ld('wt4_hol_auto',true),
+  // 'ko', not 'en' — the app's default language (see detectLang in
+  // onboarding/onboarding.js). Reached only when no preference is stored yet.
+  lang:ld('wt4_lang','ko'),theme:ld('wt4_theme','dark'),holAuto:ld('wt4_hol_auto',true),
   taxRate:ld('wt4_tax_rate',DEFAULT_TAX),
   targetHrs:ld('wt4_target_hrs',250),
   tab:'calendar',calY:new Date().getFullYear(),calM:new Date().getMonth(),
@@ -328,18 +331,36 @@ function wpShareCtx(){
 }
 // Open the day-log modal for a date (calendar cells, log-edit, Overview CTA).
 function openDayModal(date){ S.modal={date, existing:getLogs()[date]||null}; buildModal(modalCtx()); }
+// Rebuild ONLY the net-pay hero + mini stats. Every figure it shows is scoped
+// to S.calY/S.calM, so month navigation has to refresh it — but a full render()
+// would tear down the calendar card mid-transition, taking the animation and
+// its listeners with it. Replacing this one block leaves the header glass, the
+// tab row and the calendar untouched. animateStatsHero() then tweens from the
+// numbers already on screen to the new month's (see _statsHeroPrev), so the
+// figures travel with the grid rather than snapping when it lands.
+function refreshStats(){
+  const hero=document.querySelector('.stats-hero');
+  if(!hero)return;
+  const tmp=document.createElement('div');
+  tmp.innerHTML=buildStats();
+  const fresh=tmp.firstElementChild;
+  if(!fresh)return;
+  hero.replaceWith(fresh);
+  requestAnimationFrame(animateStatsHero);
+  initCardTilt();   // idempotent; the cards it was bound to are gone
+}
 // The Calendar view's surface.
 function calendarCtx(){
   return { S, t, render, today, getLogs, saveLogs, getShifts, saveShifts, shiftFor,
            toggleShift, isHol, holName, isHolAuto, allWeekdaysLogged, defaultLogFor,
-           buildQuickLogEntry, autoEff, appFooter, ensureHolidays, HOLIDAYS,
-           showUndoToast, openDayModal };
+           buildQuickLogEntry, autoEff, ensureHolidays, HOLIDAYS,
+           showUndoToast, openDayModal, refreshStats };
 }
 // The Overview view's surface. `env` is APP_ENV — the earnings
 // capability record domain/projections.js computes over.
 function overviewCtx(){
   return { S, t, env:APP_ENV, today, getLogs, shiftFor, applyTax, liveGross,
-           autoGross, appFooter, switchTab,
+           autoGross, switchTab,
            openDayModal, openAllShifts: () => buildAllShiftsModal(modalCtx()) };
 }
 // The onboarding flow's surface. openImportModal wraps the
@@ -376,12 +397,22 @@ function headerCtx(){
 function render(){
   applyTheme();
   document.title = t('pageTitle');
+  // Keep <html lang> honest. It was a static "en" that nothing ever updated, so
+  // it mislabelled the page for seven of the eight locales — and making Korean
+  // the default would only have moved which group it lied to. A screen reader
+  // picks its pronunciation rules from this attribute, so it has to follow the
+  // language actually on screen, exactly like the title above it.
+  document.documentElement.lang = S.lang;
   // If a modal is open, don't rebuild #app — the modal is self-contained.
   // Rebuilding #app while a modal is open re-stacks event listeners and
   // causes the page to visually flash behind the overlay.
   const modalOpen = !!(S.modal || S.wageModal || S.resetModal || document.getElementById('all-shifts-ov'));
   if(!modalOpen){
     _headerBound=false;   // header nodes are about to be recreated
+    // A full render outranks a swipe in flight: the pages it was moving are
+    // about to leave the document, so the flag they would have cleared has to
+    // be cleared here instead (initTabPager drops the rest of that state).
+    _tabSwitching=false; _tuCells=null;
     document.getElementById('app').innerHTML=buildApp();
     attachListeners();
   }
@@ -391,58 +422,121 @@ function render(){
   updateOfflineBanner();
 }
 
+// One cell of the tab row. The icon only shows below 540px, where the row is a
+// floating bottom bar and the label alone would be too light to carry it; above
+// that it's display:none and the row stays a text tab strip.
+//
+// aria-current (not aria-selected) because the row has no role="tablist": these
+// read as the app's three top-level destinations, and switchTab() keeps the
+// attribute in sync with the .on class.
+function tabButton(id,key,icon){
+  const on=S.tab===id;
+  return `<button class="tab${on?' on':''}" data-tab="${id}"${on?' aria-current="page"':''}>`
+    +`<span class="tab-ic" aria-hidden="true">${icon}</span>`
+    +`<span class="tab-lb">${t(key)}</span></button>`;
+}
+
 function buildApp(){
   return`${buildHeaderHTML()}
   ${buildStats()}
   <div class="tab-row" id="tab-row">
-    <button class="tab${S.tab==='calendar'?' on':''}" data-tab="calendar">${t('tabCal')}</button>
-    <button class="tab${S.tab==='overview'?' on':''}" data-tab="overview">${t('tabOverview')}</button>
-    <button class="tab${S.tab==='settings'?' on':''}" data-tab="settings">${t('tabSet')}</button>
+    ${tabButton('calendar','tabCal',NAV.calendar)}
+    ${tabButton('overview','tabOverview',NAV.overview)}
+    ${tabButton('settings','tabSet',NAV.settings)}
     <span class="tab-underline" id="tab-underline" aria-hidden="true"></span>
   </div>
-  <div id="tab-content">${buildTabContent()}</div>`;
+  <div id="tab-content" class="tabvp">
+    <div class="tabvp-track" id="tab-track">
+      <div class="tabpane" data-pane="${S.tab}">${buildTabContent(S.tab)}</div>
+    </div>
+  </div>`;
 }
 
-// Just the active tab's content — split out so tab switches can update this
-// region alone instead of rebuilding the whole app (header, stats, etc.).
-function buildTabContent(){
-  return S.tab==='calendar'?buildCal(calendarCtx()):S.tab==='overview'?buildOverview(overviewCtx()):buildSettings(settingsCtx());
+// The order the tabs sit in, and therefore which way each one is from any other
+// — the bottom bar's reading order and the pager's geometry are the same fact.
+const TAB_ORDER=['calendar','overview','settings'];
+
+// One tab's content. Takes the tab explicitly rather than reading S.tab: the
+// pager builds the page it is sliding IN while S.tab still names the one being
+// left, and only commits the state change once that page has landed.
+function buildTabContent(tab){
+  return tab==='calendar'?buildCal(calendarCtx()):tab==='overview'?buildOverview(overviewCtx()):buildSettings(settingsCtx());
 }
 
-// Switch tabs WITHOUT rebuilding the header/stats. Only the #tab-content region
-// is replaced, so the header's glass, glow, sync dot animation, and portal
-// listeners stay intact (no flicker, no re-mount). Content listeners are
-// re-attached via attachListeners(), which is guarded to bind one-time header
-// handlers only once (see _headerBound in attachListeners).
+// Everything a freshly mounted tab needs to become live. Also takes the tab
+// explicitly, for the same reason buildTabContent does — a staged page is wired
+// the moment it is mounted, so what slides in is the real thing.
+function wireTabContent(tab){
+  if(tab==='overview') wireOverview(overviewCtx());
+  else if(tab==='calendar') wireCalendar(calendarCtx());
+  else wireSettings(settingsCtx());
+  updateHolSeps();
+  // Desktop glass-card tilt/glare — idempotent (data-tilt-bound guard).
+  initCardTilt();
+}
+
+// The other half of buildTabContent: a page the pager staged for a swipe that
+// was then put back, thrown away without ever having been shown. Only the
+// Overview latches anything at build time (its one-per-session entrance), so
+// only the Overview has anything to give back.
+function dropTabContent(tab,el){
+  if(tab==='overview') dropOverview(el);
+}
+
+// Paint the bar's active states. Called while a swipe is still in flight (at the
+// half-way point) as well as on a tap, so it has to be idempotent.
+//
+// aria-current (not aria-selected) because the row has no role="tablist": these
+// read as the app's three top-level destinations.
+function setActiveTabButton(tab){
+  document.querySelectorAll('.tab[data-tab]').forEach(b=>{
+    const on=b.dataset.tab===tab;
+    b.classList.toggle('on', on);
+    if(on) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
+  });
+}
+
+// Switch tabs WITHOUT rebuilding the header/stats. Only the page inside
+// #tab-content is replaced, so the header's glass, glow, sync dot animation and
+// portal listeners stay intact (no flicker, no re-mount). The pager owns the
+// swap — on mobile it slides, everywhere else it cuts — and calls commitTab()
+// back once the new page is in place.
 function switchTab(tab){
-  // Clicking the already-active tab must be a no-op: re-mounting identical
+  // Choosing the already-active tab must be a no-op: re-mounting identical
   // content would needlessly replay the Overview entrance choreography.
   if(S.tab===tab) return;
-  S.tab=tab;
-  // Update tab-button active states in place
-  document.querySelectorAll('.tab[data-tab]').forEach(b=>{
-    b.classList.toggle('on', b.dataset.tab===tab);
-  });
-  // Slide the shared underline to the newly active tab (animated). Flag it so the
-  // attachListeners() placement below doesn't snap-override the in-flight slide.
   _tabSwitching=true;
-  positionTabUnderline(true);
-  // Swap only the content region
-  const host=document.getElementById('tab-content');
-  if(host){
-    host.innerHTML=buildTabContent();
-  }else{
-    // Fallback: if the container is missing for any reason, do a full render
-    render();
-    _tabSwitching=false;
-    return;
-  }
-  // Re-wire listeners (header handlers are guarded to attach only once)
-  attachListeners();
-  // Clear the flag after the placement rAF has had its chance to run.
-  requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ _tabSwitching=false; }); });
+  // Only a missing region gets here; the pager handles every other case itself.
+  if(!pagerSwitch(tab)){ S.tab=tab; _tabSwitching=false; render(); }
+}
+
+// The page has landed (or a swipe was put back, and `tab` is the one we never
+// left). This is the single point where the app's idea of the current tab
+// changes — nothing reads S.tab mid-flight and gets a half-finished answer.
+function commitTab(tab){
+  S.tab=tab;
+  setActiveTabButton(tab);
+  _tabSwitching=false;
 }
 let _tabSwitching=false;
+
+// Measure one tab cell in the coordinates --tu-x/--tu-w are expressed in.
+// getBoundingClientRect() reports the row's BORDER box, but the indicator is
+// absolutely positioned and therefore placed from the row's PADDING box.
+// clientLeft (the left border width) reconciles the two: 0 on the desktop row,
+// which has no left border, and 1 on the mobile bar, which is fully bordered.
+// Without it the bar sits a border-width off on mobile.
+function tabCellMetrics(row,cell){
+  const rowRect=row.getBoundingClientRect();
+  const r=cell.getBoundingClientRect();
+  return { x:Math.round((r.left-rowRect.left-row.clientLeft)*100)/100,
+           w:Math.round(r.width*100)/100 };
+}
+function paintTabUnderline(bar,x,w){
+  bar.style.setProperty('--tu-x', x+'px');
+  bar.style.setProperty('--tu-w', w+'px');
+  bar.style.setProperty('--tu-o', '1');
+}
 
 // Position the single sliding tab indicator under the active tab. The bar uses a
 // real px width (--tu-w) and slides via translateX (--tu-x) — the translate is
@@ -454,26 +548,50 @@ function positionTabUnderline(animate){
   if(!row||!bar) return;
   const active=row.querySelector('.tab.on')||row.querySelector('.tab');
   if(!active) return;
-  const rowRect=row.getBoundingClientRect();
-  const r=active.getBoundingClientRect();
-  const x=Math.round((r.left-rowRect.left)*100)/100;
-  const w=Math.round(r.width*100)/100;
+  const {x,w}=tabCellMetrics(row,active);
   // On first placement (or when explicitly non-animated), disable the transition
   // for one frame so the bar appears in position instead of sliding in from 0.
   if(!animate){
     const prevTransition=bar.style.transition;
     bar.style.transition='none';
-    bar.style.setProperty('--tu-x', x+'px');
-    bar.style.setProperty('--tu-w', w+'px');
-    bar.style.setProperty('--tu-o', '1');
+    paintTabUnderline(bar,x,w);
     // force style flush, then restore the transition
     void bar.offsetWidth;
     bar.style.transition=prevTransition;
   }else{
-    bar.style.setProperty('--tu-x', x+'px');
-    bar.style.setProperty('--tu-w', w+'px');
-    bar.style.setProperty('--tu-o', '1');
+    paintTabUnderline(bar,x,w);
   }
+}
+
+// Drive the pill straight from a swipe, so it crosses the bar in step with the
+// pages rather than announcing where they are about to end up. .is-dragging
+// takes the 0.46s spring off for the duration — a transition here would make the
+// pill lag the finger by the whole length of the spring.
+//
+// The two cells are measured once per gesture and kept: they cannot move while
+// the finger is down, and re-reading a rect after every transform write is a
+// forced layout on the one frame budget that cannot afford it.
+let _tuCells=null;
+function dragTabUnderline(from,to,p){
+  const row=document.getElementById('tab-row');
+  const bar=document.getElementById('tab-underline');
+  if(!row||!bar) return;
+  if(!_tuCells){ row.classList.add('is-dragging'); _tuCells={}; }
+  const cell=id=>_tuCells[id]||(()=>{
+    const el=row.querySelector(`.tab[data-tab="${id}"]`);
+    return el ? (_tuCells[id]=tabCellMetrics(row,el)) : null;
+  })();
+  const a=cell(from), b=cell(to)||a;
+  if(!a) return;
+  paintTabUnderline(bar, a.x+(b.x-a.x)*p, a.w+(b.w-a.w)*p);
+}
+
+// Hand the pill back its spring and let it finish the journey on its own — the
+// same 0.46s slide a tap has always used, from wherever the finger left it.
+function restTabUnderline(){
+  _tuCells=null;
+  document.getElementById('tab-row')?.classList.remove('is-dragging');
+  positionTabUnderline(true);
 }
 
 function storedPatternIsFixedDay(){
@@ -489,21 +607,27 @@ function storedPatternIsFixedDay(){
 // per full render; otherwise switchTab()'s re-attach would stack duplicates.
 let _headerBound=false;
 function attachListeners(){
-  // Overview tab: entrance/count-up motion, both charts, and the tab's
-  // listeners (range toggle, view-all, empty-state CTA) — ui/views/overview.js.
-  if(S.tab==='overview') wireOverview(overviewCtx());
-  updateHolSeps();
+  // The active page's own listeners and after-injection passes — the Overview's
+  // entrance/count-up motion and charts, the Calendar's month nav and day cells,
+  // or the Settings cards. The pager calls this same function for a page it is
+  // sliding in, which is why it takes the tab rather than reading S.tab.
+  wireTabContent(S.tab);
 
   // Animate the net-pay hero (amount count-up + ring sweep + % count), but only
-  // on a full render — NOT on tab switches. switchTab() calls attachListeners()
-  // too, and the hero (in the always-present header) survives that swap, so
-  // replaying here would re-animate it on every tab change. _tabSwitching is set
-  // by switchTab() for exactly this window.
+  // on a full render — NOT on tab switches, which replace the page under a
+  // header (and hero) that survive the swap; replaying here would re-animate it
+  // on every tab change. _tabSwitching is set by switchTab() for that window.
   if(!_tabSwitching) requestAnimationFrame(animateStatsHero);
 
-  // Desktop glass-card tilt/glare — idempotent (data-tilt-bound guard), so safe
-  // on both full renders and tab switches.
-  initCardTilt();
+  // Hand the pager the freshly built region: the track it was holding left the
+  // document with the old markup. Idempotent — it re-binds only on new nodes.
+  initTabPager({
+    tabs:TAB_ORDER,
+    buildPane:buildTabContent, wirePane:wireTabContent, dropPane:dropTabContent,
+    setActive:setActiveTabButton,
+    dragPill:dragTabUnderline, restPill:restTabUnderline,
+    onSettle:commitTab
+  });
 
   // Place the sliding tab indicator. On a fresh render, snap it under the active
   // tab without animating. Skip during an animated tab switch (switchTab already
@@ -527,18 +651,11 @@ function attachListeners(){
     document.fonts.ready.then(()=>{ if(!_tabSwitching) positionTabUnderline(false); });
   }
 
-  // Calendar tab listeners (month nav, week flips, day cells, quick-log).
-  if(S.tab==='calendar') wireCalendar(calendarCtx());
-
   // ── Header + portal + document-level listeners: bind once per full render ─────
   if(!_headerBound){
     _headerBound=true;
     attachHeaderListeners();
   }
-
-  // Settings-tab content listeners re-bind on every tab switch (their nodes are
-  // recreated). Calendar/Overview wire above; only Settings needs it here.
-  if(S.tab==='settings') wireSettings(settingsCtx());
 }
 
 applyTheme();

@@ -342,24 +342,97 @@ export function attachSheetGestures(overlay, onDismiss){
   if(!window.matchMedia || !window.matchMedia('(max-width: 540px)').matches) return;
   panel.dataset.sheetBound = '1';
 
-  // The element that scrolls inside the sheet, if any.
-  const scroller = panel.querySelector('.wm-scroll, .asm-scroll, .sexp-bs-body') || panel;
+  // Retire the entrance animation as soon as it has played — see the
+  // .sheet-entered note in the stylesheet. Without this, the first time the
+  // drag classes toggle `animation` back on, the sheet replays its slide-in.
+  // The timeout covers the cases where animationend never arrives (reduced
+  // motion, or a sheet opened while the tab is hidden).
+  const markEntered = () => panel.classList.add('sheet-entered');
+  panel.addEventListener('animationend', function onEnter(e){
+    if(e.target !== panel || e.animationName !== 'sheet-in') return;
+    panel.removeEventListener('animationend', onEnter);
+    markEntered();
+  });
+  setTimeout(markEntered, 600);
 
-  const DISMISS_RATIO = 0.25;   // of panel height
-  const FLICK_V       = 0.55;   // px/ms downward
+  // The element that scrolls inside the sheet, if any. .wpm-body is the share
+  // modals' scroller — it was missing here, so on those sheets `scroller` fell
+  // back to the panel (overflow:hidden, scrollTop permanently 0) and a drag
+  // begun halfway down a scrolled list read as a dismiss instead of a scroll.
+  // .asm-body is All Shifts' scroller and .hol-modal-body is Upcoming
+  // Holidays'; ".asm-scroll" was listed here but no such element exists in the
+  // markup, so those two fell back to the panel (scrollTop permanently 0).
+  const scroller = panel.querySelector('.wm-scroll, .asm-body, .hol-modal-body, .sexp-bs-body, .wpm-body') || panel;
 
-  let startY = 0, lastY = 0, lastT = 0, dy = 0, vel = 0, dragging = false, decided = false;
+  // Both constants come from the --sheet-* tokens so the stylesheet stays the
+  // single source of truth for the sheet system. Matched to the date-range
+  // sheet: a fixed pixel threshold and NO velocity term. The old rule was 25%
+  // of panel height OR a flick above 0.55px/ms, and the flick test is what made
+  // dismissal feel unpredictable — a short, brisk nudge cleared it easily and
+  // threw the sheet away when the user meant to peek.
+  const rootCS = getComputedStyle(document.documentElement);
+  const tokenNum = (name, fallback) => {
+    const v = parseFloat(rootCS.getPropertyValue(name));
+    return Number.isFinite(v) ? v : fallback;
+  };
+  const DISMISS_PX = tokenNum('--sheet-dismiss-px', 80);
+  const SCRIM      = tokenNum('--sheet-scrim', 0.55);
 
-  const setY = y => { panel.style.transform = y ? `translateY(${y}px)` : ''; };
+  let startY = 0, dy = 0, dragging = false, decided = false, fromScroller = false;
+  const backdrop = overlay;      // .modal-overlay paints the scrim itself
+
+  // Writes are coalesced to one per frame. touchmove fires faster than the
+  // display refreshes (and can burst several samples in a single frame), so
+  // writing panel.style.transform straight from the handler queued redundant
+  // style recalcs — each one re-rendering the panel's backdrop-filter blur
+  // against a moving backdrop, which is what made the drag feel jittery rather
+  // than slow. rAF collapses a burst into the single position that frame will
+  // actually show.
+  let pendingY = null, rafId = 0;
+  const flush = () => {
+    rafId = 0;
+    if(pendingY === null) return;
+    panel.style.transform = pendingY ? `translateY(${pendingY}px)` : '';
+    pendingY = null;
+  };
+  const setY = y => {
+    pendingY = y;
+    if(!rafId) rafId = requestAnimationFrame(flush);
+  };
+  // The scrim lightens as the sheet is pulled down, so the drag reads as
+  // "leaving" the whole time rather than only at the moment it's released.
+  // Same proportion the date-range sheet uses: fully clear at half the panel's
+  // height. Its own opacity is restored (to the stylesheet's) on release.
+  const paintBackdrop = y => {
+    const h = panel.offsetHeight || 1;
+    const progress = Math.min(y / (h * 0.5), 1);
+    backdrop.style.background = `rgba(0,0,0,${(SCRIM * (1 - progress)).toFixed(3)})`;
+  };
+  const restoreBackdrop = () => { backdrop.style.background = ''; };
+
+  // Cancel a queued frame and write immediately — used on release so the
+  // settle/dismiss never races a stale in-flight position.
+  const setYNow = y => {
+    if(rafId){ cancelAnimationFrame(rafId); rafId = 0; }
+    pendingY = null;
+    panel.style.transform = y ? `translateY(${y}px)` : '';
+  };
 
   panel.addEventListener('touchstart', e => {
     if(e.touches.length !== 1) return;
-    // Only claim the gesture when the body is scrolled to the top; otherwise
-    // this touch is a scroll, not a sheet drag.
-    if(scroller.scrollTop > 0) return;
-    startY = lastY = e.touches[0].clientY;
-    lastT  = e.timeStamp;
-    dy = 0; vel = 0; dragging = true; decided = false;
+    // Where the touch STARTS decides whether the body gets a say. The header,
+    // handle and action bar are pinned siblings of the scroller — they never
+    // scroll, so a drag begun there is always a sheet drag. Only a touch that
+    // starts inside the scrolling body has to yield to it, and then only when
+    // that body is actually scrolled down.
+    //
+    // This guard used to run against the whole panel, so once the body was
+    // scrolled the handle went dead and the sheet could not be pulled down
+    // until you scrolled back to the top first.
+    fromScroller = scroller !== panel && scroller.contains(e.target);
+    if(fromScroller && scroller.scrollTop > 0) return;
+    startY = e.touches[0].clientY;
+    dy = 0; dragging = true; decided = false;
     panel.classList.remove('sheet-settling');
   }, { passive: true });
 
@@ -373,23 +446,25 @@ export function attachSheetGestures(overlay, onDismiss){
     if(!decided){
       if(Math.abs(raw) < 4) return;
       decided = true;
-      if(raw < 0 || scroller.scrollTop > 0){ dragging = false; return; }
+      // Same rule as touchstart: the body only gets to reclaim the gesture if
+      // the touch began inside it.
+      if(raw < 0 || (fromScroller && scroller.scrollTop > 0)){ dragging = false; return; }
       panel.classList.add('sheet-dragging');
     }
 
-    // Resist upward travel instead of clamping to 0 — the sheet stays attached
-    // to the finger, it just doesn't want to go that way.
-    dy = raw < 0 ? raw / 3 : raw;
-    // Instantaneous velocity, smoothed. dt is floored at one frame and the
-    // result clamped: touch streams occasionally deliver two samples in the
-    // same millisecond, and dividing by that near-zero gap yields a huge
-    // spike that reads as a flick and dismisses a sheet the user was barely
-    // nudging.
-    const dt = Math.max(e.timeStamp - lastT, 8);
-    const inst = Math.max(-3, Math.min(3, (y - lastY) / dt));
-    vel = vel * 0.4 + inst * 0.6;
-    lastY = y; lastT = e.timeStamp;
+    // Hard clamp at the top, exactly like .sexp-bs ("if(y<0) return"): the
+    // sheet is already at its open position, so there is nowhere up to go and
+    // it simply stops. The old rubber-band (raw/3) let it ride above its own
+    // top edge, which is the "swipes up past its size" that made the others
+    // feel loose next to the date-range sheet.
+    if(raw < 0){
+      if(dy !== 0){ dy = 0; setY(0); paintBackdrop(0); }
+      if(e.cancelable) e.preventDefault();
+      return;
+    }
+    dy = raw;
     setY(dy);
+    paintBackdrop(dy);
     if(e.cancelable) e.preventDefault();   // stop the page rubber-banding
   }, { passive: false });
 
@@ -397,24 +472,50 @@ export function attachSheetGestures(overlay, onDismiss){
     if(!dragging){ return; }
     dragging = false;
     panel.classList.remove('sheet-dragging');
-    if(!decided || dy <= 0){ setY(0); vel = 0; return; }
+    if(!decided || dy <= 0){ restoreBackdrop(); setYNow(0); return; }
 
-    const past = dy > panel.getBoundingClientRect().height * DISMISS_RATIO;
-    const flicked = vel > FLICK_V;
-    vel = 0;
-
-    if(past || flicked){
-      // Hand off to the normal close path so focus restore and cleanup still
-      // run; the CSS slide-out covers the remaining travel.
-      panel.style.transform = '';
+    // Distance only — no velocity term. See DISMISS_PX above.
+    if(dy >= DISMISS_PX){
+      // Hand the remaining travel to the CSS slide-out, starting from where the
+      // finger actually left the sheet. Without this the sheet-out keyframe
+      // began at translateY(0) and the panel flashed back to full size for a
+      // frame before sliding away.
+      //
+      // The scrim is deliberately NOT restored here: it was faded in step with
+      // the drag, and resetting it would re-darken the backdrop on the same
+      // frame, which read as part of the same flash. The overlay fades from
+      // wherever the drag left it and is removed moments later.
+      panel.style.setProperty('--sheet-exit-from', dy + 'px');
+      setYNow(0);
       onDismiss();
     }else{
       panel.classList.add('sheet-settling');
-      setY(0);
-      panel.addEventListener('transitionend', function h(){
+      setYNow(0);
+      restoreBackdrop();
+      // transitionend BUBBLES. Without the target/property guard, any
+      // transition finishing on a descendant — a button releasing its :active,
+      // an input's focus ring, the theme fade — ended the settle early: the
+      // class came off mid-flight and the transform snapped the rest of the
+      // way. The panel's own transform is the only signal that the sheet has
+      // actually finished settling.
+      //
+      // The timeout is the other half: if dy rounds to no visible change the
+      // transition never starts, transitionend never fires, and the class (and
+      // its will-change) would stick forever.
+      let settled = false;
+      const done = () => {
+        if(settled) return;
+        settled = true;
         panel.classList.remove('sheet-settling');
         panel.removeEventListener('transitionend', h);
-      });
+        clearTimeout(timer);
+      };
+      function h(e){
+        if(e.target !== panel || e.propertyName !== 'transform') return;
+        done();
+      }
+      panel.addEventListener('transitionend', h);
+      const timer = setTimeout(done, 500);   // > --dur-slow (320ms) + slack
     }
   };
 

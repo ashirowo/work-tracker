@@ -193,9 +193,12 @@ export function buildModal(ctx){
   const ov=document.createElement('div');
   ov.className='modal-overlay';ov.id='modal-ov';
   document.body.classList.add('modal-open');
+  // Three regions, matching the date-range sheet: a pinned header, a scrolling
+  // body, and a pinned action bar. Header and actions used to live INSIDE
+  // .wm-scroll, so on a short screen Save was below the fold and the title
+  // scrolled away with the content.
   ov.innerHTML=`<div class="modal wm-modal">
     <div class="wm-glow" aria-hidden="true"></div>
-    <div class="wm-scroll">
     <div class="wm-header">
       <div class="wm-header-badge">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2.5"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
@@ -209,15 +212,18 @@ export function buildModal(ctx){
       </button>
     </div>
     <div class="wm-divider"></div>
+    <div class="wm-scroll">
     <div class="wm2-badges">${badges}</div>
     ${shiftToggleHTML}
     ${bodyHTML}
     ${noteHTML}
-    <div class="m-actions">
-      <button class="btn-sec" id="m-cancel">${t('cancel')}</button>
-      ${existing?`<button class="btn-del" id="m-del">${t('del')}</button>`:''}
-      <button class="btn-pri" id="m-save">${t('save')}</button>
     </div>
+    <div class="m-actions dl-foot">
+      <button class="btn-pri" id="m-save">${t('save')}</button>
+      ${existing?`<button class="btn-del dl-del" id="m-del">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        <span>${t('del')}</span>
+      </button>`:''}
     </div>
   </div>`;
   document.body.appendChild(ov);
@@ -228,7 +234,10 @@ export function buildModal(ctx){
   ov.addEventListener('click',e=>{if(e.target.id==='modal-ov')closeModal();});
   // Mobile: drag the sheet down to dismiss (no-op above 540px).
   attachSheetGestures(ov, closeModal);
-  document.getElementById('m-cancel').addEventListener('click',()=>closeModal());
+  // The footer no longer carries a Cancel button (see .dl-foot in the
+  // stylesheet for why) — optional, so the header X remains the only wiring
+  // this modal needs. Backdrop tap, drag-down and Escape are wired separately.
+  document.getElementById('m-cancel')?.addEventListener('click',()=>closeModal());
   document.getElementById('m-cancel-x')?.addEventListener('click',()=>closeModal());
 
   // Keyboard: Enter saves, Escape closes (fires while focus is inside the panel)

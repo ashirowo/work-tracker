@@ -41,9 +41,9 @@ export function buildResetModal(ctx){
     <div class="rm-item-text">${label}</div>
   </div>`;
 
+  // Pinned header / scrolling body / pinned actions — see day-log.js.
   ov.innerHTML=`<div class="modal wm-modal rm-modal wm-modal--danger">
     <div class="wm-glow wm-glow--danger" aria-hidden="true"></div>
-    <div class="wm-scroll">
     <div class="wm-header">
       <div class="wm-header-badge wm-header-badge--danger">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
@@ -59,6 +59,7 @@ export function buildResetModal(ctx){
 
     <div class="wm-divider"></div>
 
+    <div class="wm-scroll">
     <div class="rm-panel">
       <div class="rm-panel-intro">${t('resetModalIntro')}</div>
       <div class="rm-list">
@@ -102,13 +103,14 @@ export function buildResetModal(ctx){
       <input class="rm-confirm-input" id="reset-confirm-in" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${cw}">
     </div>
 
+    </div>
+
     <div class="rm-actions">
       <button class="rm-btn-cancel" id="reset-cancel-2">${t('cancel')}</button>
       <button class="rm-btn-delete" id="reset-confirm" disabled>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         ${t('resetBtnFinal')}
       </button>
-    </div>
     </div>
   </div>`;
 

@@ -132,23 +132,29 @@ export function initOnboarding(ctx){
   }
 
   const OB_LANGS=[
-    {code:'en',label:'English'},
     {code:'ko',label:'한국어'},
-    {code:'id',label:'Indonesia'},
-    {code:'th',label:'ภาษาไทย'},
-    {code:'ru',label:'Русский'},
+    {code:'en',label:'English'},
     {code:'zh',label:'中文'},
-    {code:'fr',label:'Français'},
-    {code:'ne',label:'नेपाली'},
+    {code:'ja',label:'日本語'},
+    {code:'id',label:'Indonesia'},
+    {code:'ru',label:'Русский'},
+    {code:'th',label:'ภาษาไทย'},
+    {code:'vi',label:'Tiếng Việt'},
   ];
   // Best-guess language from the browser so screen 1 usually needs zero taps.
+  // Korean is the fallback, not English: this app is Korean labour law end to
+  // end — won wages, the gov holiday API, 4대 보험 — so a browser we cannot
+  // place is far likelier to belong to someone who reads Korean than someone
+  // who reads English. The other seven locales are here for the migrant
+  // workforce those workplaces employ, which is exactly why the DETECTION
+  // stays: a Vietnamese or Thai phone still selects its own language on sight.
   function detectLang(){
-    const cands=navigator.languages||[navigator.language||'en'];
+    const cands=navigator.languages||[navigator.language||'ko'];
     for(const c of cands){
       const p=String(c).toLowerCase().slice(0,2);
       if(OB_LANGS.some(l=>l.code===p)) return p;
     }
-    return 'en';
+    return 'ko';
   }
 
   const saved = loadOBState();

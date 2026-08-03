@@ -20,6 +20,7 @@ import { needsNightSchedule } from '../../profile-v2.js';
 import { buildRulesRows } from '../../calc.js';
 import { WZI, SHM_IC_CHECK, SHM_IC_SEARCH } from '../icons.js';
 import { escHTML, animateModalClose } from '../dom.js';
+import { attachSheetGestures } from '../motion.js';
 import { showExportToast } from '../../export.js';
 
 // Bound from ctx on each open:
@@ -61,6 +62,7 @@ export function buildWorkplaceModal(ctx){
     </div>
   </div>`;
   document.body.appendChild(ov);
+  attachSheetGestures(ov, closeWorkplaceModal);   // bottom sheet below 540px
   wireWorkplaceForm(document.getElementById('wp-form'),st,{lang:S.lang,pattern});
   ov.addEventListener('click',e=>{if(e.target===ov)closeWorkplaceModal();});
   ov.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();closeWorkplaceModal();}});
@@ -90,7 +92,7 @@ export function buildWorkplaceModal(ctx){
 // mutate profile data themselves. Import commits via the SAME write the
 // wizard uses (sv('wt4_profile') + scheduleSync) — the engine sees nothing new.
 // ═════════════════════════════════════════════════════════════════════════════
-const SHARE_LOCALE={en:'en-US',ko:'ko-KR',id:'id-ID',th:'th-TH',ru:'ru-RU',zh:'zh-CN',fr:'fr-FR',ne:'ne-NP'};
+const SHARE_LOCALE={ko:'ko-KR',en:'en-US',zh:'zh-CN',ja:'ja-JP',id:'id-ID',ru:'ru-RU',th:'th-TH',vi:'vi-VN'};
 const shareFmtDate=ms=>new Date(ms).toLocaleDateString(SHARE_LOCALE[S.lang]||'en-US',{year:'numeric',month:'short',day:'numeric'});
 // The share link. The code rides the HASH so the SW-cached shell at '/' serves
 // the PWA identically — no server routing, no cache-key changes (Phase 6.4

@@ -11,6 +11,8 @@
 import { pd } from '../../core/dates.js';
 import { TR } from '../../translations.js';
 import { upcomingHolCutoff } from '../../data/holidays.js';
+import { attachSheetGestures } from '../motion.js';
+import { animateModalClose } from '../dom.js';
 
 export function buildAllHolidaysModal(ctx) {
   const { t, holName, todayStr, holidays, lang } = ctx;
@@ -51,7 +53,6 @@ export function buildAllHolidaysModal(ctx) {
 
   ov.innerHTML = `<div class="modal wm-modal hol-modal">
     <div class="wm-glow" aria-hidden="true"></div>
-    <div class="wm-scroll">
     <div class="modal-header">
       <div class="modal-badge">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -63,22 +64,27 @@ export function buildAllHolidaysModal(ctx) {
       <button class="asm-close-btn modal-close" id="all-hol-close" aria-label="Close"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="modal-divider"></div>
-    <div class="hol-modal-body">
-      ${upcoming.length
-        ? `<div class="hol-modal-list">${upcoming.map(rowHTML).join('')}</div>`
-        : `<div class="hol-modal-empty">${t('holModalEmpty')}</div>`
-      }
-    </div>
+    <div class="wm-scroll">
+      <div class="hol-modal-body">
+        ${upcoming.length
+          ? `<div class="hol-modal-list">${upcoming.map(rowHTML).join('')}</div>`
+          : `<div class="hol-modal-empty">${t('holModalEmpty')}</div>`
+        }
+      </div>
     </div>
   </div>`;
 
   document.querySelectorAll('#all-hol-modal-ov').forEach(el => el.remove());
   document.body.appendChild(ov);
 
+  // Was a bare ov.remove() — the only sheet that vanished instantly instead of
+  // sliding out, which read as a glitch next to the others.
   const close = () => {
-    ov.remove();
-    document.body.classList.remove('modal-open');
+    animateModalClose('#all-hol-modal-ov', () => {
+      document.body.classList.remove('modal-open');
+    });
   };
+  attachSheetGestures(ov, close);   // renders as a bottom sheet below 540px
   document.getElementById('all-hol-close').addEventListener('click', close);
   ov.addEventListener('click', e => { if (e.target === ov) close(); });
 }

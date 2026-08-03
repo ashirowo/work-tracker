@@ -22,7 +22,7 @@ export function buildWageModal(ctx){
   const{mode,idx}=S.wageModal;
   const wages=getWages();
   const entry=idx!==undefined?wages[idx]:null;
-  const LANG_LOCALE={en:'en-US',ko:'ko-KR',id:'id-ID',th:'th-TH',ru:'ru-RU',zh:'zh-CN',fr:'fr-FR',ne:'ne-NP'};
+  const LANG_LOCALE={ko:'ko-KR',en:'en-US',zh:'zh-CN',ja:'ja-JP',id:'id-ID',ru:'ru-RU',th:'th-TH',vi:'vi-VN'};
   const fmtWageDate=ds=>{const[y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString(LANG_LOCALE[S.lang]||'en-US',{month:'short',day:'2-digit',year:'numeric'});};
 
   const ov=document.createElement('div');
@@ -55,9 +55,9 @@ export function buildWageModal(ctx){
   const title=mode==='edit'?t('wageModalEditTitle'):t('wageModalAddTitle');
   const sub=mode==='edit'?t('wageModalEditSub'):t('wageModalAddSub');
 
+  // Pinned header / scrolling body / pinned actions — see day-log.js.
   ov.innerHTML=`<div class="modal wm-modal">
     <div class="wm-glow" aria-hidden="true"></div>
-    <div class="wm-scroll">
     <div class="wm-header">
       <div class="wm-header-badge">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
@@ -73,6 +73,7 @@ export function buildWageModal(ctx){
 
     <div class="wm-divider"></div>
 
+    <div class="wm-scroll">
     <div class="wm-fields">
       <div class="wm-field">
         <label for="wm-date">${t('wageEffectiveDate')}</label>
@@ -93,6 +94,8 @@ export function buildWageModal(ctx){
       </div>
     </div>
 
+    </div>
+
     <div class="wm-actions">
       <button class="wm-btn-cancel" id="wm-cancel-2">${t('cancel')}</button>
       <button class="wm-btn-save" id="wm-save">
@@ -103,7 +106,6 @@ export function buildWageModal(ctx){
     <div class="wm-secure">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
       <span>${t('wageSecureNote')}</span>
-    </div>
     </div>
   </div>`;
 

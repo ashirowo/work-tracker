@@ -15,6 +15,7 @@ import { unpackShare } from '../share.js';
 import { wizT } from '../domain/wizard-core.js';
 import { SHM_IC_CHECK } from './icons.js';
 import { animateModalClose } from './dom.js';
+import { attachSheetGestures } from './motion.js';
 
 // The XXXX-XXXX code mask. Typing inserts the hyphen after the 4th char; pasting
 // accepts JDAYJ9KW, JDAY-J9KW, or a whole share link (everything after 'join=');
@@ -101,6 +102,10 @@ export function buildShareLikeModal({ovId,badgeSVG,title,sub,bodyHTML,footHTML,l
     ${footHTML?`<div class="wpm-actions">${footHTML}</div>`:''}
   </div>`;
   document.body.appendChild(ov);
+  // Below 540px this renders as a bottom sheet — grab handle and all — so it
+  // has to answer the swipe like every other sheet. This shell backs several
+  // share dialogs, none of which were bound.
+  attachSheetGestures(ov, close);
   ov.addEventListener('click',e=>{if(e.target===ov)close();});
   ov.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();close();}});
   ov.querySelectorAll('[data-shm-close]').forEach(b=>b.addEventListener('click',close));

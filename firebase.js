@@ -53,6 +53,7 @@ import { getFirestore, doc, getDoc, setDoc, deleteDoc, serverTimestamp,
          collection, query, where, getDocs, Timestamp }
                                                       from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { generateShareCode } from './share.js';
+import { normLang }          from './translations.js';
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 const firebaseApp = initializeApp(FIREBASE_CONFIG);
@@ -127,7 +128,10 @@ async function pullFromCloud(uid) {
       if (cloud.logs    !== undefined) lsSet(SYNC_KEYS.logs,    cloud.logs);
       if (cloud.shifts  !== undefined) lsSet(SYNC_KEYS.shifts,  cloud.shifts);
       if (cloud.wages   !== undefined) lsSet(SYNC_KEYS.wages,   cloud.wages);
-      if (cloud.lang    !== undefined) lsSet(SYNC_KEYS.lang,    cloud.lang);
+      // Clamped on the way in: the cloud doc outlives any single build, so it
+      // can still hold a language this one dropped (or a null from an older
+      // writer). Landing that in wt4_lang white-screens the next boot.
+      if (cloud.lang    !== undefined) lsSet(SYNC_KEYS.lang,    normLang(cloud.lang));
       if (cloud.theme   !== undefined) lsSet(SYNC_KEYS.theme,   cloud.theme);
       if (cloud.holAuto !== undefined) lsSet(SYNC_KEYS.holAuto, cloud.holAuto);
       if (cloud.taxRate !== undefined) lsSet(SYNC_KEYS.taxRate, cloud.taxRate);

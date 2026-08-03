@@ -20,9 +20,9 @@ import { computeOverviewData } from '../../domain/projections.js';
 
 // Bound from ctx on each render/wire:
 let S, t, env, today, getLogs, shiftFor, applyTax, liveGross, autoGross,
-    appFooter, switchTab, openDayModal, openAllShifts;
+    switchTab, openDayModal, openAllShifts;
 const bind = ctx => ({ S, t, env, today, getLogs, shiftFor, applyTax, liveGross,
-    autoGross, appFooter, switchTab, openDayModal, openAllShifts } = ctx);
+    autoGross, switchTab, openDayModal, openAllShifts } = ctx);
 
 export function buildOverview(ctx){
   bind(ctx);
@@ -185,7 +185,7 @@ export function buildOverview(ctx){
         </div>
       </div>
       <!-- Right: chart panel — same component whatever the data volume -->
-      <div class="ov-proj-chart-panel">
+      <div class="ov-proj-chart-panel${soloTrend?' ov-proj-chart-panel--solo':''}">
         <div class="ov-proj-chart-glow"></div>
         ${rangeOpts.length>1?`<div class="ov-chart-range ov-chart-range--floating">
           ${rangeOpts.map(o=>`<button class="ov-range-btn${S.chartRange===o.k?' ov-range-btn--active':''}" data-range="${o.k}">${o.label}</button>`).join('')}
@@ -320,8 +320,7 @@ export function buildOverview(ctx){
       </div>
     </div>
 
-  </div>
-  ${appFooter()}`;
+  </div>`;
   // Charts rendered after DOM injection — see renderTrendChart() called from wireOverview
 }
 
@@ -607,6 +606,19 @@ function wireOverviewEmpty(){
 //     the previously shown figure straight to the new one; no reveal, no scroll
 //     gating. Unchanged signature = redundant re-render → snap, no motion.
 let _ovEntranceDone=false;   // latched true after the one session entrance
+
+// Give the entrance back when the markup that claimed it leaves without ever
+// having been on screen. buildOverview() latches the flag the moment it stamps
+// .ov-enter, which is right for every mount that goes on to be shown — but the
+// pager also BUILDS this tab to stage it beside the current one, and a swipe
+// that is put back throws that page away unshown. Without this, one hesitant
+// half-swipe towards Overview quietly spends the one entrance of the session on
+// a page the user never saw. Only a page that actually held the class gives it
+// back, so a staged page built after the entrance was already spent cannot
+// re-arm it.
+export function dropOverview(el){
+  if(el && el.querySelector('.ov-wrap.ov-enter')) _ovEntranceDone=false;
+}
 let _ovPrevNums={};          // key → last shown value, so data-change tweens old→new
 let _ovAnimSig=null;         // signature last committed to screen
 let _ovRAF=0;                // active count-up loop handle
@@ -1039,13 +1051,15 @@ async function renderMonthBarChart(){
   const daysInCur=new Date(curY,curMo+1,0).getDate();
   const labels=[],values=[];
   // First pass: collect every worked/credited day this month (bar per day).
-  const bars=[]; // { day, value }
+  const bars=[]; // { day, value, shift }
   for(let d=1;d<=daysInCur;d++){
     const ds=mkds(curY,curMo,d);
     if(ds>todayStr) break;
     const g=autoGross(ds,logs);
     if(g>0||(logs[ds]&&isZeroDay(logs[ds]))){
-      bars.push({day:d, value:applyTax(g)});
+      // Same resolution the Recent Shifts list and the export use.
+      const sh=(logs[ds]&&logs[ds].shiftOverride)||shiftFor(ds);
+      bars.push({day:d, value:applyTax(g), shift:sh});
     }
   }
   if(!bars.length) return;
@@ -1056,42 +1070,71 @@ async function renderMonthBarChart(){
   // so they never overlap.
   const mLabel=t('mn')[curMo].slice(0,3);
   const n=bars.length;
-  const MAX_LABELS=6;               // most labels we ever show at once
-  const LABEL_ALL_THRESHOLD=8;      // at/under this many bars, label every one
+
+  // How many labels actually FIT, rather than a fixed count. "Jul 21" at 10px
+  // is ~38px wide; 48px leaves a gap so neighbours never touch.
+  const LABEL_W=48;
+  const chartW=canvas.offsetWidth||320;
+  const maxLabels=Math.max(2,Math.floor(chartW/LABEL_W));
+
   let showAt;
-  if(n<=LABEL_ALL_THRESHOLD){
+  if(n<=maxLabels){
     showAt=()=>true;
   }else{
-    const step=Math.ceil((n-1)/(MAX_LABELS-1)); // gap between labelled bars
-    showAt=(i)=> i===0 || i===n-1 || i%step===0;
+    // Evenly spaced positions spanning first..last inclusive. The previous
+    // version combined `i%step===0` with an always-on last label, so whenever
+    // n-1 fell just past a step boundary the final two labels landed adjacent
+    // and overprinted (seen as "Jul 21Jul 23" with 19 bars: step 4 put labels
+    // at 16 and 18). Choosing the indices directly can't produce that.
+    const idx=new Set();
+    for(let k=0;k<maxLabels;k++) idx.add(Math.round(k*(n-1)/(maxLabels-1)));
+    showAt=(i)=>idx.has(i);
   }
-  const allLabels=[], allValues=[];
+  const allLabels=[], allValues=[], allShifts=[];
   bars.forEach((b,i)=>{
     allLabels.push(showAt(i) ? `${mLabel} ${b.day}` : '');
     allValues.push(b.value);
+    allShifts.push(b.shift);
   });
 
   const isDark=S.theme==='dark';
 
-  // Gradient bar fill: indigo → violet (both modes use the same primary gradient)
+  // Bar fill by shift type, in the calendar's own language — amber = day,
+  // violet = night, teal = double — so a bar and its calendar cell read as the
+  // same day. This chart is the only one where that mapping is honest: it plots
+  // ONE BAR PER LOGGED DAY, and a day has exactly one shift type. The trend
+  // chart above is monthly and mixes both, so it stays on the primary gradient.
+  //
+  // Dark reuses the calendar tokens verbatim (--day-text #ffc94d, --night-text
+  // #c4adff, the double teal #00d2be — 12.3:1, 9.6:1 and 9.8:1 against the
+  // composited panel). Light can't: there --day-text composites to 2.6:1 and
+  // the teal to 1.9:1, both under the 3:1 WCAG floor for large graphical
+  // objects, and dimmer than the flat indigo they replace. So light uses
+  // chart-local darkenings of the SAME two hues (42° amber, 175° teal) at
+  // ~3.1:1. The theme tokens are deliberately untouched — the calendar's
+  // palette is not being retuned, only this canvas's ink.
+  const SHIFT_RGB = isDark
+    ? { day:'255,201,77', night:'196,173,255', double:'0,210,190' }
+    : { day:'179,125,0',  night:'96,64,200',   double:'0,153,140' };
+
   const ctx=canvas.getContext('2d');
   const h=canvas.offsetHeight||180;
-  const barGrad=ctx.createLinearGradient(0,0,0,h);
-  if(isDark){
-    barGrad.addColorStop(0,'rgba(139,120,255,0.95)');
-    barGrad.addColorStop(1,'rgba(108,134,255,0.35)');
-  }else{
-    barGrad.addColorStop(0,'rgba(139,92,246,0.90)');
-    barGrad.addColorStop(1,'rgba(73,119,253,0.40)');
+  const topA=isDark?0.95:0.90, botA=isDark?0.35:0.40;
+  const grad=(rgb,a0,a1)=>{
+    const g=ctx.createLinearGradient(0,0,0,h);
+    g.addColorStop(0,`rgba(${rgb},${a0})`);
+    g.addColorStop(1,`rgba(${rgb},${a1})`);
+    return g;
+  };
+  // One gradient object per shift type, then indexed per bar — Chart.js accepts
+  // an array of fills, so this stays a single dataset.
+  const fillFor={}, hoverFor={};
+  for(const k of Object.keys(SHIFT_RGB)){
+    fillFor[k] =grad(SHIFT_RGB[k],topA,botA);
+    hoverFor[k]=grad(SHIFT_RGB[k],1,Math.min(botA+0.25,1));
   }
-  const barHoverGrad=ctx.createLinearGradient(0,0,0,h);
-  if(isDark){
-    barHoverGrad.addColorStop(0,'rgba(167,139,250,1)');
-    barHoverGrad.addColorStop(1,'rgba(124,147,255,0.6)');
-  }else{
-    barHoverGrad.addColorStop(0,'rgba(139,92,246,1)');
-    barHoverGrad.addColorStop(1,'rgba(73,119,253,0.7)');
-  }
+  const barGrad     =allShifts.map(s=>fillFor[s]||fillFor.day);
+  const barHoverGrad=allShifts.map(s=>hoverFor[s]||hoverFor.day);
 
   const labelColor=isDark?'rgba(107,117,153,0.75)':'rgba(99,112,160,0.75)';
   const gridColor =isDark?'rgba(255,255,255,0.035)':'rgba(99,115,177,0.055)';

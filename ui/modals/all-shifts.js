@@ -11,6 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { animateModalClose } from '../dom.js';
+import { attachSheetGestures } from '../motion.js';
 import { entryHours } from '../../domain/log-entries.js';
 
 // Persisted view state (survives the day-log round trip via _returnToAllShifts).
@@ -343,6 +344,8 @@ export function buildAllShiftsModal(ctx, restore) {
   </div>`;
 
   document.body.appendChild(ov);
+  // Mobile: drag the sheet down to dismiss (no-op above 540px).
+  attachSheetGestures(ov, () => closeAllShiftsModal());
 
   ov.addEventListener('click', e => { if (e.target.id === 'all-shifts-ov') closeAllShiftsModal(); });
   ov.querySelector('#asm-close').addEventListener('click', closeAllShiftsModal);

@@ -42,7 +42,7 @@ const bind = ctx => ({ S, t, render, sv, scheduleSync, today,
     openWorkplace, openShare, openImport, openAllHolidays } = ctx);
 
 // Active UI language (settings-only; reads the bound S). Verbatim from app.js.
-function getLang(){return S?.lang||localStorage.getItem('wt4_lang')||'en';}
+function getLang(){return S?.lang||localStorage.getItem('wt4_lang')||'ko';}
 
 export function buildSettings(ctx){
   bind(ctx);
@@ -53,7 +53,7 @@ export function buildSettings(ctx){
   const currentWage=getWage();
 
   // ── Wage timeline rows (newest first, up to 4) ────────────────────────────
-  const LANG_LOCALE={en:'en-US',ko:'ko-KR',id:'id-ID',th:'th-TH',ru:'ru-RU',zh:'zh-CN',fr:'fr-FR',ne:'ne-NP'};
+  const LANG_LOCALE={ko:'ko-KR',en:'en-US',zh:'zh-CN',ja:'ja-JP',id:'id-ID',ru:'ru-RU',th:'th-TH',vi:'vi-VN'};
   const fmtWageDate=ds=>{const[y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString(LANG_LOCALE[S.lang]||'en-US',{month:'short',day:'2-digit',year:'numeric'});};
   // The "current" row is the entry active today (last one with date ≤ today),
   // matching wageFor()/getWage(). This may not be the newest row if a future-
@@ -181,7 +181,7 @@ export function buildSettings(ctx){
     <!-- INCOME TAX RATE -->
     <div class="s3-card ded-card${dedMode==='tax'?' ded-card--active':' ded-card--inactive'}" id="ded-card-tax">
       <div class="s3-eyebrow">
-        <div class="s3-icon-badge s3-icon-badge--blue s3-icon-badge--lg" style="font-size:15px;font-weight:800;color:#5ba8ff;">%</div>
+        <div class="s3-icon-badge s3-icon-badge--blue s3-icon-badge--lg" style="font-size:var(--fs-500);font-weight:var(--fw-black);color:#5ba8ff;">%</div>
         <span>${t('deductionsLabel').toUpperCase()}</span>
         <button class="ded-pick${dedMode==='tax'?' ded-pick--on':''}" id="ded-pick-tax" data-ded-mode="tax"
           role="switch" aria-checked="${dedMode==='tax'}" aria-label="${t('deductionModeTax')}">
@@ -481,7 +481,22 @@ export function buildSettings(ctx){
 
 function buildExportCardInline(){
   const logs=getLogs();
-  const months=[...new Set(Object.keys(logs).filter(ds=>{const e=logs[ds];return(e.regHrs||e.hrs||0)>0;}).map(ds=>ds.slice(0,7)))].sort();
+  // The export's own definition of "this month has data", not a second one.
+  //
+  // This used to be `(e.regHrs || e.hrs || 0) > 0` — raw INPUT hours, used as a
+  // proxy for "is there anything worth exporting". It is not one. A double
+  // shift stores regHrs:0 on purpose (day-log.js: its hours come from the shift
+  // rule, not the stepper, which is why the modal collapses the reg row for it),
+  // so a day worth ₩165,120 counted as nothing and the card showed the
+  // first-run "Export locked" state to someone with a month of doubles behind
+  // them. Worse, it was intermittent: a double with OT slipped through on the
+  // `|| e.hrs` leg, because hrs is 0+otHrs. Credit-only holidays — regHrs:0 with
+  // an 8h credit — fell in the same hole.
+  //
+  // monthsWithData() is what the range wiring below already calls, so the card
+  // and the export were running two subtly different rules over the same logs.
+  // One definition, in the module that owns the format.
+  const months=expMonthsWithData();
 
   const now=new Date();
   const curYM=`${now.getFullYear()}-${pad(now.getMonth()+1)}`;
@@ -593,9 +608,14 @@ function buildExportCardInline(){
   const defaultTo  =clamp(prevYM);
 
   const allLangMeta=getReportLanguageOptions();
+  // The user's own language keeps its endonym ("Русский", "日本語") — that IS
+  // its name in their language. Korean is the second option only because the
+  // report may have to be handed to a Korean employer, so it's labelled in the
+  // reader's language ("Korean", "Корейский") rather than in Korean.
+  const koOpt={code:'ko',label:t('langKorean')};
   const reportLangs=curLang==='ko'
-    ?[{code:'ko',label:'한국어'}]
-    :[allLangMeta.find(l=>l.code===curLang)||{code:'en',label:'English'},{code:'ko',label:'한국어'}];
+    ?[koOpt]
+    :[allLangMeta.find(l=>l.code===curLang)||{code:'en',label:'English'},koOpt];
   const defaultLang=reportLangs[0];
 
   const chevSVG=`<svg class="asm-sort-chevron" width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -669,7 +689,7 @@ function buildExportCardInline(){
         </div>
         <div class="sexp-chip-body">
           <div class="sexp-chip-val" id="sexp-kpi-records">${totalEntries.toLocaleString()}</div>
-          <div class="sexp-chip-lbl">${t('expStatRecords')||'Records'}</div>
+          <div class="sexp-chip-lbl" id="sexp-kpi-records-lbl">${t('expStatRecords',totalEntries)||'Records'}</div>
         </div>
       </div>
       <div class="sexp-chip-divider"></div>
@@ -679,7 +699,7 @@ function buildExportCardInline(){
         </div>
         <div class="sexp-chip-body">
           <div class="sexp-chip-val" id="sexp-kpi-months">1</div>
-          <div class="sexp-chip-lbl" id="sexp-kpi-range">${t('expStatMonths')||'Months'}</div>
+          <div class="sexp-chip-lbl" id="sexp-kpi-range">${t('expStatMonths',1)||'Months'}</div>
         </div>
       </div>
       <div class="sexp-chip-divider"></div>
@@ -731,7 +751,6 @@ function buildExportCardInline(){
       <button class="sexp-pill sexp-pill--on" id="sexp-opt-monthly" data-opt="monthly">
         <svg class="sexp-pill-check" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         ${t('expIncMonthly')}
-      </button>
       </button>
     </div>
 
@@ -889,7 +908,7 @@ function buildExportCardInline(){
 }
 
 function getReportLanguageOptions(){
-  return[{code:'en',label:'English'},{code:'ko',label:'한국어'},{code:'id',label:'Indonesia'},{code:'th',label:'ภาษาไทย'},{code:'ru',label:'Русский'},{code:'zh',label:'中文'},{code:'fr',label:'Français'},{code:'ne',label:'नेपाली'}];
+  return[{code:'ko',label:'한국어'},{code:'en',label:'English'},{code:'zh',label:'中文'},{code:'ja',label:'日本語'},{code:'id',label:'Indonesia'},{code:'ru',label:'Русский'},{code:'th',label:'ภาษาไทย'},{code:'vi',label:'Tiếng Việt'}];
 }
 
 export function wireSettings(ctx){
@@ -1387,10 +1406,13 @@ export function wireSettings(ctx){
     S.resetModal=true;render();
   });
 
-  // Export card — wire premium UI with live summary, filtered export, persistence
-  if(S.tab==='settings'){
-    const card=document.getElementById('export-card');
-    if(!card)return;
+  // Export card — wire premium UI with live summary, filtered export, persistence.
+  // Scoped by the card actually being in the DOM rather than by S.tab: a swipe
+  // wires the page it is bringing in while S.tab still names the page being
+  // left, and this block would have sat out every swipe onto Settings.
+  const exportCard=document.getElementById('export-card');
+  if(exportCard){
+    const card=exportCard;
 
     // ── Empty state (no logged shifts yet) ───────────────────────────────────
     // The onboarding empty state has its own actions and none of the export
@@ -1471,6 +1493,12 @@ export function wireSettings(ctx){
       if(elRec)    elRec.textContent=count.toLocaleString();
       if(elMonths) elMonths.textContent=monthSpan;
       if(elSize)   elSize.textContent=fmtSz(_expFormat==='pdf'?pdfKB:csvKB);
+      // The nouns agree with the counts above them, so they have to move with
+      // them — narrowing the range to a single month must not leave "1 Months".
+      const elRecLbl=card.querySelector('#sexp-kpi-records-lbl');
+      const elMonthsLbl=card.querySelector('#sexp-kpi-range');
+      if(elRecLbl)    elRecLbl.textContent=t('expStatRecords',count)||'Records';
+      if(elMonthsLbl) elMonthsLbl.textContent=t('expStatMonths',monthSpan)||'Months';
       if(doExportBtn&&!_exporting) doExportBtn.disabled=count===0;
     }
 

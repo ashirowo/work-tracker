@@ -32,7 +32,9 @@ function ld(k, d) {
 }
 function todayStr() { const d = new Date(); return mkds(d.getFullYear(), d.getMonth(), d.getDate()); }
 
-function getLang() { return ld('wt4_lang', 'en'); }
+// 'ko' is the app default (see detectLang in onboarding/onboarding.js); TR.en
+// below is a different fallback — the one for a key a language block is missing.
+function getLang() { return ld('wt4_lang', 'ko'); }
 function t(k, ...a) {
   const lang = getLang();
   const fn = TR[lang]?.[k] ?? TR.en?.[k];
@@ -421,7 +423,7 @@ export function exportCSV(fromYM, toYM, opts = {}) {
 // from CDN on first use (same pattern app.js already uses for Chart.js).
 //
 // Multi-language support: rather than embedding per-script fonts into the PDF
-// (impractical client-side for CJK/Thai/Devanagari without a build step),
+// (impractical client-side for CJK/Thai without a build step),
 // pages are rasterized images — so any script the browser can render, the
 // export can render, including Korean, with zero extra font-embedding work.
 // We just make sure the right Google Font is fully loaded before capture.
@@ -449,9 +451,11 @@ function loadPdfLibs() {
 }
 
 // ── Per-language font loading ────────────────────────────────────────────────
-// Inter (already loaded by index.html) covers Latin + Cyrillic. Korean, Thai,
-// Chinese and Devanagari need their own font or they'll fall back to whatever
-// the OS happens to ship — inconsistent, and sometimes ugly. Since html2canvas
+// Inter (already loaded by index.html) covers Latin — Vietnamese diacritics
+// included — plus Cyrillic. Korean, Thai, Chinese and Japanese need their own
+// font or they'll fall back to whatever the OS happens to ship — inconsistent,
+// and sometimes ugly (a Japanese page rendered with a Chinese font is wrong in
+// a way readers notice). Since html2canvas
 // rasterizes exactly what's on screen, the right weights have to be genuinely
 // loaded (not just linked) before we capture, so we force it via the Font
 // Loading API with a sample of real glyphs from that script.
@@ -459,7 +463,7 @@ const PDF_LANG_FONT = {
   ko: { family: 'Noto Sans KR',         sample: '한글 가나다라 09' },
   th: { family: 'Noto Sans Thai',       sample: 'กขคงจฉ ๐๙' },
   zh: { family: 'Noto Sans SC',         sample: '汉字测试 09' },
-  ne: { family: 'Noto Sans Devanagari', sample: 'नेपाली परीक्षण ०९' },
+  ja: { family: 'Noto Sans JP',         sample: '日本語 テスト 09' },
 };
 
 async function ensurePdfFont(lang) {
@@ -918,7 +922,7 @@ export async function exportPDF(fromYM, toYM, lang = getLang(), opts = {}) {
   const byMonth = {};
   rows.forEach(r => { const ym = r.date.slice(0, 7); (byMonth[ym] ??= []).push(r); });
 
-  const localeMap = { ko: 'ko-KR', th: 'th-TH', ru: 'ru-RU', zh: 'zh-CN', fr: 'fr-FR', id: 'id-ID', ne: 'ne-NP' };
+  const localeMap = { ko: 'ko-KR', zh: 'zh-CN', ja: 'ja-JP', id: 'id-ID', ru: 'ru-RU', th: 'th-TH', vi: 'vi-VN' };
   const generatedDate = new Date().toLocaleDateString(localeMap[lang] || 'en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const periodLabel = fromYM === toYM ? fmtYM(fromYM, lang) : `${fmtYM(fromYM, lang)} – ${fmtYM(toYM, lang)}`;
 

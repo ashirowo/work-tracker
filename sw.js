@@ -29,7 +29,7 @@
 //  The old cache is deleted in the `activate` handler so stale files are purged.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CACHE_VERSION   = 'wt4-v90';
+const CACHE_VERSION   = 'wt4-v157';
 const SHELL_CACHE     = `${CACHE_VERSION}-shell`;
 const FONT_CACHE      = `${CACHE_VERSION}-fonts`;
 const CDN_CACHE       = `${CACHE_VERSION}-cdn`;
@@ -67,6 +67,8 @@ const SHELL_ASSETS = [
   './ui/modals/workplace-share.js',
   './onboarding/onboarding.js',
   './ui/motion.js',
+  './ui/tab-pager.js',
+  './ui/calendar-ribbon.js',
   './ui/views/calendar.js',
   './ui/views/overview.js',
   './ui/views/settings.js',

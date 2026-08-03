@@ -2,11 +2,16 @@
 // ui/header.js — the app header + stats hero (Phase 8f).
 //
 // The persistent chrome above the tab content: the brand/greeting/sync-badge/
-// theme+language/account header (buildHeaderHTML), the net-pay stats hero
-// (buildStats), the header listeners (attachHeaderListeners — theme toggle, tab
-// switch, auth, and the body-portal language/account dropdowns), and the sync
-// helpers (updateSyncUI/updateSyncedTime/startSyncTicker/updateOfflineBanner +
+// theme+language/account header (buildHeaderHTML), its condensed twin that pins
+// to the top edge once the real one scrolls off (buildHdrMiniHTML + initHdrMini),
+// the net-pay stats hero (buildStats), the header listeners
+// (attachHeaderListeners — theme toggle, tab switch, auth, and the body-portal
+// language/account dropdowns), and the sync helpers
+// (updateSyncUI/updateSyncedTime/startSyncTicker/updateOfflineBanner +
 // greeting/lastSyncedLabel). Header icons + language flags live in ui/icons.js.
+//
+// The two headers share one control set via buildHdrControls(), which is why
+// nothing in it is addressed by id — see that function's note.
 //
 // Unlike the view modules (which re-bind ctx each render), the header binds ONCE
 // at boot via initHeader(): its sync helpers run imperatively outside the render
@@ -41,10 +46,11 @@ function greeting(){
   const fallback={greetMorning:'Good morning',greetAfternoon:'Good afternoon',greetEvening:'Good evening'}[key];
   const v=t(key);
   const text=v===key?fallback:v;
-  // Punctuation: '~!' for en/ko/fr/zh, plain '!' elsewhere.
-  const lang=S?.lang||localStorage.getItem('wt4_lang')||'en';
-  const suffix=['en','ko','fr','zh'].includes(lang)?'~!':'!';
-  return text+suffix;
+  // A wave closes the line in every language. It replaces a per-language
+  // punctuation branch ('~!' for en/ko/fr/zh, plain '!' elsewhere) that existed
+  // only to keep the greeting from reading flat — a job the emoji now does
+  // without needing to know what language it is sitting in.
+  return text+' \u{1F44B}';
 }
 // "Last synced 2m ago" style relative label from the wt4_syncedAt timestamp.
 // Returns null when there's nothing to show (never synced / not signed in).
@@ -64,10 +70,12 @@ function lastSyncedLabel(){
 // t2: translate-with-fallback (t() returns the key when a string is missing).
 function t2(key,fallback){ const v=t(key); return v===key?fallback:v; }
 
-// updateSyncUI: lightweight badge refresh without full re-render
+// updateSyncUI: lightweight badge refresh without full re-render.
+// Both the full header and the condensed scroll bar carry a badge, so this walks
+// every copy rather than a single id.
 export function updateSyncUI(){
-  const badge=document.getElementById('sync-badge');
-  if(!badge)return;
+  const badges=document.querySelectorAll('.sync-badge');
+  if(!badges.length)return;
   const status=getSyncStatus();
   const isOffline=!navigator.onLine;
   // When the network is gone, always show the offline icon regardless of
@@ -77,11 +85,13 @@ export function updateSyncUI(){
   // SYNC_ICONS is defined later in module scope (function hoisting isn't in play
   // for const, but updateSyncUI only ever runs after first render, by which time
   // the constant is initialised).
-  badge.innerHTML=SYNC_ICONS[effectiveStatus]||SYNC_ICONS.synced;
-  badge.title=tips[effectiveStatus]||'';
-  badge.setAttribute('aria-label',tips[effectiveStatus]||'');
-  badge.dataset.status=effectiveStatus;
-  badge.className='sync-badge sync-badge--'+effectiveStatus;
+  badges.forEach(badge=>{
+    badge.innerHTML=SYNC_ICONS[effectiveStatus]||SYNC_ICONS.synced;
+    badge.title=tips[effectiveStatus]||'';
+    badge.setAttribute('aria-label',tips[effectiveStatus]||'');
+    badge.dataset.status=effectiveStatus;
+    badge.className='sync-badge sync-badge--'+effectiveStatus;
+  });
   updateSyncedTime();
 }
 // Refresh the "Last synced Xm ago" label in place (web header). Cheap; safe to
@@ -104,8 +114,12 @@ export function startSyncTicker(){
 export function updateOfflineBanner(){
   const el=document.getElementById('offline-banner-text');
   if(!el)return;
-  // Fall back to English if key missing in a language block
-  const lang=S?.lang||localStorage.getItem('wt4_lang')||'en';
+  // Two different fallbacks on these two lines, deliberately. The LANGUAGE
+  // falls back to the app default (Korean); the STRING falls back to English,
+  // because that one only fires when a translation block is missing this key
+  // and English is the likeliest second language of everyone who is not
+  // already reading Korean.
+  const lang=S?.lang||localStorage.getItem('wt4_lang')||'ko';
   el.textContent=(TR[lang]?.offlineBanner)||TR.en.offlineBanner;
 }
 
@@ -123,7 +137,6 @@ export function buildStats(){
   const target=S.targetHrs||250;
   const hrsProgress=Math.min(100,Math.round((hrs/target)*100));
   const daysProgress=Math.min(100,Math.round((days/totalDays)*100));
-  const mn=t('mn')[S.calM];
 
   // Delta vs previous month
   let prevNet=0;
@@ -148,7 +161,7 @@ export function buildStats(){
   return`<div class="stats-hero">
     <div class="stat-pay-card">
       <div class="stat-pay-left">
-        <div class="stat-pay-label">${t('statEstPayLabel', getActiveDeductionPct(), getDeductionNoun())} ${mn.toUpperCase()}</div>
+        <div class="stat-pay-label">${t('statEstPayLabel', getActiveDeductionPct(), getDeductionNoun())}</div>
         <div class="stat-pay-value" id="stat-pay-value" data-target="${net}">₩0</div>
         ${deltaHTML}
       </div>
@@ -212,27 +225,75 @@ export function buildStats(){
   </div>`;
 }
 
-export function buildHeaderHTML(){
+// ── Header controls: sync badge + theme + language + account ──────────────────
+// Emitted twice — once in the full header, once in the condensed scroll bar —
+// and both copies are live. That rules out ids on the triggers (two nodes can't
+// share one), so each carries a data-hdr-action instead and
+// attachHeaderListeners() wires whatever it finds with a single querySelectorAll.
+//
+// The mini copy is untabbable (see buildHdrMiniHTML's aria-hidden): it duplicates
+// controls the real header already exposes, and nobody on a screen reader gains
+// anything from meeting a second theme toggle. It exists for the pointer.
+function buildHdrControls(mini){
+  const tabIdx=mini?' tabindex="-1"':'';
   // Sync badge — only shown when signed in; status from firebase.js.
   const ss=getSyncStatus();
   const ssTip={synced:'Synced',pending:'Syncing…',offline:'Offline — saved locally',idle:''}[ss]||'';
   const syncHTML=currentUser()
-    ?`<span id="sync-badge" class="sync-badge sync-badge--${ss}" title="${ssTip}" aria-label="${ssTip}">${SYNC_ICONS[ss]||SYNC_ICONS.synced}</span>`
+    ?`<span class="sync-badge sync-badge--${ss}" title="${ssTip}" aria-label="${ssTip}">${SYNC_ICONS[ss]||SYNC_ICONS.synced}</span>`
     :'';
   // Account trigger — avatar or initial; dropdown is a body-level portal (see attachListeners)
   const accountHTML=currentUser()
-    ?`<button class="hdr-icon-btn hdr-avatar-btn" id="account-btn" title="${currentUser().displayName||currentUser().email}" aria-label="Account">
+    ?`<button class="hdr-icon-btn hdr-avatar-btn" data-hdr-action="account"${tabIdx} title="${currentUser().displayName||currentUser().email}" aria-label="Account">
         ${currentUser().photoURL
           ?`<img src="${currentUser().photoURL}" class="avatar" alt="">`
           :`<span class="avatar-initials">${(currentUser().displayName||currentUser().email||'?')[0].toUpperCase()}</span>`}
       </button>`
-    :`<button id="auth-login" class="hdr-signin${!navigator.onLine?' hdr-signin--disabled':''}"${!navigator.onLine?' disabled aria-disabled="true"':''} aria-label="${t('signIn')}">
+    :`<button data-hdr-action="signin"${tabIdx} class="hdr-signin${!navigator.onLine?' hdr-signin--disabled':''}"${!navigator.onLine?' disabled aria-disabled="true"':''} aria-label="${t('signIn')}">
         ${navigator.onLine?ICON_GOOGLE:ICON_OFFLINE}
         <span class="hdr-signin-label">${!navigator.onLine?t('offlineShort'):t('signIn')}</span>
       </button>`;
   // Theme + language triggers use inline SVGs to match the rest of the UI.
-  const themeHTML=`<button class="hdr-icon-btn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">${S.theme==='dark'?ICON_SUN:ICON_MOON}</button>`;
-  const langHTML=`<button class="hdr-icon-btn" id="lang-btn" title="Language" aria-label="Language">${ICON_GLOBE}</button>`;
+  const themeHTML=`<button class="hdr-icon-btn" data-hdr-action="theme"${tabIdx} title="Toggle theme" aria-label="Toggle theme">${S.theme==='dark'?ICON_SUN:ICON_MOON}</button>`;
+  const langHTML=`<button class="hdr-icon-btn" data-hdr-action="lang"${tabIdx} title="Language" aria-label="Language">${ICON_GLOBE}</button>`;
+  // Signed out, the sign-in pill sits OUTSIDE the cluster — it is a call to
+  // action, not another utility segment, and the cluster's glass would mute it.
+  return`<div class="hdr-cluster">
+      ${syncHTML}
+      ${themeHTML}
+      ${langHTML}
+      ${currentUser()?`<span class="hdr-cluster-sep" aria-hidden="true"></span>${accountHTML}`:''}
+    </div>
+    ${currentUser()?'':accountHTML}`;
+}
+
+// ── Condensed scroll bar ──────────────────────────────────────────────────────
+// The header's stand-in once it has scrolled off: a slim strip pinned to the top
+// edge, built from the bottom nav's surface recipe so the two read as a matched
+// pair at either end of the screen.
+//
+// It carries only what still earns its place mid-scroll — the mark, the wordmark,
+// the controls. The greeting and "last synced" stay behind: those are orientation
+// you read once on arrival, and pinning them would cost real viewport on a phone
+// that already gives ~64px to the nav at the other end.
+//
+// aria-hidden because every one of its parts is a duplicate of something the
+// real header still exposes to assistive tech, on-screen or not.
+function buildHdrMiniHTML(logoSrc){
+  return`<div class="hdr-mini" id="hdr-mini" aria-hidden="true">
+    <div class="hdr-mini-inner">
+      <div class="hdr-mini-brand">
+        <span class="hdr-mini-mark">
+          <img src="${logoSrc}" width="100%" height="100%" alt="" draggable="false">
+        </span>
+        <span class="hdr-logo hdr-mini-logo">Shift<span class="hdr-logo-r">r</span></span>
+      </div>
+      <div class="hdr-right hdr-mini-right">${buildHdrControls(true)}</div>
+    </div>
+  </div>`;
+}
+
+export function buildHeaderHTML(){
   // Brand secondary label — a time-based greeting for a premium, personal feel.
   const greet=greeting();
   // Last-synced sits in the left section, right after the greeting, separated by
@@ -263,32 +324,67 @@ export function buildHeaderHTML(){
         </div>
       </div>
     </div>
-    <div class="hdr-right">
-      <div class="hdr-cluster">
-        ${syncHTML}
-        ${themeHTML}
-        ${langHTML}
-        ${currentUser()?`<span class="hdr-cluster-sep" aria-hidden="true"></span>${accountHTML}`:''}
-      </div>
-      ${currentUser()?'':accountHTML}
-    </div>
-  </div>`;
+    <div class="hdr-right">${buildHdrControls(false)}</div>
+  </div>
+  ${buildHdrMiniHTML(logoSrc)}`;
+}
+
+// Every open dropdown, shut. Module-level (not a per-render closure) so the
+// condensed-bar observer can reach it too — a menu anchored to a trigger that
+// is about to slide out of the viewport has to go with it.
+function closeAllPortals(){
+  document.querySelectorAll('.portal-dropdown').forEach(m=>m.classList.remove('open'));
+}
+
+// ── Condensed bar visibility ──────────────────────────────────────────────────
+// The bar appears exactly when the real header leaves the viewport, so the two
+// are never on screen at once. An IntersectionObserver does the watching: no
+// scroll handler firing per frame, no getBoundingClientRect() in the hot path,
+// and because the bar is position:fixed it can't feed back into the layout of
+// the element it is observing.
+//
+// Re-armed on every full render — buildHeaderHTML() recreates both nodes, so the
+// previous observer is left holding a detached .hdr.
+let _miniObs=null;
+function initHdrMini(){
+  if(_miniObs){_miniObs.disconnect();_miniObs=null;}
+  const hdr=document.querySelector('.hdr'),mini=document.getElementById('hdr-mini');
+  if(!hdr||!mini||!('IntersectionObserver'in window))return;
+  // The first callback lands a frame or two after insertion, so a page restored
+  // mid-scroll would watch the bar slide in from nothing on load. Commit that
+  // one result with transitions suppressed, then hand the class back to CSS.
+  let first=true;
+  _miniObs=new IntersectionObserver(([e])=>{
+    const on=!e.isIntersecting;
+    if(on===mini.classList.contains('hdr-mini--on'))return;
+    if(first)mini.classList.add('hdr-mini--nofx');
+    mini.classList.toggle('hdr-mini--on',on);
+    if(first){
+      first=false;
+      void mini.offsetWidth;                 // flush the class change unanimated
+      mini.classList.remove('hdr-mini--nofx');
+    }
+    // A portal is positioned once, against its trigger's rect. Swapping which
+    // header is on screen moves every trigger, so any open menu is now pointing
+    // at nothing.
+    closeAllPortals();
+  },{threshold:0});
+  _miniObs.observe(hdr);
 }
 
 // Header controls, auth, portals, and the outside-click closer. Nodes here
 // persist across tab switches, so this runs only once per full render.
 export function attachHeaderListeners(){
-  document.getElementById('theme-toggle').addEventListener('click',()=>{
+  document.querySelectorAll('[data-hdr-action="theme"]').forEach(b=>b.addEventListener('click',()=>{
     S.theme=S.theme==='dark'?'light':'dark';sv('wt4_theme',S.theme);scheduleSync();render();
-  });
+  }));
   document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{
     if(b.dataset.tab===S.tab)return;      // already active — do nothing
     switchTab(b.dataset.tab);
   }));
 
   // ── Auth ────────────────────────────────────────────────────────────────────
-  const loginBtn=document.getElementById('auth-login');
-  if(loginBtn)loginBtn.addEventListener('click',()=>signInWithGoogle());
+  document.querySelectorAll('[data-hdr-action="signin"]').forEach(b=>b.addEventListener('click',()=>signInWithGoogle()));
   const logoutBtn=document.getElementById('auth-logout');
   if(logoutBtn)logoutBtn.addEventListener('click',()=>signOutUser());
 
@@ -318,16 +414,23 @@ export function attachHeaderListeners(){
     menu.style.right='auto';
   }
 
-  function closeAllPortals(){
-    document.querySelectorAll('.portal-dropdown').forEach(m=>m.classList.remove('open'));
+  // One menu, many triggers: the full header's button and the condensed bar's
+  // both open the same portal, anchored to whichever was actually clicked.
+  function wireTrigger(btn,portal){
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const wasOpen=portal.classList.contains('open');
+      closeAllPortals();
+      if(!wasOpen){portal.classList.add('open');positionDropdown(portal,btn);}
+    });
   }
 
   // ── Language portal ──────────────────────────────────────────────────────────
-  const langBtn=document.getElementById('lang-btn');
-  if(langBtn){
+  const langBtns=document.querySelectorAll('[data-hdr-action="lang"]');
+  if(langBtns.length){
     const langPortal=createPortalDropdown('lang-menu',
-      ['en','ko','id','th','ru','zh','fr','ne'].map(l=>{
-        const names={en:'English',ko:'한국어',id:'Indonesia',th:'ภาษาไทย',ru:'Русский',zh:'中文',fr:'Français',ne:'नेपाली'};
+      ['ko','en','zh','ja','id','ru','th','vi'].map(l=>{
+        const names={ko:'한국어',en:'English',zh:'中文',ja:'日本語',id:'Indonesia',ru:'Русский',th:'ภาษาไทย',vi:'Tiếng Việt'};
         return `<button class="hdr-dropdown-item${S.lang===l?' hdr-dropdown-item--active':''}" data-lang="${l}">${flagImg(l,'flag-ico')}${names[l]}</button>`;
       }).join(''));
     // Wire language buttons inside portal
@@ -337,17 +440,12 @@ export function attachHeaderListeners(){
       closeAllPortals();
       render();
     }));
-    langBtn.addEventListener('click',e=>{
-      e.stopPropagation();
-      const wasOpen=langPortal.classList.contains('open');
-      closeAllPortals();
-      if(!wasOpen){langPortal.classList.add('open');positionDropdown(langPortal,langBtn);}
-    });
+    langBtns.forEach(b=>wireTrigger(b,langPortal));
   }
 
   // ── Account portal ───────────────────────────────────────────────────────────
-  const accountBtn=document.getElementById('account-btn');
-  if(accountBtn&&currentUser()){
+  const accountBtns=document.querySelectorAll('[data-hdr-action="account"]');
+  if(accountBtns.length&&currentUser()){
     const accountPortal=createPortalDropdown('account-menu',
       `<div class="hdr-dropdown-user">
         <div class="hdr-dropdown-name">${currentUser().displayName||''}</div>
@@ -356,14 +454,12 @@ export function attachHeaderListeners(){
        <div class="hdr-dropdown-divider"></div>
        <button class="hdr-dropdown-item hdr-dropdown-item--danger" id="auth-logout-portal">${t('signOut')}</button>`);
     accountPortal.querySelector('#auth-logout-portal')?.addEventListener('click',()=>signOutUser());
-    accountBtn.addEventListener('click',e=>{
-      e.stopPropagation();
-      const wasOpen=accountPortal.classList.contains('open');
-      closeAllPortals();
-      if(!wasOpen){accountPortal.classList.add('open');positionDropdown(accountPortal,accountBtn);}
-    });
+    accountBtns.forEach(b=>wireTrigger(b,accountPortal));
   }
 
   // Close portals on outside click (document-level — bind once)
   document.addEventListener('click',closeAllPortals);
+
+  // Arm the condensed bar last: it needs both header nodes in the DOM.
+  initHdrMini();
 }

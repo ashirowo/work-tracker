@@ -175,7 +175,7 @@ async function pushToCloud(uid) {
     logs:      lsGet(SYNC_KEYS.logs,    {}),
     shifts:    lsGet(SYNC_KEYS.shifts,  {}),
     wages:     lsGet(SYNC_KEYS.wages,   [{date:'2000-01-01',amount:10320}]),
-    lang:      lsGet(SYNC_KEYS.lang,    'en'),
+    lang:      lsGet(SYNC_KEYS.lang,    'ko'),   // app default — see detectLang()
     theme:     lsGet(SYNC_KEYS.theme,   'dark'),
     holAuto:   lsGet(SYNC_KEYS.holAuto, true),
     taxRate:   lsGet(SYNC_KEYS.taxRate, 3.3),

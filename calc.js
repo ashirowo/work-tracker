@@ -185,8 +185,8 @@ export function grossFor(eff, wage){ return Math.round(eff * wage); }
 // Segments → per-language text via tr.seg (translations.js). Numbers in notes
 // come FROM THE ENGINE's segments — never recomputed here or in translations —
 // so notes are correct for any profile, not just the default. tr.seg.num
-// applies each language's static-number styling (e.g. Devanagari digits,
-// comma decimals) exactly where the legacy strings did.
+// applies each language's static-number styling (e.g. comma decimals for
+// Indonesian and Vietnamese) exactly where the legacy strings did.
 export function renderNotes(tr, segments){
   const g = tr.seg;
   return segments.map(s => {

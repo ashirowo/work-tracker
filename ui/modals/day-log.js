@@ -367,7 +367,7 @@ export function buildModal(ctx){
     // to a regular day/night shift tint. Keep it auto-credited instead — and clear
     // any pre-existing entry so it reverts cleanly to the auto-credit state.
     // Exception: if the user typed a note, keep a minimal entry so the note isn't lost.
-    if(holDay && isHolAuto() && r===0 && o===0 && creditOverride===undefined && !noteVal){
+    if(holDay && isHolAuto() && sh !== 'double' && r===0 && o===0 && creditOverride===undefined && !noteVal){
       if(logs[date]!==undefined){ delete logs[date]; saveLogs(logs); }
       closeModal(true);
       return;
